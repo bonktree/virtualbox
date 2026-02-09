@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# $Id: configure.py 112910 2026-02-09 17:32:33Z andreas.loeffler@oracle.com $
+# $Id: configure.py 112911 2026-02-09 17:35:39Z andreas.loeffler@oracle.com $
 """
 Configuration script for building VirtualBox.
 
@@ -61,7 +61,7 @@ SPDX-License-Identifier: GPL-3.0-only
 # External Python modules or other dependencies are not allowed!
 #
 
-__revision__ = "$Revision: 112910 $"
+__revision__ = "$Revision: 112911 $"
 
 import argparse
 import ctypes
@@ -3657,7 +3657,7 @@ def main():
     # Note: '--out-base-dir' is kept for backwards compatibility.
     oParser.add_argument('--output-build-dir', '--out-base-dir', help='Specifies the build output directory', default=os.path.join(g_sScriptPath, 'out'), dest='config_build_dir');
     oParser.add_argument('--ose', help='Builds the OSE version', action='store_true', default=None, dest='config_ose');
-    oParser.add_argument('--debug', help='Runs in debug mode. Only use for development', action='store_const', default=False, dest='config_debug');
+    oParser.add_argument('--debug', help='Runs in debug mode. Only use for development', action='store_true', dest='config_debug');
     oParser.add_argument('--nofatal', '--continue-on-error', help='Continues execution on fatal errors', action='store_true', dest='config_nofatal');
     oParser.add_argument('--build-arch', help='Specifies the build architecture', default=g_enmHostArch, dest='config_build_arch');
     oParser.add_argument('--build-debug', help='Build with debugging symbols and assertions', action='store_const', const=BuildType.DEBUG, dest='config_build_type');
