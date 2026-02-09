@@ -1,4 +1,4 @@
-/* $Id: VBoxGuestR3LibRuntimeXF86.cpp 112873 2026-02-09 09:19:32Z knut.osmundsen@oracle.com $ */
+/* $Id: VBoxGuestR3LibRuntimeXF86.c 112887 2026-02-09 10:14:42Z knut.osmundsen@oracle.com $ */
 /** @file
  * VBoxGuestR3Lib - Ring-3 Support Library for VirtualBox guest additions,
  *                  implements the minimum of runtime functions needed for
@@ -44,18 +44,15 @@
 #include <iprt/log.h>
 #include <iprt/mem.h>
 #if defined(VBOX_VBGLR3_XFREE86)
-extern "C" {
 # define XFree86LOADER
-# define _GLIBCXX_INCLUDE_NEXT_C_HEADERS /* We're in extern "C" mode, so don't let libstdc++'s c++/<version>/math.h load cmath. */
 # include <xf86_ansic.h>
 # undef size_t
-}
 #else
 # include <stdarg.h>
 # include <stdlib.h>
 # define xalloc malloc
 # define xfree free
-extern "C" void ErrorF(const char *f, ...);
+extern void ErrorF(const char *f, ...);
 #endif
 
 RTDECL(void)    RTAssertMsg1Weak(const char *pszExpr, unsigned uLine, const char *pszFile, const char *pszFunction)

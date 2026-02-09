@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 112403 2026-01-11 19:29:08Z knut.osmundsen@oracle.com $
+# $Id: Makefile.kmk 112887 2026-02-09 10:14:42Z knut.osmundsen@oracle.com $
 ## @file
 # Sub-Makefile for the common guest addition code library.
 #
@@ -231,7 +231,7 @@ VBoxGuestR3LibXFree86_SOURCES  = \
 	VBoxGuestR3LibMisc.cpp \
 	VBoxGuestR3LibSeamless.cpp \
 	VBoxGuestR3LibVideo.cpp \
-	VBoxGuestR3LibRuntimeXF86.cpp
+	VBoxGuestR3LibRuntimeXF86.c
 VBoxGuestR3LibXFree86_INCS     = \
 	$(VBOX_PATH_X11_ROOT)/XFree86-4.3/Xserver \
 	$(VBOX_PATH_X11_ROOT)/XFree86-4.3 \
@@ -252,8 +252,6 @@ VBoxGuestR3LibXOrg_DEFS     = \
 	$(if $(VBOX_WITH_DRAG_AND_DROP_GH),VBOX_WITH_DRAG_AND_DROP_GH,) \
 	$(if $(VBOX_WITH_SHARED_CLIPBOARD_TRANSFERS),VBOX_WITH_SHARED_CLIPBOARD_TRANSFERS,)
 VBoxGuestR3LibXOrg_SOURCES  = $(VBoxGuestR3LibXFree86_SOURCES)
-
-VBoxGuestR3LibRuntimeXF86.cpp_CXXFLAGS = -Wno-shadow
 
 include $(FILE_KBUILD_SUB_FOOTER)
 
