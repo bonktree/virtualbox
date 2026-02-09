@@ -1,4 +1,4 @@
-/* $Id: NEMR3Native-linux-x86.cpp 112832 2026-02-05 07:12:56Z alexander.eichner@oracle.com $ */
+/* $Id: NEMR3Native-linux-x86.cpp 112882 2026-02-09 09:32:45Z knut.osmundsen@oracle.com $ */
 /** @file
  * NEM - Native execution manager, native ring-3 Linux backend.
  */
@@ -743,7 +743,7 @@ static int nemHCLnxImportState(PVMCPUCC pVCpu, uint64_t fWhat, PCPUMCTX pCtx, st
     {
         fWhat |= CPUMCTX_EXTRN_INHIBIT_INT | CPUMCTX_EXTRN_INHIBIT_NMI; /* always do both, see export and interrupt FF handling */
 
-        struct kvm_vcpu_events KvmEvents = {0};
+        struct kvm_vcpu_events KvmEvents = {};
         int rcLnx = ioctl(pVCpu->nem.s.fdVCpu, KVM_GET_VCPU_EVENTS, &KvmEvents);
         AssertLogRelMsgReturn(rcLnx == 0, ("rcLnx=%d errno=%d\n", rcLnx, errno), VERR_NEM_IPE_3);
 
@@ -1168,7 +1168,7 @@ static int nemHCLnxExportState(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx, struct kvm_
         Assert(   (fExtrn & (CPUMCTX_EXTRN_INHIBIT_INT | CPUMCTX_EXTRN_INHIBIT_NMI))
                ==           (CPUMCTX_EXTRN_INHIBIT_INT | CPUMCTX_EXTRN_INHIBIT_NMI));
 
-        struct kvm_vcpu_events KvmEvents = {0};
+        struct kvm_vcpu_events KvmEvents = {};
 
         KvmEvents.flags = KVM_VCPUEVENT_VALID_SHADOW;
         if (!CPUMIsInInterruptShadowWithUpdate(&pVCpu->cpum.GstCtx))
@@ -1500,7 +1500,7 @@ static VBOXSTRICTRC nemHCLnxHandleInterruptFF(PVM pVM, PVMCPU pVCpu, struct kvm_
      * If we don't we may lose the interrupt/NMI we marked pending here when the
      * state is exported again before execution.
      */
-    struct kvm_vcpu_events KvmEvents = {0};
+    struct kvm_vcpu_events KvmEvents = {};
     int rcLnx = ioctl(pVCpu->nem.s.fdVCpu, KVM_GET_VCPU_EVENTS, &KvmEvents);
     AssertLogRelMsgReturn(rcLnx == 0, ("rcLnx=%d errno=%d\n", rcLnx, errno), VERR_NEM_IPE_5);
 
