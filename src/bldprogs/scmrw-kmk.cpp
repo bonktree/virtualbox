@@ -1,4 +1,4 @@
-/* $Id: scmrw-kmk.cpp 112403 2026-01-11 19:29:08Z knut.osmundsen@oracle.com $ */
+/* $Id: scmrw-kmk.cpp 112897 2026-02-09 11:32:27Z knut.osmundsen@oracle.com $ */
 /** @file
  * IPRT Testcase / Tool - Source Code Massager, Makefile.kmk/kup.
  */
@@ -414,8 +414,13 @@ static size_t scmKmkSkipExpString(const char *pchLine, size_t cchLine, size_t of
                 off++;
             }
         }
-        else if ((ch == ')' || ch == '}') && iExpDepth > 0)
-            iExpDepth--;
+        else if (iExpDepth > 0)
+        {
+            if (ch == ')' || ch == '}')
+                iExpDepth--;
+            else if (ch == '(' || ch == '{')
+                iExpDepth++;
+        }
     }
     return off;
 }
