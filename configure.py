@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# $Id: configure.py 112865 2026-02-09 08:50:52Z andreas.loeffler@oracle.com $
+# $Id: configure.py 112866 2026-02-09 09:00:41Z andreas.loeffler@oracle.com $
 """
 Configuration script for building VirtualBox.
 
@@ -61,7 +61,7 @@ SPDX-License-Identifier: GPL-3.0-only
 # External Python modules or other dependencies are not allowed!
 #
 
-__revision__ = "$Revision: 112865 $"
+__revision__ = "$Revision: 112866 $"
 
 import argparse
 import ctypes
@@ -1211,23 +1211,24 @@ class LibraryCheck(CheckBase):
         sRootPath = self.sRootPath; # A custom path has precedence.
         fInTree   = False;
         if sRootPath:
-            printVerbose(1, f'Root path for library {self.sName} was set to custom path: {sRootPath}');
+            self.printVerbose(1, f'Root path was set to custom path: {sRootPath}');
         if  not g_oEnv['config_ignore_in_tree_libs'] \
         and not sRootPath : # Search for in-tree libs.
             sPath  = os.path.join(g_sScriptPath, 'src', 'libs');
+            self.printVerbose(1, f'Searching in-tree library: {sPath}');
             asPath = glob.glob(os.path.join(sPath, self.sName + '*'));
             for sCurDir in asPath:
                 sPath = os.path.join(sPath, sCurDir);
-                printVerbose(1, f'In-tree path found for library {self.sName}: {sPath}');
+                self.printVerbose(1, f'In-tree path found: {sPath}');
                 if self.fUseInTree:
                     sRootPath = sPath;
                     fInTree   = True;
                 else:
-                    printVerbose(1, 'In-tree usage is disabled or not specified, ignoring');
+                    self.printVerbose(1, 'In-tree usage is disabled or not specified, ignoring');
         if not sRootPath:
-            printVerbose(1, f'No root path found for library {self.sName}');
+            self.printVerbose(1, 'No root path found');
         else:
-            printVerbose(1, f'Root path for library {self.sName} determined: {sRootPath}');
+            self.printVerbose(1, f'Root path determined: {sRootPath}');
         return sRootPath, fInTree;
 
     def getToolPath(self):
@@ -1251,9 +1252,9 @@ class LibraryCheck(CheckBase):
                     sRootPath = sPath;
 
         if not sRootPath:
-            printVerbose(1, f'No root path found for tool {self.sName}');
+            self.printVerbose(1, 'No root path found');
         else:
-            printVerbose(1, f'Root path for tool {self.sName} determined: {sRootPath}');
+            self.printVerbose(1, f'Root path determined: {sRootPath}');
         return sRootPath;
 
     def isPathInTree(self, sPath):
@@ -1511,13 +1512,13 @@ class LibraryCheck(CheckBase):
         if not self.sSdkName: # No SDK (our term for package in our dev tools)? Bail out.
             return True;
 
-        printVerbose(1, f"Package Information for {sPackageName}:");
+        self.printVerbose(1, f"Package Information for {sPackageName}:");
         fRc, sBinDir = getPackageVar(sPackageName, PkgMgrVar.BINDIR);
-        printVerbose(1, f'    BINDIR: {sBinDir if fRc else "<None>"}');
+        self.printVerbose(1, f'    BINDIR: {sBinDir if fRc else "<None>"}');
         fRc, sLibDir = getPackageVar(sPackageName, PkgMgrVar.LIBDIR);
-        printVerbose(1, f'    LIBDIR: {sLibDir if fRc else "<None>"}');
+        self.printVerbose(1, f'    LIBDIR: {sLibDir if fRc else "<None>"}');
         fRc, sCFlags = getPackageVar(sPackageName, PkgMgrVar.CFLAGS);
-        printVerbose(1, f'    CFLAGS: {sCFlags if fRc else "<None>"}');
+        self.printVerbose(1, f'    CFLAGS: {sCFlags if fRc else "<None>"}');
 
         #if self.sRootPath:
         #    g_oEnv.set(f'PATH_SDK_{self.sSdkName}', self.sRootPath);
@@ -1839,7 +1840,7 @@ class ToolCheck(CheckBase):
         sRootPath = self.sRootPath; # A custom path has precedence.
         fInTree   = False;
         if sRootPath:
-            printVerbose(1, f'Root path for tool {self.sName} was set to: {sRootPath}');
+            self.printVerbose(1, f'Root path was set to: {sRootPath}');
         else: # Search for in-tree tools.
             sPath  = os.path.join(g_sScriptPath, g_oEnv['PATH_DEVTOOLS'] if g_oEnv['PATH_DEVTOOLS'] else 'tools');
             asToolsSubDir = [
@@ -2239,7 +2240,7 @@ class ToolCheck(CheckBase):
                         pass;
 
         if sVCPPVer:
-            print(f"Found Visual C++ version {sVCPPVer} at '{sVCPPPath}'");
+            self.print(f"Found Visual C++ version {sVCPPVer} at '{sVCPPPath}'");
 
             sVCPPBasePath = os.path.join(sVCPPPath, 'VC', 'Tools', 'MSVC'); # Used by Visual Studio installer.
             if not pathExists(sVCPPBasePath):
