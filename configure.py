@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# $Id: configure.py 112867 2026-02-09 09:03:13Z andreas.loeffler@oracle.com $
+# $Id: configure.py 112871 2026-02-09 09:17:00Z andreas.loeffler@oracle.com $
 """
 Configuration script for building VirtualBox.
 
@@ -61,7 +61,7 @@ SPDX-License-Identifier: GPL-3.0-only
 # External Python modules or other dependencies are not allowed!
 #
 
-__revision__ = "$Revision: 112867 $"
+__revision__ = "$Revision: 112871 $"
 
 import argparse
 import ctypes
@@ -281,7 +281,7 @@ def printWarn(sMessage, fLogOnly = False, fDontCount = False):
     Prints warning message to stdout.
     """
     _ = fLogOnly;
-    print(f"!!! WARN: {sMessage}", file=sys.stdout);
+    print(f"[WARN]: {sMessage}", file=sys.stdout);
     if not fDontCount:
         globals()['g_cWarnings'] += 1;
         globals()['g_asWarnings'].extend([ sMessage ]);
@@ -291,7 +291,7 @@ def printError(sMessage, fLogOnly = False, fDontCount = False):
     Prints an error message to stderr.
     """
     _ = fLogOnly;
-    print(f"*** ERROR: {sMessage}", file=sys.stdout);
+    print(f"[ERROR]: {sMessage}", file=sys.stdout);
     if not fDontCount:
         globals()['g_cErrors'] += 1;
         globals()['g_asErrors'].extend([ sMessage ]);
@@ -4106,13 +4106,13 @@ def main():
         print(f'Configuration completed with {g_cWarnings} warning(s). See {g_sFileLog} for details.');
         print('');
         for sWarn in g_asWarnings:
-            print(f'    *** WARN: {sWarn}');
+            print(f'    [WARN]: {sWarn}');
     if g_cErrors:
         print('');
         print(f'Configuration failed with {g_cErrors} error(s). See {g_sFileLog} for details.');
         print('');
         for sErr in g_asErrors:
-            print(f'    *** ERROR: {sErr}');
+            print(f'    [ERROR]: {sErr}');
     if  g_fContOnErr \
     and g_cErrors:
         print('');
