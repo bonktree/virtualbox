@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 112403 2026-01-11 19:29:08Z knut.osmundsen@oracle.com $
+# $Id: Makefile.kmk 112920 2026-02-10 12:33:11Z knut.osmundsen@oracle.com $
 ## @file
 # Sub-makefile for iPXE.
 #
@@ -91,18 +91,25 @@ else
 	    $(filter %.def, $(othersrc))
  TOOL_iPxeLinker_LINK_PROGRAM_DEPORD =
  define TOOL_iPxeLinker_LINK_PROGRAM_CMDS
-	$(QUIET)ld $(flags) -o $(out) $(objs)\
+	$(QUIET)ld $(flags) -Map=$(outbase).map -o $(out) $(objs)\
 		$(foreach p,$(libpath), -L$(p))\
 		$(foreach lib,$(libs), $(if $(findstring $(lib),$(subst /,x,$(lib))), -l$(patsubst lib%,%,$(lib)), $(lib)))
+  ifeq ($(ld_debug),split)
+	$(QUIET)objcopy --only-keep-debug $(out) $(outbase).debug
+	$(QUIET)$(CHMOD) a-x $(outbase).debug
+	$(QUIET)objcopy --strip-debug --add-gnu-debuglink=$(outbase).debug $(out) ## @todo apply --strip-unneeded as well?
+  endif
  endef
 
  #
  # iPXE - Template used to build the ROM binary.
  #
- TEMPLATE_iPxe         = iPXE code
- TEMPLATE_iPxe_TOOL    = $(VBOX_GCC32_TOOL)
- TEMPLATE_iPxe_LDTOOL  = iPxeLinker
- TEMPLATE_iPxe_LDFLAGS = \
+ TEMPLATE_iPxe          := iPXE code
+ TEMPLATE_iPxe_TOOL      = $(VBOX_GCC32_TOOL)
+ TEMPLATE_iPxe_LDTOOL   := iPxeLinker
+ TEMPLATE_iPxe_LD_DEBUG := split
+ TEMPLATE_iPxe_LDFLAGS  := \
+ 	-g \
 	-N \
 	--no-check-sections \
 	--gc-sections \
@@ -114,12 +121,13 @@ else
 	--defsym pci_device_id=0x100E \
 	-e _rom_start
 ifeq ($(KBUILD_TARGET), freebsd)
- TEMPLATE_iPxe_LDFLAGS += -m elf_i386_fbsd
+ TEMPLATE_iPxe_LDFLAGS  += -m elf_i386_fbsd
 else
- TEMPLATE_iPxe_LDFLAGS += -m elf_i386
+ TEMPLATE_iPxe_LDFLAGS  += -m elf_i386
 endif
- TEMPLATE_iPxe_LNK_DEPS = $(VBOX_PATH_IPXE_SRC)/src/arch/x86/scripts/pcbios.lds
- TEMPLATE_iPxe_CFLAGS  = \
+ TEMPLATE_iPxe_LNK_DEPS := $(VBOX_PATH_IPXE_SRC)/src/arch/x86/scripts/pcbios.lds
+ TEMPLATE_iPxe_CFLAGS    = \
+ 	-g \
 	-fno-pie \
 	-fcommon \
 	-ffreestanding \
