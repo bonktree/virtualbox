@@ -1,4 +1,4 @@
-/* $Id: PGMAllHandler.cpp 112403 2026-01-11 19:29:08Z knut.osmundsen@oracle.com $ */
+/* $Id: PGMAllHandler.cpp 112945 2026-02-11 13:13:32Z alexander.eichner@oracle.com $ */
 /** @file
  * PGM - Page Manager / Monitor, Access Handlers.
  */
@@ -253,7 +253,6 @@ int pgmHandlerPhysicalExRegister(PVMCC pVM, PPGMPHYSHANDLER pPhysHandler, RTGCPH
     AssertReturn(pPhysHandler->Key == NIL_RTGCPHYS, VERR_WRONG_ORDER);
 
     AssertMsgReturn(GCPhys < GCPhysLast, ("GCPhys >= GCPhysLast (%#x >= %#x)\n", GCPhys, GCPhysLast), VERR_INVALID_PARAMETER);
-    Assert(GCPhysLast - GCPhys < _4G); /* ASSUMPTION in PGMAllPhys.cpp */
 
     switch (pType->enmKind)
     {

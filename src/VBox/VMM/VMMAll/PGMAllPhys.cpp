@@ -1,4 +1,4 @@
-/* $Id: PGMAllPhys.cpp 112403 2026-01-11 19:29:08Z knut.osmundsen@oracle.com $ */
+/* $Id: PGMAllPhys.cpp 112945 2026-02-11 13:13:32Z alexander.eichner@oracle.com $ */
 /** @file
  * PGM - Page Manager and Monitor, Physical Memory Addressing.
  */
@@ -4259,8 +4259,8 @@ static VBOXSTRICTRC pgmPhysWriteHandler(PVMCC pVM, PPGMPAGE pPage, RTGCPHYS GCPh
      *        more. */
     /* The loop state (big + ugly). */
     PPGMPHYSHANDLER pPhys       = NULL;
-    uint32_t        offPhys     = GUEST_PAGE_SIZE;
-    uint32_t        offPhysLast = GUEST_PAGE_SIZE;
+    uint64_t        offPhys     = GUEST_PAGE_SIZE;
+    uint64_t        offPhysLast = GUEST_PAGE_SIZE;
     bool            fMorePhys   = PGM_PAGE_HAS_ACTIVE_PHYSICAL_HANDLERS(pPage);
 
     /* The loop. */
@@ -4272,7 +4272,7 @@ static VBOXSTRICTRC pgmPhysWriteHandler(PVMCC pVM, PPGMPAGE pPage, RTGCPHYS GCPh
             if (RT_SUCCESS_NP(rcStrict))
             {
                 offPhys = 0;
-                offPhysLast = pPhys->KeyLast - GCPhys; /* ASSUMES < 4GB handlers... */
+                offPhysLast = pPhys->KeyLast - GCPhys;
             }
             else
             {
@@ -4287,8 +4287,7 @@ static VBOXSTRICTRC pgmPhysWriteHandler(PVMCC pVM, PPGMPAGE pPage, RTGCPHYS GCPh
                     && pPhys->Key <= GCPhys + (cbWrite - 1))
                 {
                     offPhys     = pPhys->Key     - GCPhys;
-                    offPhysLast = pPhys->KeyLast - GCPhys; /* ASSUMES < 4GB handlers... */
-                    Assert(pPhys->KeyLast - pPhys->Key < _4G);
+                    offPhysLast = pPhys->KeyLast - GCPhys;
                 }
                 else
                 {
@@ -4303,8 +4302,7 @@ static VBOXSTRICTRC pgmPhysWriteHandler(PVMCC pVM, PPGMPAGE pPage, RTGCPHYS GCPh
          * Handle access to space without handlers (that's easy).
          */
         VBOXSTRICTRC rcStrict2 = VINF_PGM_HANDLER_DO_DEFAULT;
-        uint32_t cbRange = (uint32_t)cbWrite;
-        Assert(cbRange == cbWrite);
+        size_t cbRange = cbWrite;
 
         /*
          * Physical handler.
