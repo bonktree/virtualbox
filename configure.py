@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# $Id: configure.py 112960 2026-02-11 16:03:44Z andreas.loeffler@oracle.com $
+# $Id: configure.py 112961 2026-02-11 16:46:20Z andreas.loeffler@oracle.com $
 """
 Configuration script for building VirtualBox.
 
@@ -61,7 +61,7 @@ SPDX-License-Identifier: GPL-3.0-only
 # External Python modules or other dependencies are not allowed!
 #
 
-__revision__ = "$Revision: 112960 $"
+__revision__ = "$Revision: 112961 $"
 
 import argparse
 import ctypes
@@ -3312,7 +3312,7 @@ g_aoLibs = [
     LibraryCheck("qt", [ "QtCore/QtGlobal" ], [ ], aeTargets = [ BuildTarget.ANY ],
                  sCode = '#define IN_RING3\n#include <QtCore/QtGlobal>\nint main() { std::cout << QT_VERSION_STR << std::endl;\n#if QT_VERSION >= 6 * 65536 + 8 * 256\nreturn 0;\n#else\nreturn 1;\n#endif\n}',
                  fnCallback = LibraryCheck.checkCallback_qt,
-                 sSdkName = 'QT6', dictDefinesToSetIfFailed = { 'VBOX_WITH_QTGUI' : '' }),
+                 sSdkName = 'QT6', dictDefinesToSetIfFailed = { 'VBOX_WITH_QTGUI' : '', 'VBOX_WITH_NLS' : '', 'VBOX_WITH_MAIN_NLS': '', 'VBOX_WITH_PUEL_NLS': '', 'VBOX_WITH_VBOXMANAGE_NLS': '' }),
     LibraryCheck("libsdl2", [ "SDL2/SDL.h" ], [ "libSDL2" ], aeTargets = [ BuildTarget.LINUX, BuildTarget.SOLARIS ],
                  sCode = '#include <SDL2/SDL.h>\nint main() { printf("%d.%d.%d", SDL_MAJOR_VERSION, SDL_MINOR_VERSION, SDL_PATCHLEVEL); return 0; }\n',
                  dictDefinesToSetIfFailed = { 'VBOX_WITH_VBOXSDL' : '' }),
@@ -3346,7 +3346,7 @@ g_aoTools = [
     ToolCheck("gsoap", asCmd = [ ], fnCallback = ToolCheck.checkCallback_GSOAP ),
     ToolCheck("gsoapsources", asCmd = [ ], fnCallback = ToolCheck.checkCallback_GSOAPSources ),
     ToolCheck("java", asCmd = [ ], fnCallback = ToolCheck.checkCallback_Java,
-              dictDefinesToSetIfFailed = { 'VBOX_WITH_JWS' : '', 'VBOX_WITH_JMSCOM': '', 'VBOX_WITH_JXPCOM' : '' }),
+              dictDefinesToSetIfFailed = { 'VBOX_WITH_DOCS' : '', 'VBOX_WITH_JWS' : '', 'VBOX_WITH_JMSCOM': '', 'VBOX_WITH_JXPCOM' : '' }),
     ToolCheck("makeself", asCmd = [ ], fnCallback = ToolCheck.checkCallback_makeself, aeTargets = [ BuildTarget.LINUX ]),
     # On Solaris nasm is not officially supported.
     ToolCheck("nasm", asCmd = [ "nasm" ], fnCallback = ToolCheck.checkCallback_NASM, aeTargetsExcluded = [ BuildTarget.SOLARIS ]),
@@ -3869,8 +3869,12 @@ def main():
         # or with Extension Pack feature disabled.
         lambda env: { 'VBOX_WITH_EXTPACK_PUEL_BUILD': '' } if g_oArgs.config_only_additions
                                                            or g_oArgs.config_disable_extpack else {},
-        # Disable FE/Qt if Qt is disabled.
-        lambda env: { 'VBOX_WITH_QTGUI': '' } if g_oArgs.config_libs_disable_qt else {},
+        # Disable FE/Qt + NLS translations (requires lrelease) if Qt is disabled.
+        lambda env: { 'VBOX_WITH_QTGUI': '',
+                      'VBOX_WITH_NLS': '',
+                      'VBOX_WITH_MAIN_NLS': '',
+                      'VBOX_WITH_PUEL_NLS': '',
+                      'VBOX_WITH_VBOXMANAGE_NLS': '' } if g_oArgs.config_libs_disable_qt else {},
         # Disable components if we want to build headless.
         lambda env: { 'VBOX_WITH_HEADLESS': '1', \
                       'VBOX_WITH_QTGUI': '', \
@@ -3893,8 +3897,9 @@ def main():
         # Disable building webservices if GSOAP is disabled.
         lambda env: { 'VBOX_WITH_GSOAP': '', \
                       'VBOX_WITH_WEBSERVICES': '' } if g_oArgs.config_tools_disable_gsoap else {},
-        # Disable building Java webservices if java is disabled.
-        lambda env: { 'VBOX_WITH_JWS' : '', \
+        # Disable building documentation (requires ant) + Java webservices if java is disabled.
+        lambda env: { 'VBOX_WITH_DOCS' : '', \
+                      'VBOX_WITH_JWS' : '', \
                       'VBOX_WITH_JMSCOM': '', \
                       'VBOX_WITH_JXPCOM' : '' } if g_oArgs.config_tools_disable_java else {},
         # Disable components which require COM.
