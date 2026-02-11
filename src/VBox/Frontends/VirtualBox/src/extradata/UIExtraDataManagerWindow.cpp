@@ -1,4 +1,4 @@
-/* $Id: UIExtraDataManagerWindow.cpp 112952 2026-02-11 14:20:19Z sergey.dubov@oracle.com $ */
+/* $Id: UIExtraDataManagerWindow.cpp 112953 2026-02-11 14:30:58Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - UIExtraDataManagerWindow class implementation.
  */
@@ -27,10 +27,8 @@
 
 /* Qt includes: */
 #include <QApplication>
-# include <QComboBox>
 #include <QHeaderView>
 #include <QLabel>
-#include <QLineEdit>
 #include <QListView>
 #include <QMenu>
 #include <QMenuBar>
@@ -56,7 +54,6 @@
 #include "UIVirtualBoxEventHandler.h"
 #include "UILoggingDefs.h"
 #include "UIMessageCenter.h"
-#include "VBoxUtils.h"
 
 /* COM includes: */
 #include "CMachine.h"
@@ -213,8 +210,20 @@ bool UIChooserPaneSortingModel::lessThan(const QModelIndex &leftIdx, const QMode
 
 UIAddExtraDataRecordDialog::UIAddExtraDataRecordDialog(QWidget *pParent)
     : QIDialog(pParent)
+    , m_pEditorKey(0)
+    , m_pEditorValue(0)
 {
     prepare();
+}
+
+QString UIAddExtraDataRecordDialog::key() const
+{
+    return m_pEditorKey->currentText();
+}
+
+QString UIAddExtraDataRecordDialog::value() const
+{
+    return m_pEditorValue->text();
 }
 
 void UIAddExtraDataRecordDialog::prepare()
@@ -242,33 +251,25 @@ void UIAddExtraDataRecordDialog::prepare()
                 pInputLayout->addWidget(pLabelKey, 0, 0);
             }
             /* Create key-editor: */
-            QComboBox *pEditorKey = new QComboBox;
+            m_pEditorKey = new QComboBox;
             {
                 /* Configure key-editor: */
-                pEditorKey->setEditable(true);
-                pEditorKey->addItems(knownExtraDataKeys());
-                pLabelKey->setBuddy(pEditorKey);
-                /* Create key-editor property setter: */
-                QObjectPropertySetter *pKeyPropertySetter = new QObjectPropertySetter(this, "Key");
-                AssertPtrReturnVoid(pKeyPropertySetter);
-                {
-                    /* Configure key-editor property setter: */
-                    connect(pEditorKey, &QComboBox::editTextChanged,
-                            pKeyPropertySetter, &QObjectPropertySetter::sltAssignProperty);
-                }
+                m_pEditorKey->setEditable(true);
+                m_pEditorKey->addItems(knownExtraDataKeys());
+                pLabelKey->setBuddy(m_pEditorKey);
                 /* Create key-editor validator: */
                 QObjectValidator *pKeyValidator
                     = new QObjectValidator(new QRegularExpressionValidator(QRegularExpression("[\\s\\S]+"), this));
                 AssertPtrReturnVoid(pKeyValidator);
                 {
                     /* Configure key-editor validator: */
-                    connect(pEditorKey, &QComboBox::editTextChanged,
+                    connect(m_pEditorKey, &QComboBox::editTextChanged,
                             pKeyValidator, &QObjectValidator::sltValidate);
                     /* Add key-editor validator into dialog validator group: */
                     pValidatorGroup->addObjectValidator(pKeyValidator);
                 }
                 /* Add key-editor into input-layout: */
-                pInputLayout->addWidget(pEditorKey, 0, 1);
+                pInputLayout->addWidget(m_pEditorKey, 0, 1);
             }
             /* Create value-label: */
             QLabel *pLabelValue = new QLabel("&Value:");
@@ -279,31 +280,23 @@ void UIAddExtraDataRecordDialog::prepare()
                 pInputLayout->addWidget(pLabelValue, 1, 0);
             }
             /* Create value-editor: */
-            QLineEdit *pEditorValue = new QLineEdit;
+            m_pEditorValue = new QLineEdit;
             {
                 /* Configure value-editor: */
-                pLabelValue->setBuddy(pEditorValue);
-                /* Create value-editor property setter: */
-                QObjectPropertySetter *pValuePropertySetter = new QObjectPropertySetter(this, "Value");
-                AssertPtrReturnVoid(pValuePropertySetter);
-                {
-                    /* Configure value-editor property setter: */
-                    connect(pEditorValue, &QLineEdit::textEdited,
-                            pValuePropertySetter, &QObjectPropertySetter::sltAssignProperty);
-                }
+                pLabelValue->setBuddy(m_pEditorValue);
                 /* Create value-editor validator: */
                 QObjectValidator *pValueValidator
                     = new QObjectValidator(new QRegularExpressionValidator(QRegularExpression("[\\s\\S]+"), this));
                 AssertPtrReturnVoid(pValueValidator);
                 {
                     /* Configure value-editor validator: */
-                    connect(pEditorValue, &QLineEdit::textEdited,
+                    connect(m_pEditorValue, &QLineEdit::textEdited,
                             pValueValidator, &QObjectValidator::sltValidate);
                     /* Add value-editor validator into dialog validator group: */
                     pValidatorGroup->addObjectValidator(pValueValidator);
                 }
                 /* Add value-editor into input-layout: */
-                pInputLayout->addWidget(pEditorValue, 1, 1);
+                pInputLayout->addWidget(m_pEditorValue, 1, 1);
             }
             /* Add input-layout into main-layout: */
             pMainLayout->addLayout(pInputLayout);
@@ -727,7 +720,7 @@ void UIExtraDataManagerWindow::sltAdd()
             knownKeys << dataKey(iKeyRow);
 
         /* If new key exists: */
-        if (knownKeys.contains(pInputDialog->property("Key").toString()))
+        if (knownKeys.contains(pInputDialog->key()))
         {
             /* Show warning and ask for overwriting approval: */
             if (!msgCenter().questionBinary(this, MessageType_Question,
@@ -744,8 +737,8 @@ void UIExtraDataManagerWindow::sltAdd()
 
         /* Add new extra-data key if necessary: */
         if (fAdd)
-            gEDataManager->setExtraDataString(pInputDialog->property("Key").toString(),
-                                              pInputDialog->property("Value").toString(),
+            gEDataManager->setExtraDataString(pInputDialog->key(),
+                                              pInputDialog->value(),
                                               currentChooserID());
     }
 

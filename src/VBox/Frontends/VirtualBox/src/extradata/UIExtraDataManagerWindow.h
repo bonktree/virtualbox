@@ -1,4 +1,4 @@
-/* $Id: UIExtraDataManagerWindow.h 112952 2026-02-11 14:20:19Z sergey.dubov@oracle.com $ */
+/* $Id: UIExtraDataManagerWindow.h 112953 2026-02-11 14:30:58Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - UIExtraDataManagerWindow class declaration.
  */
@@ -32,6 +32,8 @@
 #endif
 
 /* Qt includes: */
+#include <QComboBox>
+#include <QLineEdit>
 #include <QModelIndex>
 #include <QSize>
 #include <QSortFilterProxyModel>
@@ -46,7 +48,6 @@
 /* Forward declarations: */
 class QAction;
 class QItemSelection;
-class QLineEdit;
 class QListView;
 class QObject;
 class QPainter;
@@ -130,6 +131,11 @@ public:
     /** Constructs add new extra-data record dislog passing @a pParent to the base-class. */
     UIAddExtraDataRecordDialog(QWidget *pParent);
 
+    /** Returns key. */
+    QString key() const;
+    /** Returns value. */
+    QString value() const;
+
 private:
 
     /** Prepares everything. */
@@ -137,6 +143,11 @@ private:
 
     /** Lists known extra-data keys. */
     static QStringList knownExtraDataKeys();
+
+    /** Holds the key editor instance. */
+    QComboBox *m_pEditorKey;
+    /** Holds the value editor instance. */
+    QLineEdit *m_pEditorValue;
 };
 
 /** QIMainWindow extension
