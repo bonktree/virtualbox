@@ -1,4 +1,4 @@
-/* $Id: UIExtraDataManagerWindow.cpp 112949 2026-02-11 14:04:57Z sergey.dubov@oracle.com $ */
+/* $Id: UIExtraDataManagerWindow.cpp 112952 2026-02-11 14:20:19Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - UIExtraDataManagerWindow class implementation.
  */
@@ -44,7 +44,6 @@
 #include <QXmlStreamReader>
 
 /* GUI includes: */
-#include "QIDialog.h"
 #include "QIDialogButtonBox.h"
 #include "QIFileDialog.h"
 #include "QISplitter.h"
@@ -205,6 +204,236 @@ bool UIChooserPaneSortingModel::lessThan(const QModelIndex &leftIdx, const QMode
         return false;
     /* Compare role finally: */
     return QSortFilterProxyModel::lessThan(leftIdx, rightIdx);
+}
+
+
+/*********************************************************************************************************************************
+*   Class UIAddExtraDataRecordDialog implementation.                                                                             *
+*********************************************************************************************************************************/
+
+UIAddExtraDataRecordDialog::UIAddExtraDataRecordDialog(QWidget *pParent)
+    : QIDialog(pParent)
+{
+    prepare();
+}
+
+void UIAddExtraDataRecordDialog::prepare()
+{
+    /* Configure self: */
+    setMinimumWidth(400);
+
+    /* Create main-layout: */
+    QVBoxLayout *pMainLayout = new QVBoxLayout(this);
+    AssertPtrReturnVoid(pMainLayout);
+    {
+        /* Create dialog validator group: */
+        QObjectValidatorGroup *pValidatorGroup = new QObjectValidatorGroup(this);
+        AssertReturnVoid(pValidatorGroup);
+        /* Create input-layout: */
+        QGridLayout *pInputLayout = new QGridLayout;
+        AssertPtrReturnVoid(pInputLayout);
+        {
+            /* Create key-label: */
+            QLabel *pLabelKey = new QLabel("&Name:");
+            {
+                /* Configure key-label: */
+                pLabelKey->setAlignment(Qt::AlignRight);
+                /* Add key-label into input-layout: */
+                pInputLayout->addWidget(pLabelKey, 0, 0);
+            }
+            /* Create key-editor: */
+            QComboBox *pEditorKey = new QComboBox;
+            {
+                /* Configure key-editor: */
+                pEditorKey->setEditable(true);
+                pEditorKey->addItems(knownExtraDataKeys());
+                pLabelKey->setBuddy(pEditorKey);
+                /* Create key-editor property setter: */
+                QObjectPropertySetter *pKeyPropertySetter = new QObjectPropertySetter(this, "Key");
+                AssertPtrReturnVoid(pKeyPropertySetter);
+                {
+                    /* Configure key-editor property setter: */
+                    connect(pEditorKey, &QComboBox::editTextChanged,
+                            pKeyPropertySetter, &QObjectPropertySetter::sltAssignProperty);
+                }
+                /* Create key-editor validator: */
+                QObjectValidator *pKeyValidator
+                    = new QObjectValidator(new QRegularExpressionValidator(QRegularExpression("[\\s\\S]+"), this));
+                AssertPtrReturnVoid(pKeyValidator);
+                {
+                    /* Configure key-editor validator: */
+                    connect(pEditorKey, &QComboBox::editTextChanged,
+                            pKeyValidator, &QObjectValidator::sltValidate);
+                    /* Add key-editor validator into dialog validator group: */
+                    pValidatorGroup->addObjectValidator(pKeyValidator);
+                }
+                /* Add key-editor into input-layout: */
+                pInputLayout->addWidget(pEditorKey, 0, 1);
+            }
+            /* Create value-label: */
+            QLabel *pLabelValue = new QLabel("&Value:");
+            {
+                /* Configure value-label: */
+                pLabelValue->setAlignment(Qt::AlignRight);
+                /* Add value-label into input-layout: */
+                pInputLayout->addWidget(pLabelValue, 1, 0);
+            }
+            /* Create value-editor: */
+            QLineEdit *pEditorValue = new QLineEdit;
+            {
+                /* Configure value-editor: */
+                pLabelValue->setBuddy(pEditorValue);
+                /* Create value-editor property setter: */
+                QObjectPropertySetter *pValuePropertySetter = new QObjectPropertySetter(this, "Value");
+                AssertPtrReturnVoid(pValuePropertySetter);
+                {
+                    /* Configure value-editor property setter: */
+                    connect(pEditorValue, &QLineEdit::textEdited,
+                            pValuePropertySetter, &QObjectPropertySetter::sltAssignProperty);
+                }
+                /* Create value-editor validator: */
+                QObjectValidator *pValueValidator
+                    = new QObjectValidator(new QRegularExpressionValidator(QRegularExpression("[\\s\\S]+"), this));
+                AssertPtrReturnVoid(pValueValidator);
+                {
+                    /* Configure value-editor validator: */
+                    connect(pEditorValue, &QLineEdit::textEdited,
+                            pValueValidator, &QObjectValidator::sltValidate);
+                    /* Add value-editor validator into dialog validator group: */
+                    pValidatorGroup->addObjectValidator(pValueValidator);
+                }
+                /* Add value-editor into input-layout: */
+                pInputLayout->addWidget(pEditorValue, 1, 1);
+            }
+            /* Add input-layout into main-layout: */
+            pMainLayout->addLayout(pInputLayout);
+        }
+        /* Create stretch: */
+        pMainLayout->addStretch();
+        /* Create dialog button-box: */
+        QIDialogButtonBox *pButtonBox = new QIDialogButtonBox;
+        AssertPtrReturnVoid(pButtonBox);
+        {
+            /* Configure button-box: */
+            pButtonBox->setStandardButtons(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+            pButtonBox->button(QDialogButtonBox::Ok)->setAutoDefault(true);
+            pButtonBox->button(QDialogButtonBox::Ok)->setEnabled(pValidatorGroup->result());
+            pButtonBox->button(QDialogButtonBox::Cancel)->setShortcut(Qt::Key_Escape);
+            connect(pValidatorGroup, &QObjectValidatorGroup::sigValidityChange,
+                    pButtonBox->button(QDialogButtonBox::Ok), &QPushButton::setEnabled);
+            connect(pButtonBox, &QIDialogButtonBox::accepted, this, &QIDialog::accept);
+            connect(pButtonBox, &QIDialogButtonBox::rejected, this, &QIDialog::reject);
+            /* Add button-box into main-layout: */
+            pMainLayout->addWidget(pButtonBox);
+        }
+    }
+
+    /* Apply language settings: */
+    setWindowTitle("Add extra-data record..");
+}
+
+/* static */
+QStringList UIAddExtraDataRecordDialog::knownExtraDataKeys()
+{
+    return QStringList()
+           << QString()
+           << GUI_RestrictedDialogs
+           << GUI_SuppressMessages << GUI_InvertMessageOption
+#ifdef VBOX_NOTIFICATION_CENTER_WITH_KEEP_BUTTON
+           << GUI_NotificationCenter_KeepSuccessfullProgresses
+#endif
+           << GUI_NotificationCenter_Alignment
+           << GUI_NotificationCenter_Order
+           << GUI_PreventBetaLabel
+#ifdef VBOX_GUI_WITH_NETWORK_MANAGER
+           << GUI_PreventApplicationUpdate << GUI_UpdateDate << GUI_UpdateCheckCount
+#endif
+           << GUI_Progress_LegacyMode
+           << GUI_Customizations
+           << GUI_RestrictedGlobalSettingsPages << GUI_RestrictedMachineSettingsPages
+           << GUI_LanguageID
+           << GUI_ActivateHoveredMachineWindow
+           << GUI_DisableHostScreenSaver
+           << GUI_Input_SelectorShortcuts << GUI_Input_MachineShortcuts
+           << GUI_RecentFolderHD << GUI_RecentFolderCD << GUI_RecentFolderFD
+           << GUI_VISOCreator_RecentFolder << GUI_VISOCreator_DialogGeometry
+           << GUI_RecentListHD << GUI_RecentListCD << GUI_RecentListFD
+           << GUI_RestrictedNetworkAttachmentTypes
+           << GUI_LastSelectorWindowPosition << GUI_SplitterSizes
+           << GUI_Toolbar << GUI_Toolbar_Text
+           << GUI_Toolbar_MachineTools_Order << GUI_Toolbar_GlobalTools_Order
+           << GUI_Tools_LastItemsSelected << GUI_Tools_Detached
+           << GUI_Statusbar
+           << GUI_GroupDefinitions << GUI_LastItemSelected
+           << GUI_Details_Elements
+           << GUI_Details_Elements_Preview_UpdateInterval
+           << GUI_SnapshotManager_Details_Expanded
+           << GUI_VirtualMediaManager_Details_Expanded
+           << GUI_HostNetworkManager_Details_Expanded
+           << GUI_CloudProfileManager_Restrictions
+           << GUI_CloudProfileManager_Details_Expanded
+           << GUI_CloudConsoleManager_Restrictions
+           << GUI_CloudConsoleManager_Details_Expanded
+           << GUI_CloudConsole_PublicKey_Path
+           << GUI_HideFromManager << GUI_HideDetails
+           << GUI_PreventReconfiguration << GUI_PreventSnapshotOperations
+#ifndef VBOX_WS_MAC
+           << GUI_MachineWindowIcons << GUI_MachineWindowNamePostfix
+#endif
+           << GUI_LastNormalWindowPosition << GUI_LastScaleWindowPosition
+#ifndef VBOX_WS_MAC
+           << GUI_MenuBar_Enabled
+#endif
+           << GUI_MenuBar_ContextMenu_Enabled
+           << GUI_RestrictedRuntimeMenus
+           << GUI_RestrictedRuntimeApplicationMenuActions
+           << GUI_RestrictedRuntimeMachineMenuActions
+           << GUI_RestrictedRuntimeViewMenuActions
+           << GUI_RestrictedRuntimeInputMenuActions
+           << GUI_RestrictedRuntimeDevicesMenuActions
+#ifdef VBOX_WITH_DEBUGGER_GUI
+           << GUI_RestrictedRuntimeDebuggerMenuActions
+#endif
+#ifdef VBOX_WS_MAC
+           << GUI_RestrictedRuntimeWindowMenuActions
+#endif
+           << GUI_RestrictedRuntimeHelpMenuActions
+           << GUI_RestrictedVisualStates
+           << GUI_Fullscreen << GUI_Seamless << GUI_Scale
+#ifdef VBOX_WS_NIX
+           << GUI_Fullscreen_LegacyMode
+           << GUI_DistinguishMachineWindowGroups
+#endif
+           << GUI_AutoresizeGuest << GUI_LastVisibilityStatusForGuestScreen << GUI_LastGuestSizeHint
+           << GUI_VirtualScreenToHostScreen << GUI_AutomountGuestScreens
+#ifndef VBOX_WS_MAC
+           << GUI_ShowMiniToolBar << GUI_MiniToolBarAutoHide << GUI_MiniToolBarAlignment
+#endif
+           << GUI_StatusBar_Enabled << GUI_StatusBar_ContextMenu_Enabled << GUI_RestrictedStatusBarIndicators << GUI_StatusBar_IndicatorOrder
+#ifdef VBOX_WS_MAC
+           << GUI_RealtimeDockIconUpdateEnabled << GUI_RealtimeDockIconUpdateMonitor << GUI_DockIconDisableOverlay
+#endif
+           << GUI_PassCAD
+           << GUI_MouseCapturePolicy
+           << GUI_GuruMeditationHandler
+           << GUI_HidLedsSync
+           << GUI_ScaleFactor << GUI_Scaling_Optimization
+           << GUI_SessionInformationDialogGeometry
+           << GUI_GuestControl_ProcessControlSplitterHints
+           << GUI_GuestControl_FileManagerDialogGeometry
+           << GUI_GuestControl_FileManagerOptions
+           << GUI_GuestControl_ProcessControlDialogGeometry
+           << GUI_DefaultCloseAction << GUI_RestrictedCloseActions
+           << GUI_LastCloseAction << GUI_CloseActionHook << GUI_DiscardStateOnPowerOff
+#ifdef VBOX_WITH_DEBUGGER_GUI
+           << GUI_Dbg_Enabled << GUI_Dbg_AutoShow
+#endif
+           << GUI_ExtraDataManager_Geometry << GUI_ExtraDataManager_SplitterHints
+           << GUI_LogWindowGeometry
+           << GUI_HelpBrowser_LastURLList
+           << GUI_HelpBrowser_DialogGeometry
+           << GUI_HelpBrowser_Bookmarks
+           << GUI_HelpBrowser_ZoomPercentage;
 }
 
 
@@ -483,118 +712,8 @@ void UIExtraDataManagerWindow::sltAdd()
     AssertReturnVoid(pSenderAction && m_pActionAdd);
 
     /* Create input-dialog: */
-    QPointer<QIDialog> pInputDialog = new QIDialog(this);
+    QPointer<UIAddExtraDataRecordDialog> pInputDialog = new UIAddExtraDataRecordDialog(this);
     AssertPtrReturnVoid(pInputDialog.data());
-    {
-        /* Configure input-dialog: */
-        pInputDialog->setWindowTitle("Add extra-data record..");
-        pInputDialog->setMinimumWidth(400);
-        /* Create main-layout: */
-        QVBoxLayout *pMainLayout = new QVBoxLayout(pInputDialog);
-        AssertPtrReturnVoid(pMainLayout);
-        {
-            /* Create dialog validator group: */
-            QObjectValidatorGroup *pValidatorGroup = new QObjectValidatorGroup(pInputDialog);
-            AssertReturnVoid(pValidatorGroup);
-            /* Create input-layout: */
-            QGridLayout *pInputLayout = new QGridLayout;
-            AssertPtrReturnVoid(pInputLayout);
-            {
-                /* Create key-label: */
-                QLabel *pLabelKey = new QLabel("&Name:");
-                {
-                    /* Configure key-label: */
-                    pLabelKey->setAlignment(Qt::AlignRight);
-                    /* Add key-label into input-layout: */
-                    pInputLayout->addWidget(pLabelKey, 0, 0);
-                }
-                /* Create key-editor: */
-                QComboBox *pEditorKey = new QComboBox;
-                {
-                    /* Configure key-editor: */
-                    pEditorKey->setEditable(true);
-                    pEditorKey->addItems(knownExtraDataKeys());
-                    pLabelKey->setBuddy(pEditorKey);
-                    /* Create key-editor property setter: */
-                    QObjectPropertySetter *pKeyPropertySetter = new QObjectPropertySetter(pInputDialog, "Key");
-                    AssertPtrReturnVoid(pKeyPropertySetter);
-                    {
-                        /* Configure key-editor property setter: */
-                        connect(pEditorKey, &QComboBox::editTextChanged,
-                                pKeyPropertySetter, &QObjectPropertySetter::sltAssignProperty);
-                    }
-                    /* Create key-editor validator: */
-                    QObjectValidator *pKeyValidator
-                        = new QObjectValidator(new QRegularExpressionValidator(QRegularExpression("[\\s\\S]+"), this));
-                    AssertPtrReturnVoid(pKeyValidator);
-                    {
-                        /* Configure key-editor validator: */
-                        connect(pEditorKey, &QComboBox::editTextChanged,
-                                pKeyValidator, &QObjectValidator::sltValidate);
-                        /* Add key-editor validator into dialog validator group: */
-                        pValidatorGroup->addObjectValidator(pKeyValidator);
-                    }
-                    /* Add key-editor into input-layout: */
-                    pInputLayout->addWidget(pEditorKey, 0, 1);
-                }
-                /* Create value-label: */
-                QLabel *pLabelValue = new QLabel("&Value:");
-                {
-                    /* Configure value-label: */
-                    pLabelValue->setAlignment(Qt::AlignRight);
-                    /* Add value-label into input-layout: */
-                    pInputLayout->addWidget(pLabelValue, 1, 0);
-                }
-                /* Create value-editor: */
-                QLineEdit *pEditorValue = new QLineEdit;
-                {
-                    /* Configure value-editor: */
-                    pLabelValue->setBuddy(pEditorValue);
-                    /* Create value-editor property setter: */
-                    QObjectPropertySetter *pValuePropertySetter = new QObjectPropertySetter(pInputDialog, "Value");
-                    AssertPtrReturnVoid(pValuePropertySetter);
-                    {
-                        /* Configure value-editor property setter: */
-                        connect(pEditorValue, &QLineEdit::textEdited,
-                                pValuePropertySetter, &QObjectPropertySetter::sltAssignProperty);
-                    }
-                    /* Create value-editor validator: */
-                    QObjectValidator *pValueValidator
-                        = new QObjectValidator(new QRegularExpressionValidator(QRegularExpression("[\\s\\S]+"), this));
-                    AssertPtrReturnVoid(pValueValidator);
-                    {
-                        /* Configure value-editor validator: */
-                        connect(pEditorValue, &QLineEdit::textEdited,
-                                pValueValidator, &QObjectValidator::sltValidate);
-                        /* Add value-editor validator into dialog validator group: */
-                        pValidatorGroup->addObjectValidator(pValueValidator);
-                    }
-                    /* Add value-editor into input-layout: */
-                    pInputLayout->addWidget(pEditorValue, 1, 1);
-                }
-                /* Add input-layout into main-layout: */
-                pMainLayout->addLayout(pInputLayout);
-            }
-            /* Create stretch: */
-            pMainLayout->addStretch();
-            /* Create dialog button-box: */
-            QIDialogButtonBox *pButtonBox = new QIDialogButtonBox;
-            AssertPtrReturnVoid(pButtonBox);
-            {
-                /* Configure button-box: */
-                pButtonBox->setStandardButtons(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
-                pButtonBox->button(QDialogButtonBox::Ok)->setAutoDefault(true);
-                pButtonBox->button(QDialogButtonBox::Ok)->setEnabled(pValidatorGroup->result());
-                pButtonBox->button(QDialogButtonBox::Cancel)->setShortcut(Qt::Key_Escape);
-                connect(pValidatorGroup, &QObjectValidatorGroup::sigValidityChange,
-                        pButtonBox->button(QDialogButtonBox::Ok), &QPushButton::setEnabled);
-                connect(pButtonBox, &QIDialogButtonBox::accepted, pInputDialog.data(), &QIDialog::accept);
-                connect(pButtonBox, &QIDialogButtonBox::rejected, pInputDialog.data(), &QIDialog::reject);
-                /* Add button-box into main-layout: */
-                pMainLayout->addWidget(pButtonBox);
-            }
-        }
-    }
 
     /* Execute input-dialog: */
     if (pInputDialog->exec() == QDialog::Accepted)
@@ -1393,108 +1512,4 @@ void UIExtraDataManagerWindow::sortData()
     const int iSortSection = pHHeader->sortIndicatorSection();
     const Qt::SortOrder sortOrder = pHHeader->sortIndicatorOrder();
     m_pModelProxyOfData->sort(iSortSection, sortOrder);
-}
-
-/* static */
-QStringList UIExtraDataManagerWindow::knownExtraDataKeys()
-{
-    return QStringList()
-           << QString()
-           << GUI_RestrictedDialogs
-           << GUI_SuppressMessages << GUI_InvertMessageOption
-#ifdef VBOX_NOTIFICATION_CENTER_WITH_KEEP_BUTTON
-           << GUI_NotificationCenter_KeepSuccessfullProgresses
-#endif
-           << GUI_NotificationCenter_Alignment
-           << GUI_NotificationCenter_Order
-           << GUI_PreventBetaLabel
-#ifdef VBOX_GUI_WITH_NETWORK_MANAGER
-           << GUI_PreventApplicationUpdate << GUI_UpdateDate << GUI_UpdateCheckCount
-#endif
-           << GUI_Progress_LegacyMode
-           << GUI_Customizations
-           << GUI_RestrictedGlobalSettingsPages << GUI_RestrictedMachineSettingsPages
-           << GUI_LanguageID
-           << GUI_ActivateHoveredMachineWindow
-           << GUI_DisableHostScreenSaver
-           << GUI_Input_SelectorShortcuts << GUI_Input_MachineShortcuts
-           << GUI_RecentFolderHD << GUI_RecentFolderCD << GUI_RecentFolderFD
-           << GUI_VISOCreator_RecentFolder << GUI_VISOCreator_DialogGeometry
-           << GUI_RecentListHD << GUI_RecentListCD << GUI_RecentListFD
-           << GUI_RestrictedNetworkAttachmentTypes
-           << GUI_LastSelectorWindowPosition << GUI_SplitterSizes
-           << GUI_Toolbar << GUI_Toolbar_Text
-           << GUI_Toolbar_MachineTools_Order << GUI_Toolbar_GlobalTools_Order
-           << GUI_Tools_LastItemsSelected << GUI_Tools_Detached
-           << GUI_Statusbar
-           << GUI_GroupDefinitions << GUI_LastItemSelected
-           << GUI_Details_Elements
-           << GUI_Details_Elements_Preview_UpdateInterval
-           << GUI_SnapshotManager_Details_Expanded
-           << GUI_VirtualMediaManager_Details_Expanded
-           << GUI_HostNetworkManager_Details_Expanded
-           << GUI_CloudProfileManager_Restrictions
-           << GUI_CloudProfileManager_Details_Expanded
-           << GUI_CloudConsoleManager_Restrictions
-           << GUI_CloudConsoleManager_Details_Expanded
-           << GUI_CloudConsole_PublicKey_Path
-           << GUI_HideFromManager << GUI_HideDetails
-           << GUI_PreventReconfiguration << GUI_PreventSnapshotOperations
-#ifndef VBOX_WS_MAC
-           << GUI_MachineWindowIcons << GUI_MachineWindowNamePostfix
-#endif
-           << GUI_LastNormalWindowPosition << GUI_LastScaleWindowPosition
-#ifndef VBOX_WS_MAC
-           << GUI_MenuBar_Enabled
-#endif
-           << GUI_MenuBar_ContextMenu_Enabled
-           << GUI_RestrictedRuntimeMenus
-           << GUI_RestrictedRuntimeApplicationMenuActions
-           << GUI_RestrictedRuntimeMachineMenuActions
-           << GUI_RestrictedRuntimeViewMenuActions
-           << GUI_RestrictedRuntimeInputMenuActions
-           << GUI_RestrictedRuntimeDevicesMenuActions
-#ifdef VBOX_WITH_DEBUGGER_GUI
-           << GUI_RestrictedRuntimeDebuggerMenuActions
-#endif
-#ifdef VBOX_WS_MAC
-           << GUI_RestrictedRuntimeWindowMenuActions
-#endif
-           << GUI_RestrictedRuntimeHelpMenuActions
-           << GUI_RestrictedVisualStates
-           << GUI_Fullscreen << GUI_Seamless << GUI_Scale
-#ifdef VBOX_WS_NIX
-           << GUI_Fullscreen_LegacyMode
-           << GUI_DistinguishMachineWindowGroups
-#endif
-           << GUI_AutoresizeGuest << GUI_LastVisibilityStatusForGuestScreen << GUI_LastGuestSizeHint
-           << GUI_VirtualScreenToHostScreen << GUI_AutomountGuestScreens
-#ifndef VBOX_WS_MAC
-           << GUI_ShowMiniToolBar << GUI_MiniToolBarAutoHide << GUI_MiniToolBarAlignment
-#endif
-           << GUI_StatusBar_Enabled << GUI_StatusBar_ContextMenu_Enabled << GUI_RestrictedStatusBarIndicators << GUI_StatusBar_IndicatorOrder
-#ifdef VBOX_WS_MAC
-           << GUI_RealtimeDockIconUpdateEnabled << GUI_RealtimeDockIconUpdateMonitor << GUI_DockIconDisableOverlay
-#endif
-           << GUI_PassCAD
-           << GUI_MouseCapturePolicy
-           << GUI_GuruMeditationHandler
-           << GUI_HidLedsSync
-           << GUI_ScaleFactor << GUI_Scaling_Optimization
-           << GUI_SessionInformationDialogGeometry
-           << GUI_GuestControl_ProcessControlSplitterHints
-           << GUI_GuestControl_FileManagerDialogGeometry
-           << GUI_GuestControl_FileManagerOptions
-           << GUI_GuestControl_ProcessControlDialogGeometry
-           << GUI_DefaultCloseAction << GUI_RestrictedCloseActions
-           << GUI_LastCloseAction << GUI_CloseActionHook << GUI_DiscardStateOnPowerOff
-#ifdef VBOX_WITH_DEBUGGER_GUI
-           << GUI_Dbg_Enabled << GUI_Dbg_AutoShow
-#endif
-           << GUI_ExtraDataManager_Geometry << GUI_ExtraDataManager_SplitterHints
-           << GUI_LogWindowGeometry
-           << GUI_HelpBrowser_LastURLList
-           << GUI_HelpBrowser_DialogGeometry
-           << GUI_HelpBrowser_Bookmarks
-           << GUI_HelpBrowser_ZoomPercentage;
 }

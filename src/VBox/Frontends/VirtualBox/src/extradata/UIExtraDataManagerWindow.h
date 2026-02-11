@@ -1,4 +1,4 @@
-/* $Id: UIExtraDataManagerWindow.h 112949 2026-02-11 14:04:57Z sergey.dubov@oracle.com $ */
+/* $Id: UIExtraDataManagerWindow.h 112952 2026-02-11 14:20:19Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - UIExtraDataManagerWindow class declaration.
  */
@@ -40,6 +40,7 @@
 #include <QUuid>
 
 /* GUI includes: */
+#include "QIDialog.h"
 #include "QIMainWindow.h"
 
 /* Forward declarations: */
@@ -116,6 +117,26 @@ protected:
     /** Returns true if the value of the item referred to by the given index left is less than
       * the value of the item referred to by the given index right, otherwise returns false. */
     virtual bool lessThan(const QModelIndex &leftIdx, const QModelIndex &rightIdx) const RT_OVERRIDE RT_FINAL;
+};
+
+/** QIDialog extension
+  * used for adding new extra-data record. */
+class UIAddExtraDataRecordDialog : public QIDialog
+{
+    Q_OBJECT;
+
+public:
+
+    /** Constructs add new extra-data record dislog passing @a pParent to the base-class. */
+    UIAddExtraDataRecordDialog(QWidget *pParent);
+
+private:
+
+    /** Prepares everything. */
+    void prepare();
+
+    /** Lists known extra-data keys. */
+    static QStringList knownExtraDataKeys();
 };
 
 /** QIMainWindow extension
@@ -299,9 +320,6 @@ private:
 
         /** Sorts data items. */
         void sortData();
-
-        /** Returns the list of known extra-data keys. */
-        static QStringList knownExtraDataKeys();
     /** @} */
 
     /** @name Arguments
