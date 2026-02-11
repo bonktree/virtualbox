@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# $Id: configure.py 112959 2026-02-11 15:46:05Z andreas.loeffler@oracle.com $
+# $Id: configure.py 112960 2026-02-11 16:03:44Z andreas.loeffler@oracle.com $
 """
 Configuration script for building VirtualBox.
 
@@ -61,7 +61,7 @@ SPDX-License-Identifier: GPL-3.0-only
 # External Python modules or other dependencies are not allowed!
 #
 
-__revision__ = "$Revision: 112959 $"
+__revision__ = "$Revision: 112960 $"
 
 import argparse
 import ctypes
@@ -2489,34 +2489,28 @@ class ToolCheck(CheckBase):
         #
         fFound = False;
 
-        if not g_oEnv['KBUILD_PATH']:
-            sPath = os.path.join(g_sScriptPath, 'kBuild/kBuild');
-            if not pathExists(sPath):
-                sPath = os.path.join(g_sScriptPath, 'kBuild');
-            sPathTgt = os.path.join(sPath, 'bin', self.enmBuildTarget + "." + self.enmBuildArch);
-            if pathExists(sPathTgt):
-                if  checkWhich('kmk', 'kBuild kmk', sPathTgt) \
-                and checkWhich('kmk_ash', 'kBuild kmk_ash', sPathTgt) \
+        sPath = self.sRootPath;
+        if not sPath:
+            sPath = g_oEnv['KBUILD_PATH'];
+        if not sPath:
+            sPath = os.environ.get('KBUILD_DEVTOOLS');
+        if not sPath:
+            sPath = os.path.join(g_sScriptPath, 'kBuild');
+
+        if sPath:
+            sPathBin = os.path.join(sPath, 'bin', self.enmBuildTarget + "." + self.enmBuildArch);
+            if pathExists(sPathBin):
+                if  checkWhich('kmk', 'kBuild kmk', sPathBin) \
+                and checkWhich('kmk_ash', 'kBuild kmk_ash', sPathBin) \
                 and isFile(os.path.join(sPath, 'footer.kmk')) \
                 and isFile(os.path.join(sPath, 'header.kmk')) \
                 and isFile(os.path.join(sPath, 'rules.kmk')):
                     g_oEnv.set('KBUILD_PATH', sPath);
-                    self.sCmdPath = g_oEnv['KBUILD_PATH'];
+                    self.sCmdPath = sPathBin;
                     fFound = True;
 
-        if g_oEnv['KBUILD_PATH']:
-            self.print(f"kBuild path set to: { g_oEnv['KBUILD_PATH'] }");
-
-        # If KBUILD_DEVTOOLS is set, check that it's pointing to something useful.
-        sPathDevTools = os.environ.get('KBUILD_DEVTOOLS');
-        if not sPathDevTools:
-            sPathDevTools = os.path.join(g_sScriptPath, 'tools');
-            sPathDevTools = sPathDevTools if pathExists(sPathDevTools) else None;
-        if sPathDevTools:
-            self.print(f"kBuild devtools is set to: '{sPathDevTools}'");
-            fFound = True; # Not fatal (I guess).
-        else: ## @todo Is this fatal?
-            self.printVerbose(1, 'kBuild devtools not found!');
+        if not fFound:
+            self.printError('No suitable kBuild path found, giving up');
 
         return fFound;
 
