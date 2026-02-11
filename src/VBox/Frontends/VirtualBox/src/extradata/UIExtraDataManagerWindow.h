@@ -1,4 +1,4 @@
-/* $Id: UIExtraDataManagerWindow.h 112947 2026-02-11 13:51:59Z sergey.dubov@oracle.com $ */
+/* $Id: UIExtraDataManagerWindow.h 112949 2026-02-11 14:04:57Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - UIExtraDataManagerWindow class declaration.
  */
@@ -78,24 +78,26 @@ class UIChooserPaneDelegate : public QStyledItemDelegate
 
 public:
 
-    /** Constructor. */
+    /** Constructs Chooser pane delegate passing @a pParent to the base-class. */
     UIChooserPaneDelegate(QObject *pParent);
 
 private:
 
-    /** Size-hint calculation routine. */
-    QSize sizeHint(const QStyleOptionViewItem &option, const QModelIndex &index) const RT_OVERRIDE RT_FINAL;
+    /** Returns this item's preferred size.
+      * @param  option  Brings the option set for current model index.
+      * @param  index   Brings currently selected model index. */
+    virtual QSize sizeHint(const QStyleOptionViewItem &option, const QModelIndex &index) const RT_OVERRIDE RT_FINAL;
 
-    /** Paint routine. */
-    void paint(QPainter *pPainter, const QStyleOptionViewItem &option, const QModelIndex &index) const RT_OVERRIDE RT_FINAL;
+    /** Paints @a index item with specified @a option using specified @a pPainter. */
+    virtual void paint(QPainter *pPainter, const QStyleOptionViewItem &option, const QModelIndex &index) const RT_OVERRIDE RT_FINAL;
 
     /** Fetch pixmap info for passed QModelIndex. */
     static void fetchPixmapInfo(const QModelIndex &index, QPixmap &pixmap, QSize &pixmapSize);
 
-    /** Margin. */
-    int m_iMargin;
-    /** Spacing. */
-    int m_iSpacing;
+    /** Holds the item margin. */
+    int  m_iMargin;
+    /** Holds the item spacing. */
+    int  m_iSpacing;
 };
 
 /** QSortFilterProxyModel extension
@@ -106,18 +108,17 @@ class UIChooserPaneSortingModel : public QSortFilterProxyModel
 
 public:
 
-    /** Constructor, passes @a pParent to the QIRichToolButton constructor. */
+    /** Constructs proxy model passing @a pParent to the base-class. */
     UIChooserPaneSortingModel(QObject *pParent);
 
 protected:
 
-    /** Returns true if the value of the item referred to by the given index left
-      * is less than the value of the item referred to by the given index right,
-      * otherwise returns false. */
-    bool lessThan(const QModelIndex &leftIdx, const QModelIndex &rightIdx) const RT_OVERRIDE RT_FINAL;
+    /** Returns true if the value of the item referred to by the given index left is less than
+      * the value of the item referred to by the given index right, otherwise returns false. */
+    virtual bool lessThan(const QModelIndex &leftIdx, const QModelIndex &rightIdx) const RT_OVERRIDE RT_FINAL;
 };
 
-/** QMainWindow extension
+/** QIMainWindow extension
   * providing Extra Data Manager with UI features. */
 class UIExtraDataManagerWindow : public QIMainWindow
 {
@@ -127,16 +128,17 @@ public:
 
     /** @name Constructor/Destructor
       * @{ */
-        /** Extra-data Manager Window constructor. */
+        /** Constructs Extra-data Manager window.
+          * @param  pCenterWidget  Brings the widget to center window accordingly. */
         UIExtraDataManagerWindow(QWidget *pCenterWidget);
-        /** Extra-data Manager Window destructor. */
-        ~UIExtraDataManagerWindow();
+        /** Destructs Extra-data Manager window. */
+        virtual ~UIExtraDataManagerWindow() RT_OVERRIDE RT_FINAL;
     /** @} */
 
     /** @name Management
       * @{ */
-        /** Show and raise. */
-        void showAndRaise(QWidget *pCenterWidget);
+        /** Shows and raises the dialog. */
+        void showAndRaise();
     /** @} */
 
 public slots:
@@ -312,21 +314,22 @@ private:
       * @{ */
         QVBoxLayout *m_pMainLayout;
         /** Data pane: Tool-bar. */
-        QIToolBar *m_pToolBar;
+        QIToolBar   *m_pToolBar;
         /** Splitter. */
-        QISplitter *m_pSplitter;
+        QISplitter  *m_pSplitter;
     /** @} */
 
     /** @name Chooser-pane
       * @{ */
         /** Chooser pane. */
-        QWidget *m_pPaneOfChooser;
+        QWidget   *m_pPaneOfChooser;
         /** Chooser filter. */
         QLineEdit *m_pFilterOfChooser;
         /** Chooser pane: List-view. */
         QListView *m_pViewOfChooser;
+
         /** Chooser pane: Source-model. */
-        QStandardItemModel *m_pModelSourceOfChooser;
+        QStandardItemModel        *m_pModelSourceOfChooser;
         /** Chooser pane: Proxy-model. */
         UIChooserPaneSortingModel *m_pModelProxyOfChooser;
     /** @} */
@@ -334,13 +337,14 @@ private:
     /** @name Data-pane
       * @{ */
         /** Data pane. */
-        QWidget *m_pPaneOfData;
+        QWidget    *m_pPaneOfData;
         /** Data filter. */
-        QLineEdit *m_pFilterOfData;
+        QLineEdit  *m_pFilterOfData;
         /** Data pane: Table-view. */
         QTableView *m_pViewOfData;
+
         /** Data pane: Item-model. */
-        QStandardItemModel *m_pModelSourceOfData;
+        QStandardItemModel    *m_pModelSourceOfData;
         /** Data pane: Proxy-model. */
         QSortFilterProxyModel *m_pModelProxyOfData;
     /** @} */

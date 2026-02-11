@@ -1,4 +1,4 @@
-/* $Id: UIExtraDataManager.cpp 112947 2026-02-11 13:51:59Z sergey.dubov@oracle.com $ */
+/* $Id: UIExtraDataManager.cpp 112949 2026-02-11 14:04:57Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - UIExtraDataManager class implementation.
  */
@@ -3297,7 +3297,7 @@ void UIExtraDataManager::open(QWidget *pCenterWidget)
                 m_pWindow.data(), &UIExtraDataManagerWindow::sltExtraDataChange);
     }
     /* Show and raise window: */
-    m_pWindow->showAndRaise(pCenterWidget);
+    m_pWindow->showAndRaise();
 }
 #endif /* VBOX_GUI_WITH_EXTRADATA_MANAGER_UI */
 

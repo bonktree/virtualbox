@@ -1,4 +1,4 @@
-/* $Id: UIExtraDataManagerWindow.cpp 112947 2026-02-11 13:51:59Z sergey.dubov@oracle.com $ */
+/* $Id: UIExtraDataManagerWindow.cpp 112949 2026-02-11 14:04:57Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - UIExtraDataManagerWindow class implementation.
  */
@@ -223,17 +223,15 @@ UIExtraDataManagerWindow::UIExtraDataManagerWindow(QWidget *pCenterWidget)
     , m_pActionAdd(0), m_pActionDel(0)
     , m_pActionLoad(0), m_pActionSave(0)
 {
-    /* Prepare: */
     prepare();
 }
 
 UIExtraDataManagerWindow::~UIExtraDataManagerWindow()
 {
-    /* Cleanup: */
     cleanup();
 }
 
-void UIExtraDataManagerWindow::showAndRaise(QWidget*)
+void UIExtraDataManagerWindow::showAndRaise()
 {
     /* Show: */
     show();
@@ -241,8 +239,6 @@ void UIExtraDataManagerWindow::showAndRaise(QWidget*)
     setWindowState(windowState() & ~Qt::WindowMinimized);
     /* Raise: */
     activateWindow();
-//    /* Center according passed widget: */
-//    gpDesktop->centerWidget(this, pCenterWidget, false);
 }
 
 void UIExtraDataManagerWindow::sltMachineRegistered(const QUuid &uID, bool fRegistered)
