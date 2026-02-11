@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# $Id: configure.py 112912 2026-02-09 17:56:21Z andreas.loeffler@oracle.com $
+# $Id: configure.py 112959 2026-02-11 15:46:05Z andreas.loeffler@oracle.com $
 """
 Configuration script for building VirtualBox.
 
@@ -61,7 +61,7 @@ SPDX-License-Identifier: GPL-3.0-only
 # External Python modules or other dependencies are not allowed!
 #
 
-__revision__ = "$Revision: 112912 $"
+__revision__ = "$Revision: 112959 $"
 
 import argparse
 import ctypes
@@ -1196,12 +1196,6 @@ class LibraryCheck(CheckBase):
             self.fUseInTree = fUseInTree; # Only set if explicitly specified on command line -- otherwise take the lib's default.
         self.fDisabled = getattr(args, f'config_libs_disable_{self.sName.replace("-", "_")}', False);
         self.sRootPath = getattr(args, f'config_libs_path_{self.sName.replace("-", "_")}', None);
-
-        # Sanity checks.
-        if self.fDisabled and (   self.fUseInTree \
-                               or self.sRootPath):
-            self.printError(f"Disabling and setting other parameters for library '{self.sName}' really makes no sense?!");
-            return False;
 
         return True;
 
