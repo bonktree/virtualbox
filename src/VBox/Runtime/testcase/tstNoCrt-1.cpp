@@ -1,4 +1,4 @@
-/* $Id: tstNoCrt-1.cpp 112403 2026-01-11 19:29:08Z knut.osmundsen@oracle.com $ */
+/* $Id: tstNoCrt-1.cpp 112968 2026-02-12 10:56:48Z knut.osmundsen@oracle.com $ */
 /** @file
  * IPRT Testcase - Testcase for the No-CRT assembly bits.
  */
@@ -42,6 +42,7 @@
 #include <iprt/stream.h>
 #include <iprt/initterm.h>
 #include <iprt/string.h>
+#include <iprt/test.h>
 #ifdef RT_WITHOUT_NOCRT_WRAPPERS
 # error "Build error."
 #endif
@@ -62,7 +63,7 @@ typedef struct TSTBUF
 /*********************************************************************************************************************************
 *   Global Variables                                                                                                             *
 *********************************************************************************************************************************/
-static unsigned g_cErrors = 0;
+RTTEST g_hTest = NIL_RTTEST;
 
 
 static void my_memset(void *pv, int ch, size_t cb)
@@ -79,7 +80,6 @@ static void my_memcheck(const void *pv, int ch, size_t cb, const char *pszDesc)
     {
         if (*pb != (uint8_t)ch)
         {
-            g_cErrors++;
             size_t off;
             for (off = 1; off < cb && pb[off] != (uint8_t)ch; off++)
                 /* nandemonai */;
@@ -87,12 +87,12 @@ static void my_memcheck(const void *pv, int ch, size_t cb, const char *pszDesc)
             pb += off;
             cb -= off;
             if (off)
-                RTPrintf("tstNoCrt-1: %s: %p:%p - %02x instead of %02x\n",
-                         pszDesc, (uintptr_t)pb - (uintptr_t)pv,
-                         (uint8_t *)pb - (uint8_t *)pv + off, *pb, (uint8_t)ch);
+                RTTestIFailed("%s: %p:%p - %02x instead of %02x\n",
+                              pszDesc, (uintptr_t)pb - (uintptr_t)pv,
+                              (uint8_t *)pb - (uint8_t *)pv + off, *pb, (uint8_t)ch);
             else
-                RTPrintf("tstNoCrt-1: %s: %p - %02x instead of %02x\n",
-                         pszDesc, (uint8_t *)pb - (uint8_t *)pv, *pb, (uint8_t)ch);
+                RTTestIFailed("%s: %p - %02x instead of %02x\n",
+                              pszDesc, (uint8_t *)pb - (uint8_t *)pv, *pb, (uint8_t)ch);
         }
 
         /* next*/
@@ -129,8 +129,10 @@ int main()
     /*
      * Prologue.
      */
-    RTR3InitExeNoArguments(0);
-    RTPrintf("tstNoCrt-1: TESTING...\n");
+    RTEXITCODE rcExit = RTTestInitAndCreate("tstNoCrt-1", &g_hTest);
+    if (rcExit != RTEXITCODE_SUCCESS)
+        return rcExit;
+    RTTestBanner(g_hTest);
 
     /*
      * Sanity.
@@ -144,20 +146,17 @@ int main()
     TstBufInit(&Buf2, 2);
     my_memcheck(Buf2.abBuf, 2, TSTBUF_SIZE, "sanity buf2");
     TstBufCheck(&Buf2, "sanity buf2");
-    if (g_cErrors)
+    if (RTTestIErrorCount() != 0)
     {
-        RTPrintf("tstNoCrt-1: FAILED - fatal sanity error\n");
-        return 1;
+        RTTestIFailed("fatal sanity error\n");
+        return RTTestSummaryAndDestroy(g_hTest);
     }
 
 #define CHECK_CCH(expect)  \
         do \
         { \
             if (cch != (expect)) \
-            { \
-                RTPrintf("tstNoCrt-1(%d): cb=%zu expected=%zu\n", __LINE__, cch, (expect)); \
-                g_cErrors++; \
-            } \
+                RTTestIFailed("line %d: cb=%zu expected=%zu\n", __LINE__, cch, (expect)); \
          } while (0)
     size_t cch;
 
@@ -165,10 +164,7 @@ int main()
         do \
         { \
             if (pv != (expect)) \
-            { \
-                RTPrintf("tstNoCrt-1(%d): pv=%p expected=%p\n", __LINE__, pv, (expect)); \
-                g_cErrors++; \
-            } \
+                RTTestIFailed("line %d: pv=%p expected=%p\n", __LINE__, pv, (expect)); \
          } while (0)
     void *pv;
 
@@ -176,10 +172,7 @@ int main()
         do \
         { \
             if (!(iDiff op 0)) \
-            { \
-                RTPrintf("tstNoCrt-1(%d): iDiff=%d expected: %s 0\n", __LINE__, iDiff, #op); \
-                g_cErrors++; \
-            } \
+                RTTestIFailed("line %d: iDiff=%d expected: %s 0\n", __LINE__, iDiff, #op); \
          } while (0)
     int iDiff;
 
@@ -190,7 +183,7 @@ int main()
     /*
      * memcpy.
      */
-    RTPrintf("tstNoCrt-1: memcpy\n");
+    RTTestSub(g_hTest, "memcpy");
     TstBufInit(&Buf1, 1);
     TstBufInit(&Buf2, 2);
     pv = RT_NOCRT(memcpy)(Buf1.abBuf, Buf2.abBuf, TSTBUF_SIZE); CHECK_PV(Buf1.abBuf);
@@ -237,7 +230,7 @@ int main()
     /*
      * mempcpy.
      */
-    RTPrintf("tstNoCrt-1: mempcpy\n");
+    RTTestSub(g_hTest, "mempcpy");
     TstBufInit(&Buf1, 1);
     TstBufInit(&Buf2, 2);
     pv = RT_NOCRT(mempcpy)(Buf1.abBuf, Buf2.abBuf, TSTBUF_SIZE); CHECK_PV(&Buf1.abBuf[TSTBUF_SIZE]);
@@ -284,7 +277,7 @@ int main()
     /*
      * memmove.
      */
-    RTPrintf("tstNoCrt-1: memmove\n");
+    RTTestSub(g_hTest, "memmove");
     TstBufInit(&Buf1, 1);
     TstBufInit(&Buf2, 2);
     pv = RT_NOCRT(memmove)(Buf1.abBuf, Buf2.abBuf, TSTBUF_SIZE); CHECK_PV(Buf1.abBuf);
@@ -361,7 +354,7 @@ int main()
     /*
      * memset
      */
-    RTPrintf("tstNoCrt-1: memset\n");
+    RTTestSub(g_hTest, "memset");
     TstBufInit(&Buf1, 1);
     pv = RT_NOCRT(memset)(Buf1.abBuf, 0, TSTBUF_SIZE); CHECK_PV(Buf1.abBuf);
     my_memcheck(Buf1.abBuf, 0, TSTBUF_SIZE, "memset-1");
@@ -409,7 +402,7 @@ int main()
     /*
      * strcpy (quick smoke testing).
      */
-    RTPrintf("tstNoCrt-1: strcpy\n");
+    RTTestSub(g_hTest, "strcpy");
     TstBufInit(&Buf1, 1);
     const char *pszSrc = s_szTest1;
     char *pszDst = (char *)&Buf1.abBuf[0];
@@ -434,7 +427,7 @@ int main()
     /*
      * memchr & strchr.
      */
-    RTPrintf("tstNoCrt-1: memchr\n");
+    RTTestSub(g_hTest, "memchr");
     pv = RT_NOCRT(memchr)(&s_szTest1[0x00], 'f', sizeof(s_szTest1)); CHECK_PV(&s_szTest1[0xf]);
     pv = RT_NOCRT(memchr)(&s_szTest1[0x0f], 'f', sizeof(s_szTest1)); CHECK_PV(&s_szTest1[0xf]);
     pv = RT_NOCRT(memchr)(&s_szTest1[0x03],   0, sizeof(s_szTest1)); CHECK_PV(&s_szTest1[0x10]);
@@ -449,7 +442,7 @@ int main()
             CHECK_PV(&s_szTest1[i]);
         }
 
-    RTPrintf("tstNoCrt-1: strchr\n");
+    RTTestSub(g_hTest, "strchr");
     pv = RT_NOCRT(strchr)(&s_szTest1[0x00], 'f'); CHECK_PV(&s_szTest1[0xf]);
     pv = RT_NOCRT(strchr)(&s_szTest1[0x0f], 'f'); CHECK_PV(&s_szTest1[0xf]);
     pv = RT_NOCRT(strchr)(&s_szTest1[0x03], 0); CHECK_PV(&s_szTest1[0x10]);
@@ -464,7 +457,7 @@ int main()
     /*
      * Some simple memcmp/strcmp checks.
      */
-    RTPrintf("tstNoCrt-1: memcmp\n");
+    RTTestSub(g_hTest, "memcpy");
     iDiff = RT_NOCRT(memcmp)(s_szTest1, s_szTest1, sizeof(s_szTest1)); CHECK_DIFF( == );
     iDiff = RT_NOCRT(memcmp)(s_szTest1, s_szTest2, sizeof(s_szTest1)); CHECK_DIFF( == );
     iDiff = RT_NOCRT(memcmp)(s_szTest2, s_szTest1, sizeof(s_szTest1)); CHECK_DIFF( == );
@@ -473,7 +466,7 @@ int main()
     iDiff = RT_NOCRT(memcmp)(s_szTest3, s_szTest1, sizeof(s_szTest1)); CHECK_DIFF( > );
     iDiff = RT_NOCRT(memcmp)("1234", "1a34", 4); CHECK_DIFF( < );
 
-    RTPrintf("tstNoCrt-1: strcmp\n");
+    RTTestSub(g_hTest, "strcmp");
     iDiff = RT_NOCRT(strcmp)(s_szTest1, s_szTest1); CHECK_DIFF( == );
     iDiff = RT_NOCRT(strcmp)(s_szTest1, s_szTest2); CHECK_DIFF( == );
     iDiff = RT_NOCRT(strcmp)(s_szTest2, s_szTest1); CHECK_DIFF( == );
@@ -484,7 +477,7 @@ int main()
     /*
      * Some simple strlen checks.
      */
-    RTPrintf("tstNoCrt-1: strlen\n");
+    RTTestSub(g_hTest, "strlen");
     cch = RT_NOCRT(strlen)("");             CHECK_CCH(0);
     cch = RT_NOCRT(strlen)("1");            CHECK_CCH(1);
     cch = RT_NOCRT(strlen)("12");           CHECK_CCH(2);
@@ -506,7 +499,7 @@ int main()
     /*
      * Some simple wcslen checks.
      */
-    RTPrintf("tstNoCrt-1: wcslen\n");
+    RTTestSub(g_hTest, "wcslen");
     cch = RT_NOCRT(wcslen)(L"");             CHECK_CCH(0);
     cch = RT_NOCRT(wcslen)(L"1");            CHECK_CCH(1);
     cch = RT_NOCRT(wcslen)(L"12");           CHECK_CCH(2);
@@ -515,13 +508,10 @@ int main()
     cch = RT_NOCRT(wcslen)(L"12345");        CHECK_CCH(5);
 #endif
 
+
     /*
      * Summary.
      */
-    if (!g_cErrors)
-        RTPrintf("tstNoCrt-1: SUCCESS\n");
-    else
-        RTPrintf("tstNoCrt-1: FAILURE - %d errors\n", g_cErrors);
-    return !!g_cErrors;
+    return RTTestSummaryAndDestroy(g_hTest);
 }
 
