@@ -1,4 +1,4 @@
-/* $Id: SUPLib.cpp 112824 2026-02-04 15:44:14Z alexander.eichner@oracle.com $ */
+/* $Id: SUPLib.cpp 112971 2026-02-12 14:02:00Z alexander.eichner@oracle.com $ */
 /** @file
  * VirtualBox Support Library - Common code.
  */
@@ -304,9 +304,7 @@ SUPR3DECL(int) SUPR3InitEx(uint32_t fFlags, PSUPDRVSESSION *ppSession)
         CookieReq.Hdr.rc = VERR_INTERNAL_ERROR;
         strcpy(CookieReq.u.In.szMagic, SUPCOOKIE_MAGIC);
         CookieReq.u.In.u32ReqVersion = SUPDRV_IOC_VERSION;
-        const uint32_t uMinVersion = (SUPDRV_IOC_VERSION & 0xffff0000) == 0x00340000
-                                   ? 0x00340001
-                                   : SUPDRV_IOC_VERSION & 0xffff0000;
+        const uint32_t uMinVersion = SUPDRV_IOC_VERSION;
         CookieReq.u.In.u32MinVersion = uMinVersion;
         rc = suplibOsIOCtl(&g_supLibData, SUP_IOCTL_COOKIE, &CookieReq, SUP_IOCTL_COOKIE_SIZE);
         if (    RT_SUCCESS(rc)

@@ -1,4 +1,4 @@
-/* $Id: memobj-r0drv-linux.c 112403 2026-01-11 19:29:08Z knut.osmundsen@oracle.com $ */
+/* $Id: memobj-r0drv-linux.c 112971 2026-02-12 14:02:00Z alexander.eichner@oracle.com $ */
 /** @file
  * IPRT - Ring-0 Memory Objects, Linux.
  */
@@ -1377,8 +1377,128 @@ DECLHIDDEN(int) rtR0MemObjNativeEnterPhys(PPRTR0MEMOBJINTERNAL ppMem, RTHCPHYS P
 # define GET_USER_PAGES_API     LINUX_VERSION_CODE
 #endif
 
+#if RTLNX_VER_MIN(6,12,0)
+/**
+ * Internal worker trying to create a RTR0MemObjEnterPhys() compatible object when locking
+ * fails and RTMEMOBJ_LOCK_USER_F_TREAT_MMIO_AS_PHYS is set.
+ *
+ * @returns IPRT status code.
+ * @param   ppMem           Where to store the ring-0 memory object handle on success.
+ * @param   R3Ptr           User virtual address. This is rounded down to a page
+ *                          boundary.
+ * @param   cb              Number of bytes to lock. This is rounded up to
+ *                          nearest page boundary.
+ * @param   fAccess         The desired access, a combination of RTMEM_PROT_READ
+ *                          and RTMEM_PROT_WRITE.
+ * @param   pTask           The process to lock pages in.
+ * @param   pszTag          Allocation tag used for statistics and such.
+ *
+ * @remarks We impose severe restrictions on the given virtual address region. It must be contained within a
+ *          single VMA and must have a contiguous physical address range.
+ */
+static int rtR0MemObjNativeLockUserAsPhys(PPRTR0MEMOBJINTERNAL ppMem, RTR3PTR R3Ptr, size_t cb, uint32_t fAccess,
+                                          struct vm_area_struct *pVma, struct task_struct *pTask, const char *pszTag)
+{
+    /*
+     * Because fixup_user_fault() can cause unlocking of the mm lock for each checked page,
+     * causing racing threads to be able to change the address space layout the checks need to be redone
+     * completely as soon as the case is hit.
+     * To avoid denial of service kind of attacks the number of retries is bound to the number of pages
+     * covering the range so that each page can at most cause a retry once.
+     */
+    uint8_t  cTries = cb >> PAGE_SHIFT;
+    for (;;)
+    {
+        PRTR0MEMOBJLNX  pMemLnx;
+        size_t const    cPages    = cb >> PAGE_SHIFT;
+        size_t          idxPage   = 0;
+        uint64_t        uPfnStart = UINT64_MAX;
+        bool            fRetry    = false;
+
+        /* The region is not entirely contained within the given VMA or has changed behind our backs -> fail without retrying. */
+        if (   !pVma
+            || R3Ptr < pVma->vm_start
+            || R3Ptr >= pVma->vm_end
+            || pVma->vm_end - (R3Ptr - pVma->vm_start) < cb
+            || (pVma->vm_flags & (VM_IO | VM_PFNMAP)) != (VM_IO | VM_PFNMAP))
+            return VERR_INVALID_PARAMETER;
+
+        while (idxPage < cPages)
+        {
+            int rc;
+            uint64_t uPfn;
+            struct follow_pfnmap_args PfnMapArgs;
+
+            PfnMapArgs.vma     = pVma;
+            PfnMapArgs.address = R3Ptr + (idxPage << PAGE_SHIFT);
+            rc = follow_pfnmap_start(&PfnMapArgs);
+            if (rc)
+            {
+                /* Need to call the fault handler. */
+                bool fUnlocked = false;
+                rc = fixup_user_fault(pTask->mm, R3Ptr + (idxPage << PAGE_SHIFT),
+                                      (fAccess & RTMEM_PROT_WRITE) ? FAULT_FLAG_WRITE : 0,
+                                      &fUnlocked);
+                if (fUnlocked)
+                {
+                    if (!cTries)
+                        return VERR_TRY_AGAIN;
+                    cTries--;
+                    fRetry = true;
+                    /*
+                     * Start from the beginning, need to lookup the VMA again, as it might've
+                     * changed behind our backs.
+                     */
+                    pVma = vma_lookup(pTask->mm, R3Ptr);
+                    break;
+                }
+
+                if (rc) /* Any error during the fault handling is an immediate error. */
+                    return VERR_LOCK_FAILED;
+
+                rc = follow_pfnmap_start(&PfnMapArgs);
+                if (rc) /* follow_pfnmap_start() shouldn't fail anymore for this particular address. */
+                    return VERR_LOCK_FAILED;
+            }
+
+            /* ASSUMES a contiguous physical backing. */
+            uPfn = PfnMapArgs.pfn;
+            follow_pfnmap_end(&PfnMapArgs);
+            if (uPfnStart == UINT64_MAX)
+                uPfnStart = uPfn;
+            else if (   uPfn != uPfnStart + idxPage
+                     || (   (fAccess & RTMEM_PROT_WRITE)
+                         && !PfnMapArgs.writable))
+                return VERR_NOT_SUPPORTED;
+
+            /** @todo Instead of going page by page we can probably make use of PfnMapArgs.addr_mask
+             *        to jump ahead. */
+            idxPage++;
+        }
+
+        if (fRetry)
+            continue;
+
+        /* Getting here means we succeeded before running out of tries or encountering something fishy. */
+        pMemLnx = (PRTR0MEMOBJLNX)rtR0MemObjNew(sizeof(*pMemLnx), RTR0MEMOBJTYPE_PHYS, NULL, cb, pszTag);
+        if (!pMemLnx)
+            return VERR_NO_MEMORY;
+
+        pMemLnx->Core.u.Phys.PhysBase     = __pfn_to_phys(uPfnStart);
+        pMemLnx->Core.u.Phys.fAllocated   = false;
+        pMemLnx->Core.u.Phys.uCachePolicy = RTMEM_CACHE_POLICY_MMIO; /** @todo Make this configurable? */
+        Assert(!pMemLnx->cPages);
+        *ppMem = &pMemLnx->Core;
+        return VINF_SUCCESS;
+    }
+
+    return VINF_SUCCESS;
+}
+#endif /*RTLNX_VER_MIN(6,12,0)*/
+
+
 DECLHIDDEN(int) rtR0MemObjNativeLockUser(PPRTR0MEMOBJINTERNAL ppMem, RTR3PTR R3Ptr, size_t cb, uint32_t fAccess,
-                                         RTR0PROCESS R0Process, const char *pszTag)
+                                         uint32_t fFlags, RTR0PROCESS R0Process, const char *pszTag)
 {
     IPRT_LINUX_SAVE_EFL_AC();
     const int cPages = cb >> PAGE_SHIFT;
@@ -1397,6 +1517,23 @@ DECLHIDDEN(int) rtR0MemObjNativeLockUser(PPRTR0MEMOBJINTERNAL ppMem, RTR3PTR R3P
         return VERR_NOT_SUPPORTED;
     if (((size_t)cPages << PAGE_SHIFT) != cb)
         return VERR_OUT_OF_RANGE;
+
+#if RTLNX_VER_MIN(6,12,0)
+    LNX_MM_DOWN_READ(pTask->mm);
+    struct vm_area_struct *pVma = vma_lookup(pTask->mm, R3Ptr);
+    if (   pVma
+        && (pVma->vm_flags & (VM_IO | VM_PFNMAP)) == (VM_IO | VM_PFNMAP))
+    {
+        if (fFlags & RTMEMOBJ_LOCK_USER_F_TREAT_MMIO_AS_PHYS)
+            rc = rtR0MemObjNativeLockUserAsPhys(ppMem, R3Ptr, cb, fAccess, pVma, pTask, pszTag);
+        else /* Don't bother trying, VM_IO or VM_PFNMAP areas are not backed by struct page's, so get_user_pages will fail later on anyway. */
+            rc = VERR_LOCK_FAILED;
+        LNX_MM_UP_READ(pTask->mm);
+        IPRT_LINUX_RESTORE_EFL_AC();
+        return rc;
+    }
+    LNX_MM_UP_READ(pTask->mm);
+#endif
 
     /*
      * Allocate the memory object and a temporary buffer for the VMAs.

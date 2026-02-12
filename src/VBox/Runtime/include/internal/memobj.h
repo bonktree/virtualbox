@@ -1,4 +1,4 @@
-/* $Id: memobj.h 112403 2026-01-11 19:29:08Z knut.osmundsen@oracle.com $ */
+/* $Id: memobj.h 112971 2026-02-12 14:02:00Z alexander.eichner@oracle.com $ */
 /** @file
  * IPRT - Ring-0 Memory Objects.
  */
@@ -377,11 +377,12 @@ DECLHIDDEN(int) rtR0MemObjNativeAllocCont(PPRTR0MEMOBJINTERNAL ppMem, size_t cb,
  * @param   cb              Number of bytes to lock, page aligned.
  * @param   fAccess         The desired access, a combination of RTMEM_PROT_READ
  *                          and RTMEM_PROT_WRITE.
+ * @param   fFlags          Combination of RTMEMOBJ_LOCK_USER_F_XXX.
  * @param   R0Process       The process to lock pages in.
  * @param   pszTag          Allocation tag used for statistics and such.
  */
 DECLHIDDEN(int) rtR0MemObjNativeLockUser(PPRTR0MEMOBJINTERNAL ppMem, RTR3PTR R3Ptr, size_t cb, uint32_t fAccess,
-                                         RTR0PROCESS R0Process, const char *pszTag);
+                                         uint32_t fFlags, RTR0PROCESS R0Process, const char *pszTag);
 
 /**
  * Locks a range of kernel virtual memory.

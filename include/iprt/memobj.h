@@ -342,6 +342,7 @@ RTR0DECL(int) RTR0MemObjAllocContTag(PRTR0MEMOBJ pMemObj, size_t cb, RTHCPHYS Ph
  *                          nearest page boundary.
  * @param   fAccess         The desired access, a combination of RTMEM_PROT_READ
  *                          and RTMEM_PROT_WRITE.
+ * @param   fFlags          Combination of RTMEMOBJ_LOCK_USER_F_XXX.
  * @param   R0Process       The process to lock pages in. NIL_RTR0PROCESS is an
  *                          alias for the current one.
  *
@@ -353,8 +354,8 @@ RTR0DECL(int) RTR0MemObjAllocContTag(PRTR0MEMOBJ pMemObj, size_t cb, RTHCPHYS Ph
  *          is not intented as permanent restriction, feel free to help out
  *          lifting it.
  */
-#define RTR0MemObjLockUser(pMemObj, R3Ptr, cb, fAccess, R0Process) \
-    RTR0MemObjLockUserTag((pMemObj), (R3Ptr), (cb), (fAccess), (R0Process), RTMEM_TAG)
+#define RTR0MemObjLockUser(pMemObj, R3Ptr, cb, fAccess, fFlags, R0Process) \
+    RTR0MemObjLockUserTag((pMemObj), (R3Ptr), (cb), (fAccess), (fFlags), (R0Process), RTMEM_TAG)
 
 /**
  * Locks a range of user virtual memory (custom tag).
@@ -367,6 +368,7 @@ RTR0DECL(int) RTR0MemObjAllocContTag(PRTR0MEMOBJ pMemObj, size_t cb, RTHCPHYS Ph
  *                          nearest page boundary.
  * @param   fAccess         The desired access, a combination of RTMEM_PROT_READ
  *                          and RTMEM_PROT_WRITE.
+ * @param   fFlags          Combination of RTMEMOBJ_LOCK_USER_F_XXX.
  * @param   R0Process       The process to lock pages in. NIL_RTR0PROCESS is an
  *                          alias for the current one.
  * @param   pszTag          Allocation tag used for statistics and such.
@@ -380,7 +382,25 @@ RTR0DECL(int) RTR0MemObjAllocContTag(PRTR0MEMOBJ pMemObj, size_t cb, RTHCPHYS Ph
  *          lifting it.
  */
 RTR0DECL(int) RTR0MemObjLockUserTag(PRTR0MEMOBJ pMemObj, RTR3PTR R3Ptr, size_t cb, uint32_t fAccess,
-                                    RTR0PROCESS R0Process, const char *pszTag);
+                                    uint32_t fFlags, RTR0PROCESS R0Process, const char *pszTag);
+
+/** @name RTMEMOBJ_LOCK_USER_F_XXX
+ * @{ */
+/** Indicates that if locking fails on a user virtual address range not backed by
+ * lockable memory (MMIO, etc.) a physical memory object is returned instead of returning
+ * an error. The memory object has the same properties like it would have when created with
+ * RTR0MemObjEnterPhysTag() suitable for mapping into the kernel with RTR0MemObjMapKernelTag().
+ *
+ * @remarks Linux: This is useful for VM_IO or VM_PFNMAP backed areas passed from userspace
+ *                 which don't need locking but where the memory object will be used to map
+ *                 the region into kernel space. The current usecase is MMIO memory passed
+ *                 from real devices using MMIO. This flag only works with kernels starting
+ *                 with 6.12 or newer.
+ */
+#define RTMEMOBJ_LOCK_USER_F_TREAT_MMIO_AS_PHYS                 RT_BIT_32(0)
+/** Mask with valid bits.   */
+#define RTMEMOBJ_LOCK_USER_F_VALID_MASK                         UINT32_C(0x00000001)
+/** @} */
 
 /**
  * Locks a range of kernel virtual memory (default tag).

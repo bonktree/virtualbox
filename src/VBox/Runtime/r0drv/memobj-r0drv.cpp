@@ -1,4 +1,4 @@
-/* $Id: memobj-r0drv.cpp 112403 2026-01-11 19:29:08Z knut.osmundsen@oracle.com $ */
+/* $Id: memobj-r0drv.cpp 112971 2026-02-12 14:02:00Z alexander.eichner@oracle.com $ */
 /** @file
  * IPRT - Ring-0 Memory Objects, Common Code.
  */
@@ -527,7 +527,8 @@ RT_EXPORT_SYMBOL(RTR0MemObjAllocContTag);
 
 
 RTR0DECL(int) RTR0MemObjLockUserTag(PRTR0MEMOBJ pMemObj, RTR3PTR R3Ptr, size_t cb,
-                                    uint32_t fAccess, RTR0PROCESS R0Process, const char *pszTag)
+                                    uint32_t fAccess, uint32_t fFlags,
+                                    RTR0PROCESS R0Process, const char *pszTag)
 {
     /* sanity checks. */
     const size_t cbAligned = RT_ALIGN_Z(cb + (R3Ptr & PAGE_OFFSET_MASK), PAGE_SIZE);
@@ -540,10 +541,11 @@ RTR0DECL(int) RTR0MemObjLockUserTag(PRTR0MEMOBJ pMemObj, RTR3PTR R3Ptr, size_t c
         R0Process = RTR0ProcHandleSelf();
     AssertReturn(!(fAccess & ~(RTMEM_PROT_READ | RTMEM_PROT_WRITE)), VERR_INVALID_PARAMETER);
     AssertReturn(fAccess, VERR_INVALID_PARAMETER);
+    AssertReturn(!(fFlags & ~RTMEMOBJ_LOCK_USER_F_VALID_MASK), VERR_INVALID_PARAMETER);
     RT_ASSERT_PREEMPTIBLE();
 
     /* do the locking. */
-    return rtR0MemObjNativeLockUser(pMemObj, R3PtrAligned, cbAligned, fAccess, R0Process, pszTag);
+    return rtR0MemObjNativeLockUser(pMemObj, R3PtrAligned, cbAligned, fAccess, fFlags, R0Process, pszTag);
 }
 RT_EXPORT_SYMBOL(RTR0MemObjLockUserTag);
 
