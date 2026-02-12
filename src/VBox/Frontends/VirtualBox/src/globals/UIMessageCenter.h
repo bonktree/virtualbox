@@ -1,4 +1,4 @@
-/* $Id: UIMessageCenter.h 112957 2026-02-11 15:18:35Z sergey.dubov@oracle.com $ */
+/* $Id: UIMessageCenter.h 112969 2026-02-12 13:01:11Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - UIMessageCenter class declaration.
  */
@@ -374,16 +374,13 @@ public:
 #ifdef VBOX_GUI_WITH_NETWORK_MANAGER
         bool confirmLookingForGuestAdditions() const;
         bool confirmDownloadGuestAdditions(const QString &strUrl, qulonglong uSize) const;
-        void cannotSaveGuestAdditions(const QString &strURL, const QString &strTarget) const;
         bool proposeMountGuestAdditions(const QString &strUrl, const QString &strSrc) const;
 
         bool confirmLookingForUserManual(const QString &strMissedLocation) const;
         bool confirmDownloadUserManual(const QString &strURL, qulonglong uSize) const;
-        void cannotSaveUserManual(const QString &strURL, const QString &strTarget) const;
 
         bool confirmLookingForExtensionPack(const QString &strExtPackName, const QString &strExtPackVersion) const;
         bool confirmDownloadExtensionPack(const QString &strExtPackName, const QString &strURL, qulonglong uSize) const;
-        void cannotSaveExtensionPack(const QString &strExtPackName, const QString &strFrom, const QString &strTo) const;
         bool proposeInstallExtentionPack(const QString &strExtPackName, const QString &strFrom, const QString &strTo) const;
         bool proposeDeleteExtentionPack(const QString &strTo) const;
         bool proposeDeleteOldExtentionPacks(const QStringList &strFiles) const;

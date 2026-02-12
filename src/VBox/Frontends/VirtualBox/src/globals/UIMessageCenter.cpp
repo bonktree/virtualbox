@@ -1,4 +1,4 @@
-/* $Id: UIMessageCenter.cpp 112957 2026-02-11 15:18:35Z sergey.dubov@oracle.com $ */
+/* $Id: UIMessageCenter.cpp 112969 2026-02-12 13:01:11Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - UIMessageCenter class implementation.
  */
@@ -1439,16 +1439,6 @@ bool UIMessageCenter::confirmDownloadGuestAdditions(const QString &strUrl, qulon
                           tr("Download"));
 }
 
-void UIMessageCenter::cannotSaveGuestAdditions(const QString &strURL, const QString &strTarget) const
-{
-    alert(windowManager().mainWindowShown(), MessageType_Error,
-          tr("<p>The <b>VirtualBox Guest Additions</b> disk image file has been successfully downloaded "
-             "from <nobr><a href=\"%1\">%1</a></nobr> "
-             "but can't be saved locally as <nobr><b>%2</b>.</nobr></p>"
-             "<p>Please choose another location for that file.</p>")
-             .arg(strURL, strTarget));
-}
-
 bool UIMessageCenter::proposeMountGuestAdditions(const QString &strUrl, const QString &strSrc) const
 {
     return questionBinary(windowManager().mainWindowShown(), MessageType_Question,
@@ -1481,16 +1471,6 @@ bool UIMessageCenter::confirmDownloadUserManual(const QString &strURL, qulonglon
                           tr("Download"));
 }
 
-void UIMessageCenter::cannotSaveUserManual(const QString &strURL, const QString &strTarget) const
-{
-    alert(windowManager().mainWindowShown(), MessageType_Error,
-          tr("<p>The VirtualBox User Guide has been successfully downloaded "
-             "from <nobr><a href=\"%1\">%1</a></nobr> "
-             "but can't be saved locally as <nobr><b>%2</b>.</nobr></p>"
-             "<p>Please choose another location for that file.</p>")
-             .arg(strURL, strTarget));
-}
-
 bool UIMessageCenter::confirmLookingForExtensionPack(const QString &strExtPackName, const QString &strExtPackVersion) const
 {
     return questionBinary(windowManager().mainWindowShown(), MessageType_Question,
@@ -1509,16 +1489,6 @@ bool UIMessageCenter::confirmDownloadExtensionPack(const QString &strExtPackName
                              .arg(strExtPackName, strURL, QLocale(UITranslator::languageId()).toString(uSize)),
                           0 /* auto-confirm id */,
                           tr("Download"));
-}
-
-void UIMessageCenter::cannotSaveExtensionPack(const QString &strExtPackName, const QString &strFrom, const QString &strTo) const
-{
-    alert(windowManager().mainWindowShown(), MessageType_Error,
-          tr("<p>The <b><nobr>%1</nobr></b> has been successfully downloaded "
-             "from <nobr><a href=\"%2\">%2</a></nobr> "
-             "but can't be saved locally as <nobr><b>%3</b>.</nobr></p>"
-             "<p>Please choose another location for that file.</p>")
-             .arg(strExtPackName, strFrom, strTo));
 }
 
 bool UIMessageCenter::proposeInstallExtentionPack(const QString &strExtPackName, const QString &strFrom, const QString &strTo) const

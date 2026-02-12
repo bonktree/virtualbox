@@ -1,4 +1,4 @@
-/* $Id: UIDownloaderGuestAdditions.cpp 112403 2026-01-11 19:29:08Z knut.osmundsen@oracle.com $ */
+/* $Id: UIDownloaderGuestAdditions.cpp 112969 2026-02-12 13:01:11Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - UIDownloaderGuestAdditions class implementation.
  */
@@ -179,7 +179,7 @@ void UIDownloaderGuestAdditions::handleVerifiedObject(UINetworkReply *pReply)
         else
         {
             /* Warn the user about additions-image was downloaded but was NOT saved: */
-            msgCenter().cannotSaveGuestAdditions(source().toString(), QDir::toNativeSeparators(target()));
+            UINotificationMessage::cannotSaveGuestAdditions(source().toString(), QDir::toNativeSeparators(target()));
             /* Ask the user for another location for the additions-image file: */
             const QString strTarget = QIFileDialog::getExistingDirectory(QFileInfo(target()).absolutePath(),
                                                                          windowManager().mainWindowShown(),

@@ -1,4 +1,4 @@
-/* $Id: UINotificationObjects.cpp 112957 2026-02-11 15:18:35Z sergey.dubov@oracle.com $ */
+/* $Id: UINotificationObjects.cpp 112969 2026-02-12 13:01:11Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - Various UINotificationObjects implementations.
  */
@@ -230,13 +230,38 @@ void UINotificationMessage::cannotValidateGuestAdditionsSHA256Sum(const QString 
 }
 
 /* static */
-void UINotificationMessage::warnAboutUserManualDownloaded(const QString &strUrl, const QString &strTarget)
+void UINotificationMessage::cannotSaveGuestAdditions(const QString &strUrl,
+                                                     const QString &strTgt)
+{
+    createMessage(
+        QApplication::translate("UIMessageCenter", "Unable to save guest additions image ..."),
+        QApplication::translate("UIMessageCenter", "<p>The <b>VirtualBox Guest Additions</b> disk image file has been "
+                                                   "successfully downloaded from <nobr><a href=\"%1\">%1</a></nobr> but "
+                                                   "can't be saved locally as <nobr><b>%2</b>.</nobr></p><p>Please choose "
+                                                   "another location for that file.</p>").arg(strUrl, strTgt));
+}
+
+/* static */
+void UINotificationMessage::cannotSaveUserManual(const QString &strUrl,
+                                                 const QString &strTgt)
+{
+    createMessage(
+        QApplication::translate("UIMessageCenter", "Unable to save user manual file ..."),
+        QApplication::translate("UIMessageCenter", "<p>The VirtualBox User Guide has been successfully downloaded from "
+                                                   "<nobr><a href=\"%1\">%1</a></nobr> but can't be saved locally as "
+                                                   "<nobr><b>%2</b>.</nobr></p><p>Please choose another location for that "
+                                                   "file.</p>").arg(strUrl, strTgt));
+}
+
+/* static */
+void UINotificationMessage::warnAboutUserManualDownloaded(const QString &strUrl,
+                                                          const QString &strTgt)
 {
     createMessage(
         QApplication::translate("UIMessageCenter", "User guide downloaded ..."),
         QApplication::translate("UIMessageCenter", "<p>The VirtualBox User Guide has been successfully downloaded from "
                                                    "<nobr><a href=\"%1\">%1</a></nobr> and saved locally as "
-                                                   "<nobr><b>%2</b>.</nobr></p>").arg(strUrl, strTarget));
+                                                   "<nobr><b>%2</b>.</nobr></p>").arg(strUrl, strTgt));
 }
 
 /* static */
@@ -251,6 +276,19 @@ void UINotificationMessage::cannotValidateExtentionPackSHA256Sum(const QString &
                                                    "<nobr><b>%3</b>, </nobr>but the SHA-256 checksum verification failed.</p>"
                                                    "<p>Please do the download, installation and verification manually.</p>")
                                                    .arg(strExtPackName, strFrom, strTo));
+}
+
+/* static */
+void UINotificationMessage::cannotSaveExtensionPack(const QString &strExtPackName,
+                                                    const QString &strFrom,
+                                                    const QString &strTo)
+{
+    createMessage(
+        QApplication::translate("UIMessageCenter", "Unable to save extension pack file ..."),
+        QApplication::translate("UIMessageCenter", "<p>The <b><nobr>%1</nobr></b> has been successfully downloaded from "
+                                                   "<nobr><a href=\"%2\">%2</a></nobr> but can't be saved locally as "
+                                                   "<nobr><b>%3</b>.</nobr></p><p>Please choose another location for that "
+                                                   "file.</p>").arg(strExtPackName, strFrom, strTo));
 }
 #endif /* VBOX_GUI_WITH_NETWORK_MANAGER */
 

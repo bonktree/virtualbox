@@ -1,4 +1,4 @@
-/* $Id: UINotificationObjects.h 112957 2026-02-11 15:18:35Z sergey.dubov@oracle.com $ */
+/* $Id: UINotificationObjects.h 112969 2026-02-12 13:01:11Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - Various UINotificationObjects declarations.
  */
@@ -146,12 +146,22 @@ public:
           * @param  strSrc  Brings the GA source. */
         static void cannotValidateGuestAdditionsSHA256Sum(const QString &strUrl,
                                                           const QString &strSrc);
-
-        /** Notifies about user manual downloded.
+        /** Notifies about inability to save guest additions.
           * @param  strUrl  Brings the GA URL.
-          * @param  strSrc  Brings the GA source. */
+          * @param  strTgt  Brings the GA target location. */
+        static void cannotSaveGuestAdditions(const QString &strUrl,
+                                             const QString &strTgt);
+
+        /** Notifies about inability to save user manual.
+          * @param  strUrl  Brings the User Manual URL.
+          * @param  strTgt  Brings the User Manual target location. */
+        static void cannotSaveUserManual(const QString &strURL,
+                                         const QString &strTgt);
+        /** Notifies about user manual downloded.
+          * @param  strUrl  Brings the User Manual URL.
+          * @param  strTgt  Brings the User Manual target location. */
         static void warnAboutUserManualDownloaded(const QString &strUrl,
-                                                  const QString &strTarget);
+                                                  const QString &strTgt);
 
         /** Notifies about inability to validate guest additions.
           * @param  strUrl  Brings the GA URL.
@@ -159,6 +169,13 @@ public:
         static void cannotValidateExtentionPackSHA256Sum(const QString &strExtPackName,
                                                          const QString &strFrom,
                                                          const QString &strTo);
+        /** Notifies about inability to save extension pack.
+          * @param  strExtPackName  Brings the Extension Pack name.
+          * @param  strFrom         Brings the Extension Pack source location.
+          * @param  strTo           Brings the Extension Pack target location. */
+        static void cannotSaveExtensionPack(const QString &strExtPackName,
+                                            const QString &strFrom,
+                                            const QString &strTo);
 #endif /* VBOX_GUI_WITH_NETWORK_MANAGER */
     /** @} */
 
