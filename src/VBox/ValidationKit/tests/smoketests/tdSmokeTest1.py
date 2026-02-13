@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-# $Id: tdSmokeTest1.py 112984 2026-02-13 04:07:08Z brian.le.lee@oracle.com $
+# $Id: tdSmokeTest1.py 112990 2026-02-13 09:44:27Z knut.osmundsen@oracle.com $
 
 """
 VirtualBox Validation Kit - Smoke Test #1.
@@ -37,7 +37,7 @@ terms and conditions of either the GPL or the CDDL or both.
 
 SPDX-License-Identifier: GPL-3.0-only OR CDDL-1.0
 """
-__version__ = "$Revision: 112984 $"
+__version__ = "$Revision: 112990 $"
 
 
 # Standard Python imports.
@@ -82,8 +82,8 @@ class tdSmokeTest1(vbox.TestDriver):
         reporter.log('      Default: %s' % (self.sNicAttachmentDef));
         reporter.log('  --quick');
         reporter.log('      Very selective testing.')
-        reporter.log('  --savestate');
-        reporter.log('      savestate testing.')
+        reporter.log('  --save-state');
+        reporter.log('      Test state saving and restoring.')
         return rc;
 
     def parseOption(self, asArgs, iArg):
@@ -117,7 +117,7 @@ class tdSmokeTest1(vbox.TestDriver):
                     oTestVm.acCpusSup       = range(1, 2);
                 else:
                     oTestVm.fSkip = True;
-        elif asArgs[iArg] == '--savestate':
+        elif asArgs[iArg] in ('--save-state', '--savestate'):
             self.fSave = True;
         else:
             return vbox.TestDriver.parseOption(self, asArgs, iArg);
@@ -166,10 +166,10 @@ class tdSmokeTest1(vbox.TestDriver):
         if oSession is not None:
             self.addTask(oTxsSession);
 
-            ## @todo do some quick tests: save, restore, execute some test program, shut down the guest.
-            reporter.log('point alpha');
+            ## @todo do some quick tests: execute some test program, shut down the guest.
+
             if self.fSave:
-                reporter.log('point beta');
+                reporter.log("Pausing and saving state...");
                 fRc = oSession.saveState();
                 if not fRc:
                     return reporter.error("Failed to take save state");
@@ -179,9 +179,10 @@ class tdSmokeTest1(vbox.TestDriver):
 
                 # Start the VM again, implicitly restoring the state and reconnecting to TXS.
                 # The timeout is shorter here, as this shouldn't take quite as much time.
-                oSession, oTxsSession = self.startVmAndConnectToTxsViaTcp(oTestVm.sVmName, fCdWait = True, cMsCdWait = 3 * 60 * 1000);
+                oSession, oTxsSession = self.startVmAndConnectToTxsViaTcp(oTestVm.sVmName, fCdWait = True,
+                                                                          cMsCdWait = 3 * 60 * 1000);
                 if oSession is None or oTxsSession is None:
-                    return reporter.error("Failed to start test VM");
+                    return reporter.error("Failed to restore and restart the test VM");
                 self.addTask(oTxsSession);
                 reporter.log("Successfully started VM after saving state");
 
