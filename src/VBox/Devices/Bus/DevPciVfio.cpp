@@ -1,4 +1,4 @@
-/* $Id: DevPciVfio.cpp 113015 2026-02-13 15:47:47Z alexander.eichner@oracle.com $ */
+/* $Id: DevPciVfio.cpp 113018 2026-02-13 16:13:09Z alexander.eichner@oracle.com $ */
 /** @file
  * PCI passthrough device emulation using VFIO/IOMMUFD.
  */
@@ -1172,6 +1172,7 @@ static int pciVfioCfgSpaceParseCapabilities(PVFIOPCI pThis, PPDMPCIDEV pPciDev)
         {
             /* Accesses to capability ID and pointer to the next capability are never passed through. */
             pciVfioCfgSpaceSetInterceptRoU16(pThis, offCap, VFIO_PCI_CFG_SPACE_ACCESS_DO_DEFAULT);
+            PDMPciDevSetByte(pPciDev, offCap, bCapId);
             PDMPciDevSetByte(pPciDev, offCapNextPrev, offCap);
             offCapNextPrev = offCap + 1;
         }
@@ -1186,6 +1187,9 @@ static int pciVfioCfgSpaceParseCapabilities(PVFIOPCI pThis, PPDMPCIDEV pPciDev)
 
         offCap = offCapNext;
     }
+
+    /* Mark the end of the list. */
+    PDMPciDevSetByte(pPciDev, offCapNextPrev, 0);
 
     return VINF_SUCCESS;
 }
