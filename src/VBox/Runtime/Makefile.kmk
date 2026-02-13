@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 112879 2026-02-09 09:28:30Z knut.osmundsen@oracle.com $
+# $Id: Makefile.kmk 112988 2026-02-13 09:06:23Z knut.osmundsen@oracle.com $
 ## @file
 # Sub-Makefile for the IPRT.
 #
@@ -3403,6 +3403,7 @@ RuntimeR3NoCrt_SOURCES  := \
 	generic/rtStrFormatKernelAddress-generic.cpp
 
 RuntimeR3NoCrt_SOURCES.x86 := \
+	common/misc/setjmp.asm \
 	common/string/memcpy.asm \
 	common/string/memchr.asm \
 	common/string/memcmp.asm \
@@ -3415,6 +3416,7 @@ RuntimeR3NoCrt_SOURCES.x86 := \
 	common/string/RTStrEnd.asm
 
 RuntimeR3NoCrt_SOURCES.amd64 := \
+	common/misc/setjmp.asm \
 	common/string/memcpy.asm \
 	common/string/memchr.asm \
 	common/string/memcmp.asm \

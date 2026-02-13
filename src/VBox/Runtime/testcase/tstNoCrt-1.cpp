@@ -1,4 +1,4 @@
-/* $Id: tstNoCrt-1.cpp 112968 2026-02-12 10:56:48Z knut.osmundsen@oracle.com $ */
+/* $Id: tstNoCrt-1.cpp 112988 2026-02-13 09:06:23Z knut.osmundsen@oracle.com $ */
 /** @file
  * IPRT Testcase - Testcase for the No-CRT assembly bits.
  */
@@ -66,6 +66,298 @@ typedef struct TSTBUF
 RTTEST g_hTest = NIL_RTTEST;
 
 
+/*
+ * setjmp / longjmp
+ */
+#ifndef IPRT_WITH_NATIVE_SETJMP
+# undef RT_WITHOUT_NOCRT_WRAPPER_ALIASES  /* hack - we must use setjmp directly, due to Visual C++'s rewriting. */
+# include <iprt/nocrt/setjmp.h>
+#else
+# include <setjmp.h>
+#endif
+#ifdef RT_OS_WINDOWS
+# include <excpt.h>
+# define LONGJMP_WITH_DTOR_CALLS
+#else
+# define LONGJMP_WITHOUT_DTOR_CALLS
+#endif
+
+jmp_buf             g_JmpBuf;
+uint32_t volatile   g_uSetJmpState;
+
+#define CHECK_UINT(a_uVarToCheck, a_uExpected) do { \
+        if ((a_uVarToCheck) != a_uExpected) \
+            RTTestFailed(g_hTest, "line %u: %s = %#x, expected %#x!", __LINE__, #a_uVarToCheck, (a_uVarToCheck), (a_uExpected)); \
+    }  while (0)
+
+template <unsigned const a_uLineNo, uint32_t const a_fStateFlag>
+class TestNoCrt1SetJmpObj
+{
+    uint32_t volatile m_u32Magic;
+public:
+    TestNoCrt1SetJmpObj() : m_u32Magic(UINT32_C(0xdeadbeef) ^ a_uLineNo) { }
+    virtual ~TestNoCrt1SetJmpObj()
+    {
+        RTTestPrintf(g_hTest, RTTESTLVL_ALWAYS, "info: ~TestNoCrt1SetJmpObj<%u, %#x> - %#x\n",
+                     a_uLineNo, a_fStateFlag, m_u32Magic);
+        if (m_u32Magic != (UINT32_C(0xdeadbeef) ^ a_uLineNo))
+            RTTestFailed(g_hTest, "~TestNoCrt1SetJmpObj<%u, %#x> fail: %#x, expected %#x\n",
+                         a_uLineNo, a_fStateFlag, m_u32Magic, UINT32_C(0xdeadbeef) ^ a_uLineNo);
+        g_uSetJmpState |= a_fStateFlag;
+    }
+};
+
+#ifdef RT_OS_WINDOWS
+/* setjmp variation 4: c++ objects w/ destructors with windows __try/__finally and __try/__except */
+DECL_NO_INLINE(RT_NOTHING, int) testNoCrt1SetJmp4_Level5(char *pszBuf)
+{
+    RT_NOCRT(strcpy(pszBuf, "level5"));
+    TestNoCrt1SetJmpObj<__LINE__, RT_BIT_32(8+5)> Obj;
+    g_uSetJmpState |= RT_BIT_32(5);
+    if (g_uSetJmpState == 0x3e)
+        longjmp(g_JmpBuf, 401);
+    else
+        RTTestIFailed("Unexpected g_uSetJmpState value: %#x");
+
+    TestNoCrt1SetJmpObj<__LINE__, RT_BIT_32(8+6)> Obj2;
+    RT_NOCRT(strcpy(pszBuf, "level5-no-jmp"));
+    return g_uSetJmpState;
+}
+
+DECL_NO_INLINE(RT_NOTHING, int) testNoCrt1SetJmp4_Level4(char *pszBuf)
+{
+    __try
+    {
+        RT_NOCRT(strcpy(pszBuf, "level4"));
+        g_uSetJmpState |= RT_BIT_32(4);
+        return testNoCrt1SetJmp4_Level5(pszBuf) * testNoCrt1SetJmp4_Level5(pszBuf);
+    }
+    __finally
+    {
+        g_uSetJmpState |= RT_BIT_32(8+4);
+    }
+}
+
+DECL_NO_INLINE(RT_NOTHING, int) testNoCrt1SetJmp4_Level3(char *pszBuf)
+{
+    TestNoCrt1SetJmpObj<__LINE__, RT_BIT_32(8+3)> Obj;
+    RT_NOCRT(strcpy(pszBuf, "level3"));
+    g_uSetJmpState |= RT_BIT_32(3);
+    return testNoCrt1SetJmp4_Level4(pszBuf) + testNoCrt1SetJmp4_Level4(pszBuf);
+}
+
+static int testNoCrt1SetJmp4_Level2Filter(unsigned int uCode)
+{
+    RTTestPrintf(g_hTest, RTTESTLVL_ALWAYS, "4: Level2Filter: uCode=%#x\n", uCode);
+    g_uSetJmpState |= RT_BIT_32(24);
+    return EXCEPTION_EXECUTE_HANDLER;
+}
+
+DECL_NO_INLINE(RT_NOTHING, int) testNoCrt1SetJmp4_Level2(char *pszBuf)
+{
+    __try
+    {
+        RT_NOCRT(strcpy(pszBuf, "level2"));
+        g_uSetJmpState |= RT_BIT_32(2);
+        return testNoCrt1SetJmp4_Level3(pszBuf) + 3;
+    }
+    __except(testNoCrt1SetJmp4_Level2Filter(GetExceptionCode()))
+    {
+        RTTestPrintf(g_hTest, RTTESTLVL_ALWAYS, "4: Level2: In __except!\n");
+        g_uSetJmpState |= RT_BIT_32(24);
+        return -1;
+    }
+}
+
+DECL_NO_INLINE(RT_NOTHING, void) testNoCrt1SetJmp4_Level1(char *pszBuf)
+{
+    *pszBuf = '\0';
+    g_uSetJmpState = 0;
+    TestNoCrt1SetJmpObj<__LINE__, RT_BIT_32(23)> ObjOuter;
+
+    RTTestPrintf(g_hTest, RTTESTLVL_ALWAYS, "4/pre: %p %p %p %p %p %p %p %p %p %p %p\n",  /* for testing asan stack protections */
+                 g_JmpBuf[0], g_JmpBuf[1], g_JmpBuf[2], g_JmpBuf[3], g_JmpBuf[4], g_JmpBuf[5],
+                 g_JmpBuf[6], g_JmpBuf[7], g_JmpBuf[8], g_JmpBuf[9], g_JmpBuf[10], g_JmpBuf[11]);
+
+    int rc;
+    if ((rc = setjmp(g_JmpBuf)) == 0)
+    {
+        RTTestPrintf(g_hTest, RTTESTLVL_ALWAYS, "4/set: %p %p %p %p %p %p %p %p %p %p %p\n",  /* for testing asan stack protections */
+                     g_JmpBuf[0], g_JmpBuf[1], g_JmpBuf[2], g_JmpBuf[3], g_JmpBuf[4], g_JmpBuf[5],
+                     g_JmpBuf[6], g_JmpBuf[7], g_JmpBuf[8], g_JmpBuf[9], g_JmpBuf[10], g_JmpBuf[11]);
+        TestNoCrt1SetJmpObj<__LINE__, RT_BIT_32(8+1)> Obj;
+        g_uSetJmpState |= RT_BIT_32(1);
+        if (g_uSetJmpState == RT_BIT_32(1))
+            testNoCrt1SetJmp4_Level2(pszBuf);
+        RTTestFailed(g_hTest, "3: longjmp either returned or g_uSetJmpState(=%#x) is busted!", g_uSetJmpState);
+    }
+    else
+    {
+        RTTEST_CHECK(g_hTest, rc == 401);
+        g_uSetJmpState |= RT_BIT_32(31);
+    }
+
+    CHECK_UINT(g_uSetJmpState, UINT32_C(0x80003a3e));
+    RTTEST_CHECK(g_hTest, strcmp(pszBuf, "level5") == 0);
+    RTTestPrintf(g_hTest, RTTESTLVL_ALWAYS, "4/end: %p %p %p %p %p %p %p %p %p %p %p\n",  /* for testing asan stack protections */
+                 g_JmpBuf[0], g_JmpBuf[1], g_JmpBuf[2], g_JmpBuf[3], g_JmpBuf[4], g_JmpBuf[5],
+                 g_JmpBuf[6], g_JmpBuf[7], g_JmpBuf[8], g_JmpBuf[9], g_JmpBuf[10], g_JmpBuf[11]);
+    TestNoCrt1SetJmpObj<__LINE__, 0> Obj3;
+}
+#endif /* RT_OS_WINDOWS */
+
+
+/* setjmp variation 3: c++ objects w/ destructors */
+DECL_NO_INLINE(RT_NOTHING, int) testNoCrt1SetJmp3_Level4(char *pszBuf)
+{
+    RT_NOCRT(strcpy(pszBuf, "level4"));
+    TestNoCrt1SetJmpObj<__LINE__, RT_BIT_32(15)> Obj;
+    g_uSetJmpState |= 8;
+    if (g_uSetJmpState == 0xf)
+        longjmp(g_JmpBuf, 181081);
+    TestNoCrt1SetJmpObj<__LINE__, RT_BIT_32(16)> Obj2;
+    RT_NOCRT(strcpy(pszBuf, "level4-no-jmp"));
+    return g_uSetJmpState;
+}
+
+DECL_NO_INLINE(RT_NOTHING, int) testNoCrt1SetJmp3_Level3(char *pszBuf)
+{
+    TestNoCrt1SetJmpObj<__LINE__, RT_BIT_32(14)> Obj;
+    RT_NOCRT(strcpy(pszBuf, "level3"));
+    g_uSetJmpState |= 4;
+    return testNoCrt1SetJmp3_Level4(pszBuf) + testNoCrt1SetJmp3_Level4(pszBuf);
+}
+
+DECL_NO_INLINE(RT_NOTHING, int) testNoCrt1SetJmp3_Level2(char *pszBuf)
+{
+    TestNoCrt1SetJmpObj<__LINE__, RT_BIT_32(13)> Obj;
+    RT_NOCRT(strcpy(pszBuf, "level2"));
+    g_uSetJmpState |= 2;
+    return testNoCrt1SetJmp3_Level3(pszBuf) + 3;
+}
+
+DECL_NO_INLINE(RT_NOTHING, void) testNoCrt1SetJmp3_Level1(char *pszBuf)
+{
+    *pszBuf = '\0';
+    g_uSetJmpState = 0;
+    TestNoCrt1SetJmpObj<__LINE__, RT_BIT_32(23)> ObjOuter;
+
+    int rc;
+    if ((rc = setjmp(g_JmpBuf)) == 0)
+    {
+        TestNoCrt1SetJmpObj<__LINE__, RT_BIT_32(12)> Obj;
+        g_uSetJmpState |= 1;
+        if (g_uSetJmpState == 1)
+            testNoCrt1SetJmp3_Level2(pszBuf);
+        RTTestFailed(g_hTest, "3: longjmp either returned or g_uSetJmpState(=%#x) is busted!", g_uSetJmpState);
+    }
+    else
+    {
+        RTTEST_CHECK(g_hTest, rc == 181081);
+        g_uSetJmpState |= 0x10;
+    }
+#ifdef LONGJMP_WITH_DTOR_CALLS
+    CHECK_UINT(g_uSetJmpState, 0xf01f);
+#else
+    CHECK_UINT(g_uSetJmpState, 0x001f);
+#endif
+    RTTEST_CHECK(g_hTest, strcmp(pszBuf, "level4") == 0);
+}
+
+
+/* setjmp variation 2: */
+DECL_NO_INLINE(RT_NOTHING, int) testNoCrt1SetJmp2_Level4(char *pszBuf)
+{
+    RT_NOCRT(strcpy(pszBuf, "level4"));
+    g_uSetJmpState |= 8;
+    if (g_uSetJmpState == 0xf)
+        longjmp(g_JmpBuf, 115249);
+    RT_NOCRT(strcpy(pszBuf, "level4-no-jmp"));
+    return g_uSetJmpState;
+}
+
+DECL_NO_INLINE(RT_NOTHING, int) testNoCrt1SetJmp2_Level3(char *pszBuf)
+{
+    RT_NOCRT(strcpy(pszBuf, "level3"));
+    g_uSetJmpState |= 4;
+    return testNoCrt1SetJmp2_Level4(pszBuf) + testNoCrt1SetJmp2_Level4(pszBuf);
+}
+
+DECL_NO_INLINE(RT_NOTHING, int) testNoCrt1SetJmp2_Level2(char *pszBuf)
+{
+    RT_NOCRT(strcpy(pszBuf, "level2"));
+    g_uSetJmpState |= 2;
+    return testNoCrt1SetJmp2_Level3(pszBuf) + 3;
+}
+
+DECL_NO_INLINE(RT_NOTHING, void) testNoCrt1SetJmp2_Level1(char *pszBuf)
+{
+    *pszBuf = '\0';
+    g_uSetJmpState = 0;
+
+    int rc;
+    if ((rc = setjmp(g_JmpBuf)) == 0)
+    {
+        g_uSetJmpState |= 1;
+        if (g_uSetJmpState == 1)
+            testNoCrt1SetJmp2_Level2(pszBuf);
+        RTTestFailed(g_hTest, "2: longjmp either returned or g_uSetJmpState(=%#x) is busted!", g_uSetJmpState);
+    }
+    else
+    {
+        RTTEST_CHECK(g_hTest, rc == 115249);
+        g_uSetJmpState |= 0x10;
+    }
+    CHECK_UINT(g_uSetJmpState, 0x1f);
+    RTTEST_CHECK(g_hTest, strcmp(pszBuf, "level4") == 0);
+}
+
+void testNoCrt1SetJmp(void)
+{
+    RTTestSub(g_hTest, "setjmp/longjmp");
+
+    /*
+     * Dead simple.
+     */
+#if 1
+    g_uSetJmpState = 0;
+    int rc;
+    if ((rc = setjmp(g_JmpBuf)) == 0)
+    {
+        g_uSetJmpState = 1;
+        if (g_uSetJmpState == 1)
+            longjmp(g_JmpBuf, 999331);
+        RTTestFailed(g_hTest, "1: longjmp either returned or g_uSetJmpState(=%#x) is busted!", g_uSetJmpState);
+    }
+    else
+    {
+        RTTEST_CHECK(g_hTest, rc == 999331);
+        g_uSetJmpState |= 0x10;
+    }
+    CHECK_UINT(g_uSetJmpState, 0x11);
+#endif
+
+    /*
+     * A bit more convoluted tests.
+     */
+    char szBuf[64];
+#if 1
+    testNoCrt1SetJmp2_Level1(szBuf);
+#endif
+#if 1
+    testNoCrt1SetJmp3_Level1(szBuf);
+#endif
+#ifdef RT_OS_WINDOWS
+    testNoCrt1SetJmp4_Level1(szBuf);
+#endif
+
+}
+
+
+/*
+ * string.h stuff
+ */
+
 static void my_memset(void *pv, int ch, size_t cb)
 {
     uint8_t *pb = (uint8_t *)pv;
@@ -124,16 +416,8 @@ static void TstBufCheck(PTSTBUF pBuf, const char *pszDesc)
 # endif
 #endif
 
-int main()
+void testNoCrt1String(void)
 {
-    /*
-     * Prologue.
-     */
-    RTEXITCODE rcExit = RTTestInitAndCreate("tstNoCrt-1", &g_hTest);
-    if (rcExit != RTEXITCODE_SUCCESS)
-        return rcExit;
-    RTTestBanner(g_hTest);
-
     /*
      * Sanity.
      */
@@ -149,7 +433,7 @@ int main()
     if (RTTestIErrorCount() != 0)
     {
         RTTestIFailed("fatal sanity error\n");
-        return RTTestSummaryAndDestroy(g_hTest);
+        return;
     }
 
 #define CHECK_CCH(expect)  \
@@ -508,6 +792,26 @@ int main()
     cch = RT_NOCRT(wcslen)(L"12345");        CHECK_CCH(5);
 #endif
 
+}
+
+
+int main()
+{
+    /*
+     * Prologue.
+     */
+    RTEXITCODE rcExit = RTTestInitAndCreate("tstNoCrt-1", &g_hTest);
+    if (rcExit != RTEXITCODE_SUCCESS)
+        return rcExit;
+    RTTestBanner(g_hTest);
+
+    /*
+     * The tests.
+     */
+#if 0
+    testNoCrt1String();
+#endif
+    testNoCrt1SetJmp();
 
     /*
      * Summary.

@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 112621 2026-01-16 09:46:12Z alexander.eichner@oracle.com $
+# $Id: Makefile.kmk 112988 2026-02-13 09:06:23Z knut.osmundsen@oracle.com $
 ## @file
 # Sub-Makefile for the IPRT testcases.
 #
@@ -645,8 +645,27 @@ ifdef VBOX_WITH_TESTCASES # The whole file
  tstRTNetIPv6_SOURCES = tstRTNetIPv6.cpp
 
  tstNoCrt-1_TEMPLATE = VBoxR3TstExe
- tstNoCrt-1_DEFS = RT_WITHOUT_NOCRT_WRAPPER_ALIASES
+ tstNoCrt-1_DEFS = RT_WITHOUT_NOCRT_WRAPPER_ALIASES IPRT_WITHOUT_NLG_STUFF
+ tstNoCrt-1_DEFS.asan = IPRT_BUILD_TYPE_ASAN
  tstNoCrt-1_SOURCES = \
+ 	tstNoCrt-1.cpp \
+ 	../common/string/memcpy.asm \
+ 	../common/string/mempcpy.asm \
+ 	../common/string/memmove.asm \
+ 	../common/string/memset.asm \
+ 	../common/string/memchr.asm \
+ 	../common/string/memcmp.asm \
+ 	../common/string/strchr.asm \
+ 	../common/string/strcmp.asm \
+ 	../common/string/strcpy.asm \
+ 	../common/string/strlen.asm \
+ 	../common/string/wcslen.asm \
+ 	../common/misc/setjmp.asm
+
+ #PROGRAMS += tstNoCrt-1-ucrt
+ tstNoCrt-1-ucrt_TEMPLATE = VBoxR3TstExe
+ tstNoCrt-1-ucrt_DEFS = RT_WITHOUT_NOCRT_WRAPPER_ALIASES IPRT_WITHOUT_NLG_STUFF IPRT_WITH_NATIVE_SETJMP
+ tstNoCrt-1-ucrt_SOURCES = \
  	tstNoCrt-1.cpp \
  	../common/string/memcpy.asm \
  	../common/string/mempcpy.asm \

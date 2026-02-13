@@ -1,4 +1,4 @@
-/* $Id: SUPDrv.cpp 112971 2026-02-12 14:02:00Z alexander.eichner@oracle.com $ */
+/* $Id: SUPDrv.cpp 112988 2026-02-13 09:06:23Z knut.osmundsen@oracle.com $ */
 /** @file
  * VBoxDrv - The VirtualBox Support Driver - Common code.
  */
@@ -40,6 +40,7 @@
 *********************************************************************************************************************************/
 #define LOG_GROUP LOG_GROUP_SUP_DRV
 #define SUPDRV_AGNOSTIC
+#define RtlUnwind RtlUnwind_Imported /* HACK: Avoid runtime initializers and take the RtlUnwind stub function address in table. */
 #include "SUPDrvInternal.h"
 #ifndef PAGE_SHIFT
 # include <iprt/param.h>
@@ -113,6 +114,12 @@
 #   include <type_traits>
 #  endif
 # endif
+#endif
+
+#ifdef RT_OS_WINDOWS
+/* HACK: Avoid runtime initializers and take the RtlUnwind stub function address in table. */
+# undef RtlUnwind
+extern "C" void __stdcall RtlUnwind(void *, void*, void *, void *) RT_NOEXCEPT;
 #endif
 
 
@@ -593,6 +600,9 @@ static SUPFUNC g_aFunctions[] =
     SUPEXP_STK_OKAY(    2,  RTUuidCompare),
     SUPEXP_STK_OKAY(    2,  RTUuidCompareStr),
     SUPEXP_STK_OKAY(    2,  RTUuidFromStr),
+#ifdef RT_OS_WINDOWS
+    SUPEXP_STK_OKAY(    4,  RtlUnwind),  /* only-windows (hack for longjmp use in VMMR0) */
+#endif
 /* SED: END */
 };
 
