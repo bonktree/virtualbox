@@ -1,4 +1,4 @@
-/* $Id: DevPciVfio.cpp 113024 2026-02-13 19:47:33Z andreas.loeffler@oracle.com $ */
+/* $Id: DevPciVfio.cpp 113025 2026-02-13 21:26:53Z alexander.eichner@oracle.com $ */
 /** @file
  * PCI passthrough device emulation using VFIO/IOMMUFD.
  */
@@ -961,6 +961,9 @@ static int pciVfioCfgSpaceParseCapabilities(PVFIOPCI pThis, PPDMPCIDEV pPciDev)
 {
     PPDMDEVINS pDevIns = pThis->pDevIns;
 
+    /* Initialize with 0. */
+    PDMPciDevSetCapabilityList(pPciDev, 0);
+
     /*
      * Try building a 1:1 mapping of the capabilities, punching holes for capabilities
      * currently not being supported.
@@ -975,12 +978,8 @@ static int pciVfioCfgSpaceParseCapabilities(PVFIOPCI pThis, PPDMPCIDEV pPciDev)
     if (!offCap)
     {
         /* No capabilities, return early. */
-        PDMPciDevSetCapabilityList(pPciDev, 0x00);
         return VINF_SUCCESS;
     }
-
-    /* Initialize with 0. */
-    PDMPciDevSetCapabilityList(pPciDev, 0);
 
     /* This ASSUMES that the cpabilities are not going backwards when pointing to the next one. */
     uint8_t offCapNextPrev = VBOX_PCI_CAPABILITY_LIST;
@@ -1002,16 +1001,8 @@ static int pciVfioCfgSpaceParseCapabilities(PVFIOPCI pThis, PPDMPCIDEV pPciDev)
         bool    fSupported = false;
         switch (bCapId)
         {
-            case VBOX_PCI_CAP_ID_PM:
-            {
-                LogRel(("VFIO#%d: Cap[%#x]: PCI Power Management Interface -> unsupported\n", pThis->iInstance, offCap));
-                break;
-            }
-            case VBOX_PCI_CAP_ID_AGP:
-            {
-                LogRel(("VFIO#%d: Cap[%#x]: AGP -> unsupported\n", pThis->iInstance, offCap));
-                break;
-            }
+            case VBOX_PCI_CAP_ID_PM:  LogRel(("VFIO#%d: Cap[%#x]: PCI Power Management Interface -> unsupported\n", pThis->iInstance, offCap)); break;
+            case VBOX_PCI_CAP_ID_AGP: LogRel(("VFIO#%d: Cap[%#x]: AGP -> unsupported\n", pThis->iInstance, offCap));                            break;
             case VBOX_PCI_CAP_ID_VPD:
             {
                 LogRel(("VFIO#%d: Cap[%#x]: VPD -> passthrough\n", pThis->iInstance, offCap, bCapId));
@@ -1021,11 +1012,7 @@ static int pciVfioCfgSpaceParseCapabilities(PVFIOPCI pThis, PPDMPCIDEV pPciDev)
                 fSupported = true;
                 break;
             }
-            case VBOX_PCI_CAP_ID_SLOTID:
-            {
-                LogRel(("VFIO#%d: Cap[%#x]: Slot Identification -> unsupported\n", pThis->iInstance, offCap));
-                break;
-            }
+            case VBOX_PCI_CAP_ID_SLOTID: LogRel(("VFIO#%d: Cap[%#x]: Slot Identification -> unsupported\n", pThis->iInstance, offCap)); break;
             case VBOX_PCI_CAP_ID_MSI:
             {
                 LogRel(("VFIO#%d: Cap[%#x]: Message Signaled Interrupts -> emulate\n", pThis->iInstance, offCap));
@@ -1075,21 +1062,9 @@ static int pciVfioCfgSpaceParseCapabilities(PVFIOPCI pThis, PPDMPCIDEV pPciDev)
                 pThis->offMsiCtrl = offCap + 2;
                 break;
             }
-            case VBOX_PCI_CAP_ID_CHSWP:
-            {
-                LogRel(("VFIO#%d: Cap[%#x]: CompactPCI Hot Swap -> unsupported\n", pThis->iInstance, offCap));
-                break;
-            }
-            case VBOX_PCI_CAP_ID_PCIX:
-            {
-                LogRel(("VFIO#%d: Cap[%#x]: PCI-X -> unsupported\n", pThis->iInstance, offCap));
-                break;
-            }
-            case VBOX_PCI_CAP_ID_HT:
-            {
-                LogRel(("VFIO#%d: Cap[%#x]: HyperTransport -> unsupported\n", pThis->iInstance, offCap));
-                break;
-            }
+            case VBOX_PCI_CAP_ID_CHSWP: LogRel(("VFIO#%d: Cap[%#x]: CompactPCI Hot Swap -> unsupported\n", pThis->iInstance, offCap)); break;
+            case VBOX_PCI_CAP_ID_PCIX:  LogRel(("VFIO#%d: Cap[%#x]: PCI-X -> unsupported\n", pThis->iInstance, offCap));               break;
+            case VBOX_PCI_CAP_ID_HT:    LogRel(("VFIO#%d: Cap[%#x]: HyperTransport -> unsupported\n", pThis->iInstance, offCap));      break;
             case VBOX_PCI_CAP_ID_VNDR:
             {
                 LogRel(("VFIO#%d: Cap[%#x]: Vendor Specific -> passthrough\n", pThis->iInstance, offCap));
@@ -1111,36 +1086,12 @@ static int pciVfioCfgSpaceParseCapabilities(PVFIOPCI pThis, PPDMPCIDEV pPciDev)
                 fSupported = true;
                 break;
             }
-            case VBOX_PCI_CAP_ID_DBG:
-            {
-                LogRel(("VFIO#%d: Cap[%#x]: Debug port -> unsupported\n", pThis->iInstance, offCap));
-                break;
-            }
-            case VBOX_PCI_CAP_ID_CCRC:
-            {
-                LogRel(("VFIO#%d: Cap[%#x]: CompactPCI central resource control -> unsupported\n", pThis->iInstance, offCap));
-                break;
-            }
-            case VBOX_PCI_CAP_ID_SHPC:
-            {
-                LogRel(("VFIO#%d: Cap[%#x]: Standard PCI Hot-Plug Controller -> unsupported\n", pThis->iInstance, offCap));
-                break;
-            }
-            case VBOX_PCI_CAP_ID_SSVID:
-            {
-                LogRel(("VFIO#%d: Cap[%#x]: SPCI Bridge Subsystem Vendor ID -> unsupported\n", pThis->iInstance, offCap));
-                break;
-            }
-            case VBOX_PCI_CAP_ID_AGP3:
-            {
-                LogRel(("VFIO#%d: Cap[%#x]: AGP 8x -> unsupported\n", pThis->iInstance, offCap));
-                break;
-            }
-            case VBOX_PCI_CAP_ID_SECURE:
-            {
-                LogRel(("VFIO#%d: Cap[%#x]: Secure Device -> unsupported\n", pThis->iInstance, offCap));
-                break;
-            }
+            case VBOX_PCI_CAP_ID_DBG:    LogRel(("VFIO#%d: Cap[%#x]: Debug port -> unsupported\n", pThis->iInstance, offCap));                          break;
+            case VBOX_PCI_CAP_ID_CCRC:   LogRel(("VFIO#%d: Cap[%#x]: CompactPCI central resource control -> unsupported\n", pThis->iInstance, offCap)); break;
+            case VBOX_PCI_CAP_ID_SHPC:   LogRel(("VFIO#%d: Cap[%#x]: Standard PCI Hot-Plug Controller -> unsupported\n", pThis->iInstance, offCap));    break;
+            case VBOX_PCI_CAP_ID_SSVID:  LogRel(("VFIO#%d: Cap[%#x]: SPCI Bridge Subsystem Vendor ID -> unsupported\n", pThis->iInstance, offCap));     break;
+            case VBOX_PCI_CAP_ID_AGP3:   LogRel(("VFIO#%d: Cap[%#x]: AGP 8x -> unsupported\n", pThis->iInstance, offCap));                              break;
+            case VBOX_PCI_CAP_ID_SECURE: LogRel(("VFIO#%d: Cap[%#x]: Secure Device -> unsupported\n", pThis->iInstance, offCap));                       break;
             case VBOX_PCI_CAP_ID_EXP:
             {
                 LogRel(("VFIO#%d: Cap[%#x]: PCI Express -> emulate\n", pThis->iInstance, offCap));
@@ -1153,16 +1104,8 @@ static int pciVfioCfgSpaceParseCapabilities(PVFIOPCI pThis, PPDMPCIDEV pPciDev)
                 /** @todo */
                 break;
             }
-            case VBOX_PCI_CAP_ID_SATA:
-            {
-                LogRel(("VFIO#%d: Cap[%#x]: Serial ATA HBA -> unsupported\n", pThis->iInstance, offCap));
-                break;
-            }
-            case VBOX_PCI_CAP_ID_AF:
-            {
-                LogRel(("VFIO#%d: Cap[%#x]: PCI Advanced Features -> unsupported\n", pThis->iInstance, offCap));
-                break;
-            }
+            case VBOX_PCI_CAP_ID_SATA: LogRel(("VFIO#%d: Cap[%#x]: Serial ATA HBA -> unsupported\n", pThis->iInstance, offCap));        break;
+            case VBOX_PCI_CAP_ID_AF:   LogRel(("VFIO#%d: Cap[%#x]: PCI Advanced Features -> unsupported\n", pThis->iInstance, offCap)); break;
             default:
                 LogRel(("VFIO#%d: Cap[%#x]: Unknown capability ID %#x encountered -> unsupported\n", pThis->iInstance, offCap, bCapId));
                 break;
@@ -1190,6 +1133,86 @@ static int pciVfioCfgSpaceParseCapabilities(PVFIOPCI pThis, PPDMPCIDEV pPciDev)
 
     /* Mark the end of the list. */
     PDMPciDevSetByte(pPciDev, offCapNextPrev, 0);
+
+    return VINF_SUCCESS;
+}
+
+
+static int pciVfioCfgSpaceParseExtCapabilities(PVFIOPCI pThis, PPDMPCIDEV pPciDev)
+{
+    PPDMDEVINS pDevIns = pThis->pDevIns;
+    RT_NOREF(pPciDev);
+
+    uint16_t offCap = 256;
+
+    /* This ASSUMES that the cpabilities are not going backwards when pointing to the next one. */
+    for (;;)
+    {
+        uint32_t u32CapHdr = 0;
+        int rc = pciVfioCfgSpaceReadU32(pThis, offCap, &u32CapHdr);
+        if (RT_FAILURE(rc))
+            return PDMDevHlpVMSetError(pDevIns, rc, RT_SRC_POS,
+                                       N_("Failed to read extended capabilitiy header at offset %#x with %Rrc"), offCap, rc);
+
+        if (!u32CapHdr)
+            break;
+
+        uint16_t const u16CapId   = u32CapHdr & UINT16_C(0xffff);
+        uint8_t  const bCapVers   = (u32CapHdr >> 16) & 0xf; RT_NOREF(bCapVers);
+        uint16_t const offCapNext = (u32CapHdr >> 20) & 0xfff;
+        uint16_t       cbCap      = sizeof(uint32_t);
+        bool fSupported = false;
+        switch (u16CapId)
+        {
+            case VBOX_PCI_EXT_CAP_ID_ERR:     LogRel(("VFIO#%d: Cap[%#x v%u]: Advanced Error Reporting -> unsupported\n", pThis->iInstance, offCap, bCapVers));               break;
+            case VBOX_PCI_EXT_CAP_ID_VC:      LogRel(("VFIO#%d: Cap[%#x v%u]: Virtual Channel -> unsupported\n", pThis->iInstance, offCap, bCapVers));                        break;
+            case VBOX_PCI_EXT_CAP_ID_DSN:     LogRel(("VFIO#%d: Cap[%#x v%u]: Device Serial Number -> unsupported\n", pThis->iInstance, offCap, bCapVers));                   break;
+            case VBOX_PCI_EXT_CAP_ID_PWR:     LogRel(("VFIO#%d: Cap[%#x v%u]: Power Budgeting -> unsupported\n", pThis->iInstance, offCap, bCapVers));                        break;
+            case VBOX_PCI_EXT_CAP_ID_RCLINK:  LogRel(("VFIO#%d: Cap[%#x v%u]: Root Complex Link Declaration -> unsupported\n", pThis->iInstance, offCap, bCapVers));          break;
+            case VBOX_PCI_EXT_CAP_ID_RCILINK: LogRel(("VFIO#%d: Cap[%#x v%u]: Coot Complex Internal Link Declaration -> unsupported\n", pThis->iInstance, offCap, bCapVers)); break;
+            case VBOX_PCI_EXT_CAP_ID_RCECOLL: LogRel(("VFIO#%d: Cap[%#x v%u]: Root Complex Event Collector -> unsupported\n", pThis->iInstance, offCap, bCapVers));           break;
+            case VBOX_PCI_EXT_CAP_ID_MFVC:    LogRel(("VFIO#%d: Cap[%#x v%u]: Multi-Function Virtual Channel -> unsupported\n", pThis->iInstance, offCap, bCapVers));         break;
+            case VBOX_PCI_EXT_CAP_ID_RBCB:    LogRel(("VFIO#%d: Cap[%#x v%u]: Root Bridge Control Block -> unsupported\n", pThis->iInstance, offCap, bCapVers));              break;
+            case VBOX_PCI_EXT_CAP_ID_VNDR:    LogRel(("VFIO#%d: Cap[%#x v%u]: Vendor Specific -> unsupported\n", pThis->iInstance, offCap, bCapVers));                        break;
+            case VBOX_PCI_EXT_CAP_ID_ACS:     LogRel(("VFIO#%d: Cap[%#x v%u]: Access Controls -> unsupported\n", pThis->iInstance, offCap, bCapVers));                        break;
+            case VBOX_PCI_EXT_CAP_ID_ARI:     LogRel(("VFIO#%d: Cap[%#x v%u]: Alternative Routing ID -> unsupported\n", pThis->iInstance, offCap, bCapVers));                 break;
+            case VBOX_PCI_EXT_CAP_ID_ATS:     LogRel(("VFIO#%d: Cap[%#x v%u]: Address Translation Service -> unsupported\n", pThis->iInstance, offCap, bCapVers));            break;
+            case VBOX_PCI_EXT_CAP_ID_SRIOV:   LogRel(("VFIO#%d: Cap[%#x v%u]: Single Root I/O Virtualization -> unsupported\n", pThis->iInstance, offCap, bCapVers));         break;
+            case VBOX_PCI_EXT_CAP_ID_MCAST:   LogRel(("VFIO#%d: Cap[%#x v%u]: Multicast -> unsupported\n", pThis->iInstance, offCap, bCapVers));                              break;
+            case VBOX_PCI_EXT_CAP_ID_RESZBAR: LogRel(("VFIO#%d: Cap[%#x v%u]: Resizable BAR -> unsupported\n", pThis->iInstance, offCap, bCapVers));                          break;
+            case VBOX_PCI_EXT_CAP_ID_DPA:     LogRel(("VFIO#%d: Cap[%#x v%u]: Dynamic Power Allocation -> unsupported\n", pThis->iInstance, offCap, bCapVers));               break;
+            case VBOX_PCI_EXT_CAP_ID_TPH:     LogRel(("VFIO#%d: Cap[%#x v%u]: TPH Requester -> unsupported\n", pThis->iInstance, offCap, bCapVers));                          break;
+            case VBOX_PCI_EXT_CAP_ID_LTR:     LogRel(("VFIO#%d: Cap[%#x v%u]: Latency Tolerance Reporting -> unsupported\n", pThis->iInstance, offCap, bCapVers));            break;
+            case VBOX_PCI_EXT_CAP_ID_SECPCIE: LogRel(("VFIO#%d: Cap[%#x v%u]: Secondary PCI Express -> unsupported\n", pThis->iInstance, offCap, bCapVers));                  break;
+            case VBOX_PCI_EXT_CAP_ID_PASID:   LogRel(("VFIO#%d: Cap[%#x v%u]: Process Address Space Identifier -> unsupported\n", pThis->iInstance, offCap, bCapVers));       break;
+            case VBOX_PCI_EXT_CAP_ID_LNR:     LogRel(("VFIO#%d: Cap[%#x v%u]: LN Requester -> unsupported\n", pThis->iInstance, offCap, bCapVers));                           break;
+            case VBOX_PCI_EXT_CAP_ID_DPC:     LogRel(("VFIO#%d: Cap[%#x v%u]: Downstream Port Containment -> unsupported\n", pThis->iInstance, offCap, bCapVers));            break;
+            case VBOX_PCI_EXT_CAP_ID_L1PM:    LogRel(("VFIO#%d: Cap[%#x v%u]: L1 PM Substates -> unsupported\n", pThis->iInstance, offCap, bCapVers));                        break;
+            case VBOX_PCI_EXT_CAP_ID_PTM:     LogRel(("VFIO#%d: Cap[%#x v%u]: Precision Time Management -> unsupported\n", pThis->iInstance, offCap, bCapVers));              break;
+            case VBOX_PCI_EXT_CAP_ID_MPCIE:   LogRel(("VFIO#%d: Cap[%#x v%u]: M-PCI Express -> unsupported\n", pThis->iInstance, offCap, bCapVers));                          break;
+            case VBOX_PCI_EXT_CAP_ID_FRS:     LogRel(("VFIO#%d: Cap[%#x v%u]: Function Readiness Status -> unsupported\n", pThis->iInstance, offCap, bCapVers));              break;
+            case VBOX_PCI_EXT_CAP_ID_RTR:     LogRel(("VFIO#%d: Cap[%#x v%u]: Readiness Time Reporting -> unsupported\n", pThis->iInstance, offCap, bCapVers));               break;
+            case VBOX_PCI_EXT_CAP_ID_DVSEC:   LogRel(("VFIO#%d: Cap[%#x v%u]: Desginated Vendor-Specific -> unsupported\n", pThis->iInstance, offCap, bCapVers));             break;
+            default:
+                LogRel(("VFIO#%d: Cap[%#x v%u]: Unknown capability ID %#x encountered -> unsupported\n", pThis->iInstance, offCap, bCapVers, u16CapId));
+                break;
+        }
+
+        if (fSupported)
+        {
+            /** @todo */
+        }
+
+        if (!offCapNext)
+            break;
+
+        if (   offCapNext < offCap
+            || offCapNext < offCap + cbCap)
+            return PDMDevHlpVMSetError(pDevIns, VERR_INVALID_STATE, RT_SRC_POS,
+                                       N_("Next capability pointer points backwards or inside the current capability (next offset %#x )"), offCapNext);
+
+        offCap = offCapNext;
+    }
 
     return VINF_SUCCESS;
 }
@@ -1840,7 +1863,12 @@ static DECLCALLBACK(int) pciVfioConstruct(PPDMDEVINS pDevIns, int iInstance, PCF
     if (RT_FAILURE(rc))
         return rc;
 
-    /** @todo Parse the extended capability list */
+    if (pThis->cbPciCfg == 4096)
+    {
+        rc = pciVfioCfgSpaceParseExtCapabilities(pThis, pPciDev);
+        if (RT_FAILURE(rc))
+            return rc;
+    }
 
     /* Create wakeup eventfd for IRQ poller. */
     rc = pciVfioLnxEventfd2(0 /*uValInit*/, 0 /*fFlags*/, &pThis->iFdWakeup);
