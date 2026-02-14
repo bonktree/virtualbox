@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# $Id: configure.py 113023 2026-02-13 17:57:44Z andreas.loeffler@oracle.com $
+# $Id: configure.py 113028 2026-02-14 03:51:29Z knut.osmundsen@oracle.com $
 """
 Configuration script for building VirtualBox.
 
@@ -61,9 +61,10 @@ SPDX-License-Identifier: GPL-3.0-only
 # External Python modules or other dependencies are not allowed!
 #
 
-__revision__ = "$Revision: 113023 $"
+__revision__ = "$Revision: 113028 $"
 
 import argparse
+import collections;
 import ctypes
 import datetime
 import fnmatch
@@ -84,6 +85,7 @@ import tempfile
 # Check for minimum Python version first.
 g_uMinPythonVerTuple = (3, 4);
 if sys.version_info < g_uMinPythonVerTuple:
+    ## @todo r=bird: Python v3.4.4 & v3.5.0 on windows throw SyntaxError on the next line. (First happy version is 3.6.0.)
     sys.exit(f"Python {g_uMinPythonVerTuple[0]}.{g_uMinPythonVerTuple[1]} or newer is required, found {sys.version_info.major}.{sys.version_info.minor}")
 
 # Handle to log file (if any).
@@ -116,6 +118,8 @@ class BuildArch:
     """
     Supported build architectures enumeration.
     This resembles the kBuild architectures.
+    r=bird: Why 'resembles'? These actually _are_ a subset of the kBuild
+            architecture names with 'unknown' added and 'any' instead of 'noarch'.
     """
     ANY = "any";
     X86 = "x86";
@@ -135,9 +139,10 @@ g_mapPythonArch2BuildArch = {
 # Supported build architectures.
 g_aeBuildArchs = [ BuildArch.X86, BuildArch.AMD64, BuildArch.ARM64 ];
 
-# Defines the host architecture.
+# Defines the host architecture (pythonic name).
 g_sHostArch = platform.machine().lower();
-# Solaris detection (skip SPARC for simplicity, ASSUMES Intel).
+## @todo Just duplicate utils.py's getHost() instead...
+# Solaris detection kludge (skip SPARC for simplicity, ASSUMES Intel).
 if 'i86pc' in g_sHostArch:
     g_sHostArch = "x86_64" if "64" in platform.architecture()[0] else "i686";
 # Maps host arch to build arch.
@@ -149,6 +154,11 @@ class BuildTarget:
     """
     Supported build targets enumeration.
     This resembles the kBuild targets.
+    r=bird: Why 'resembles'? They are mapped to KBUILD_TARGET and KBUILD_HOST, so they
+            cannot be approximately correct, they have to be exactly correct. Duh.
+            kBuild will not accept BSD='bsd'. 'any' matches kBuild's 'os-agonstic' and
+            would be better mapped as to that value.  The 'unknown' value is basically 
+            unused.
     """
     ANY = "any";
     LINUX = "linux";
@@ -171,8 +181,12 @@ g_cWarnings = 0;              # Number of warning messages.
 g_asWarnings = [];            # List of warning messages.
 
 # Defines the host target.
+# Note! In kBuild term this is the 'host OS' (KBUILD_HOST).  (In GCC cross-build
+#       terms, this is the build OS.)
+## @todo r=bird: 'target' is completely confusing here!
 g_sHostTarget = platform.system().lower();
-# Maps Python system string to kBuild build targets.
+# Maps Python system string to kBuild build targets (bird: kBuild OS names, not targets).
+## @todo Duplicate utils.py's getHostArch() instead...
 g_enmHostTarget = {
     "linux":    BuildTarget.LINUX,
     "windows":  BuildTarget.WINDOWS,
@@ -467,22 +481,31 @@ def checkWhich(sCmdName, sToolDesc = None, sCustomPath = None, asVersionSwitches
             asVersionSwitches = [ '--version', '-V', '/?', '/h', '/help', '-version', 'version' ];
         try:
             for sSwitch in asVersionSwitches:
-                oProc = subprocess.run([sCmdPath, sSwitch], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False, timeout=10);
+                fWinCreationFlags = 0;
+                if g_enmHostTarget == BuildTarget.WINDOWS: # Watcom wlink hacks:
+                    fWinCreationFlags = getattr(subprocess, 'DETACHED_PROCESS', 0) | getattr(subprocess, 'CREATE_NO_WINDOW', 0);
+                oProc = subprocess.run([sCmdPath, sSwitch],
+                                       stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                       check=False, timeout=10, creationflags=fWinCreationFlags);
                 if oProc.returncode == 0:
                     try:
                         sVer = oProc.stdout.decode('utf-8', 'replace').strip().splitlines();
                     except UnicodeDecodeError:
-                        pass;
+                        pass; ## @todo r=bird: sVer is undefined the first time around here.
                     if not sVer: # Some programs (java, for instance) output their version info in stderr.
                         try:
                             sVer = oProc.stderr.decode('utf-8', 'replace').strip().splitlines();
                         except UnicodeDecodeError:
                             pass;
                     if sVer:
+                        ## @todo r=bird: Shouldn't this be: not fMultiline or not isinstance(sVer, str)?
+                        ##               Anyway, the reason why it can be a string, is because you're not setting it above
+                        ##               iff UnicodeDecodeError exceptions are called.
                         sVer = sVer[0] if (not fMultiline or isinstance(sVer, str)) else sVer;
                         printVerbose(1, f"Detected version for '{sCmdName}' is: {sVer}");
                     else:
                         printVerbose(1, f"No version for '{sCmdName}' returned");
+                        ## @todo r=bird: sVer is an empty array here...
                     return sCmdPath, sVer;
             return sCmdPath, '<unknown>';
         except subprocess.SubprocessError as ex:
@@ -893,9 +916,11 @@ class CheckBase:
         self.sName = sName;
         # Build target (i.e. BuildTarget.LINUX) to use.
         # Defaults to global build target if not explicitly specified.
+        # Note! In kBuild term this is the 'target OS' (KBUILD_TARGET).
         self.enmBuildTarget = enmBuildTarget;
         # Build architecture (i.e. BuildArch.amd64) to use.
         # Defaults to global build architecture if not explicitly specified.
+        # Note! In kBuild term this is the 'target architecture' (KBUILD_TARGET_ARCH).
         self.enmBuildArch = enmBuildArch;
         # Defines the list of targets which require this component.
         self.aeTargets = [ BuildTarget.ANY ] if aeTargets is None else aeTargets;
@@ -992,6 +1017,8 @@ class CheckBase:
             pass;
         return (None, None);
 
+    ddDirFileCache = {} #< file set cache for for findFiles() indexed by sBaseDir.
+
     def findFiles(self, sBaseDir, asFilePaths, fAbsolute = False, fStripFilenames = False):
         """
         Finds files in a base directory.
@@ -1007,13 +1034,17 @@ class CheckBase:
         dictFound = {}
         sBaseDir = os.path.abspath(sBaseDir);
         printVerbose(2, f"Finding files in '{sBaseDir}': {asFilePaths}");
-        # Walk directory and build a set of all files' relative paths
-        dictAllFilesInfo = {};
-        for sDirRoot, _, asFiles in os.walk(sBaseDir, followlinks = True):
-            for sCurFile in asFiles:
-                sFilePathRel = os.path.relpath(os.path.join(sDirRoot, sCurFile), sBaseDir)
-                sFilePathAbs = os.path.join(sBaseDir, sFilePathRel);
-                dictAllFilesInfo[sFilePathRel] = sFilePathAbs;
+        # Check the cache for the directory tree.
+        dictAllFilesInfo = self.ddDirFileCache.get(sBaseDir);
+        if dictAllFilesInfo is None:
+            # Walk directory and build a set of all files' relative paths.
+            dictAllFilesInfo = {};
+            for sDirRoot, _, asFiles in os.walk(sBaseDir, followlinks = True):
+                for sCurFile in asFiles:
+                    sFilePathRel = os.path.relpath(os.path.join(sDirRoot, sCurFile), sBaseDir)
+                    sFilePathAbs = os.path.join(sBaseDir, sFilePathRel);
+                    dictAllFilesInfo[sFilePathRel] = sFilePathAbs;
+            self.ddDirFileCache[sBaseDir] = dictAllFilesInfo; # add it to the cache
 
         for sCurFile in asFilePaths:
             sFilePathNorm = os.path.normpath(sCurFile);
@@ -1082,7 +1113,7 @@ class CheckBase:
         """
         fInTarget = (   self.enmBuildTarget in self.aeTargets \
                      or BuildTarget.ANY  in self.aeTargets) \
-                    and self.enmBuildTarget not in self.aeTargetsExcluded;
+                and self.enmBuildTarget not in self.aeTargetsExcluded;
         fInTarget = fInTarget and (   self.enmBuildArch in self.aeArchs \
                                    or BuildArch.ANY in self.aeArchs);
         return fInTarget;
@@ -1251,7 +1282,7 @@ class LibraryCheck(CheckBase):
         if not sRootPath:
             sToolsDir  = g_oEnv['PATH_DEVTOOLS'];
             if not sToolsDir:
-                sToolsDir = g_sScriptPath, 'tools';
+                sToolsDir = os.path.join(g_sScriptPath, 'tools');
             sPath = os.path.join(sToolsDir, f"{ self.enmBuildTarget }.{ self.enmBuildArch }", self.sName);
             if pathExists(sPath):
                 _, sPath = self.getHighestVersionDir(sPath);
@@ -1426,6 +1457,7 @@ class LibraryCheck(CheckBase):
         setHdrFound = {}; # Key = Header file, Value = Path to header file.
 
         asSearchPath = self.asIncPaths + self.getIncSearchPaths(); # Own include paths have precedence.
+        asSearchPath = list(collections.OrderedDict.fromkeys(asSearchPath)); # Eliminate duplicates to reduce pointless searching.
         self.printVerbose(2, f"Search paths: {asSearchPath}");
         for sCurSearchPath in asSearchPath:
             asResults, _ = self.findFiles(sCurSearchPath, asHdrToSearch, fAbsolute = True, fStripFilenames = True);
@@ -1567,7 +1599,7 @@ class LibraryCheck(CheckBase):
             fRc, self.asIncPaths = self.checkHdr();
             if fRc:
                 fRc, self.asLibPaths, self.asLibFiles = self.checkLib();
-                if      fRc \
+                if  fRc \
                 and not self.fIsInTree:
                     # The compilation is allowed to fail w/o triggering an error if
                     #   - this library is in-tree, as we ASSUME that we only have working libraries in there
@@ -1827,6 +1859,7 @@ class ToolCheck(CheckBase):
         """
         Apply argparse options for disabling the tool.
         """
+        ## @todo r=bird: add a base class method for doing that replacing to get a variable friendly tool/lib name.
         sToolName = self.sName.replace("-", "_"); # So that we can use variables directly w/o getattr.
         self.fDisabled = getattr(oArgs, f"config_tools_disable_{sToolName}", False);
         self.sRootPath = getattr(oArgs, f"config_tools_path_{sToolName}", None);
@@ -2676,15 +2709,38 @@ class ToolCheck(CheckBase):
 
         # These are the sub directories OpenWatcom ships its binaries in.
         mapBuildTarget2Bin = {
-            BuildTarget.DARWIN:  "binosx",  ## @todo Still correct for Apple Silicon?
+            BuildTarget.DARWIN:  "binosx",  # Internal vbox name.
             BuildTarget.LINUX:   "binl" if self.enmBuildArch is BuildArch.AMD64 else "binl", # ASSUMES 64-bit.
-            BuildTarget.SOLARIS: "binsol",  ## @todo Test on Solaris.
             BuildTarget.WINDOWS: "binnt",
-            BuildTarget.BSD:     "binnbsd"  ## @todo Test this on FreeBSD.
         };
-
-        sBinSubdir = mapBuildTarget2Bin.get(self.enmBuildTarget, None);
-        if not sBinSubdir:
+        ## @todo r=bird: You need to map os.arch pairs to list of possible 'bin' directories.  Here are some quick grep/guesses:
+        ## open-watcom-v2.git$  grep -r --include="*.ctl" RELROOT . | grep wcc386
+        ## ./bld/cc/386/builder.ctl:    <CCCMD> dos386/<OWOBJDIR>/wcc386.exe        "<OWRELROOT>/binw/"
+        ## ./bld/cc/386/builder.ctl:    <CCCMD> os2386.dll/<OWOBJDIR>/wcc386.exe    "<OWRELROOT>/binp/"
+        ## ./bld/cc/386/builder.ctl:    <CCCMD> nt386.dll/<OWOBJDIR>/wcc386.exe     "<OWRELROOT>/binnt/"
+        ## ./bld/cc/386/builder.ctl:    <CCCMD> ntaxp.dll/<OWOBJDIR>/wcc386.exe     "<OWRELROOT>/axpnt/"
+        ## ./bld/cc/386/builder.ctl:    <CCCMD> qnx386/<OWOBJDIR>/wcc386.exe        "<OWRELROOT>/qnx/binq/wcc386"
+        ## ./bld/cc/386/builder.ctl:    <CCCMD> linux386/<OWOBJDIR>/wcc386.exe      "<OWRELROOT>/binl/wcc386"
+        ## ./bld/cc/386/builder.ctl:    <CCCMD> rdos386/<OWOBJDIR>/wcc386.exe       "<OWRELROOT>/rdos/"
+        ## ./bld/cc/386/builder.ctl:    <CCCMD> bsdx64/<OWOBJDIR>/wcc386.exe        "<OWRELROOT>/binb64/wcc386"
+        ## ./bld/cc/386/builder.ctl:    <CCCMD> ntx64.dll/<OWOBJDIR>/wcc386.exe     "<OWRELROOT>/binnt64/"
+        ## ./bld/cc/386/builder.ctl:    <CCCMD> linuxx64/<OWOBJDIR>/wcc386.exe      "<OWRELROOT>/binl64/wcc386"
+        ## ./bld/cc/386/builder.ctl:    <CCCMD> linuxarm/<OWOBJDIR>/wcc386.exe      "<OWRELROOT>/arml/wcc386"
+        ## ./bld/cc/386/builder.ctl:    <CCCMD> linuxa64/<OWOBJDIR>/wcc386.exe      "<OWRELROOT>/arml64/wcc386"
+        ## ./bld/cc/386/builder.ctl:    <CCCMD> osxx64/<OWOBJDIR>/wcc386.exe        "<OWRELROOT>/bino64/wcc386"
+        ## ./bld/cc/386/builder.ctl:    <CCCMD> osxarm/<OWOBJDIR>/wcc386.exe        "<OWRELROOT>/armo/wcc386"
+        ## ./bld/cc/386/builder.ctl:    <CCCMD> osxa64/<OWOBJDIR>/wcc386.exe        "<OWRELROOT>/armo64/wcc386"
+        ## ow-1.9.0$ grep -r --include="*.ctl" RELROOT . | grep wcc386
+        ## ./bld/cc/lang.ctl:    <CPCMD> dos386.386/wcc386c.exe    <RELROOT>/binw/wcc386.exe
+        ## ./bld/cc/lang.ctl:#    <CPCMD> osi386.386/wcc386c.exe    <RELROOT>/binw/wcc386.exe
+        ## ./bld/cc/lang.ctl:    <CPCMD> os2386.386/wcc386c.exe    <RELROOT>/binp/wcc386.exe
+        ## ./bld/cc/lang.ctl:    <CPCMD> nt386.386/wcc386c.exe     <RELROOT>/binnt/wcc386.exe
+        ## ./bld/cc/lang.ctl:    <CPCMD> nt386dll.386/wcc386c.exe  <RELROOT>/binnt/rtdll/wcc386.exe
+        ## ./bld/cc/lang.ctl:    <CPCMD> linux386.386/wcc386c.exe  <RELROOT>/binl/wcc386
+        ## ./bld/cc/lang.ctl:    <CPCMD> ntaxp.386/wcc386c.exe     <RELROOT>/axpnt/wcc386.exe
+        ## ./bld/cc/lang.ctl:    <CPCMD> qnx386.386/wcc386c.exe    <RELROOT>/qnx/binq/wcc386.
+        sBinSubdir = mapBuildTarget2Bin.get(self.enmBuildTarget, None); ## @todo r-bird: Use the host we're on, not the target.
+        if not sBinSubdir:                                              ## The toolchain is for cross compiling.
             self.printError(f"Open Watcom not supported on host target { self.enmBuildTarget }.");
             return False;
 
@@ -2698,19 +2754,26 @@ class ToolCheck(CheckBase):
                     self.printVerbose(1, f"Detected snap package at '{sPath}'");
 
         for sCmdCur in self.asCmd:
-            # Open Watcom 2.x prints its version info on the second line, so we have to use multiline output.
-            self.sCmdPath, self.sVer = checkWhich(sCmdCur, 'OpenWatcom', os.path.join(sPath, sBinSubdir) if sPath else None,
-                                                  fMultiline = True);
-            if self.sVer:
-                if  isinstance(self.sVer, list) \
-                and len(self.sVer) >= 2:
-                    if any( 'Version 2.' in l for l in self.sVer): # We don't support Open Watconm 2.0 (yet).
-                        self.printWarn('Open Watcom 2.x found, but is not supported yet!');
-                        self.sVer = self.sVer[1];
-                        return False;
-                    self.sVer = self.sVer[0]; # Open Watcom 1.x.
-
+            # wcl386 and wcl.exe respons to /version and wlink to -? with exit code 0.
+            asVersionSwitches = ['/version'] if sCmdCur.startswith("wcl") else ['-?' ];
+            # Some Open Watcom 2.x tools prints its version info on the second line, so we have to use multiline output
+            # and fish out the line containing the version.
+            self.sVer = '';
+            self.sCmdPath, asOutput = checkWhich(sCmdCur, 'OpenWatcom', os.path.join(sPath, sBinSubdir) if sPath else None,
+                                                 asVersionSwitches = asVersionSwitches, fMultiline = True);
             if not self.sCmdPath:
+                return False;
+
+            if not isinstance(asOutput, list):
+                asOutput = [asOutput];
+            for sLine in asOutput:
+                off = sLine.lower().find('version');
+                if off >= 0:
+                    self.sVer = sLine[off + 7:].strip();
+                    break;
+
+            if self.sVer.startswith('2.'): # We don't support Open Watcom 2.0 (yet).
+                self.printWarn('Open Watcom 2.x found, but is not supported yet!');
                 return False;
 
         g_oEnv.set('PATH_TOOL_OPENWATCOM', sPath);
@@ -3785,13 +3848,17 @@ def main():
     elif g_oArgs.config_without_hardening:
         g_oEnv.set('VBOX_WITHOUT_HARDENING', '1');
 
-    # Handle out directory.
+    # Handle the configure out directory.
     if  g_oArgs.config_out_dir \
     and not isDir(g_oArgs.config_out_dir):
         printWarn(f"Output directory '{g_oArgs.config_out_dir}' does not exist -- using script directory as output base");
         g_oArgs.config_out_dir = g_sScriptPath;
 
     # Handle build directory.
+    ## @todo r=bird: This makes no sense. The directory does not have to exist.
+    ##               The fallback (g_sScriptPath) is wrong (should be g_sScriptPath + '/out').
+    ##               This is what the add_argument() uses as default, though why it needs a default there, I don't know...
+    ##               This is an override (see original script), so don't set it here if has the default value.
     if  g_oArgs.config_build_dir \
     and not isDir(g_oArgs.config_build_dir):
         printWarn(f"Build output directory '{g_oArgs.config_build_dir}' does not exist -- using script directory as output base");
@@ -3886,7 +3953,7 @@ def main():
         print();
 
     print(f'Log file                    : {g_sFileLog }');
-    print(f'Output directory            : {g_oArgs.config_out_dir}');
+    print(f'Configure output directory  : {g_oArgs.config_out_dir}');
     print(f'Build directory             : {g_oArgs.config_build_dir}');
     print(f'Location of environment file: {g_oArgs.config_file_env}');
     print(f'Location of AutoConfig.kmk  : {g_oArgs.config_file_autoconfig}');
