@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# $Id: configure.py 113040 2026-02-16 14:03:18Z andreas.loeffler@oracle.com $
+# $Id: configure.py 113041 2026-02-16 14:07:02Z andreas.loeffler@oracle.com $
 """
 Configuration script for building VirtualBox.
 
@@ -72,7 +72,7 @@ SPDX-License-Identifier: GPL-3.0-only
 # External Python modules or other dependencies are not allowed!
 #
 
-__revision__ = "$Revision: 113040 $"
+__revision__ = "$Revision: 113041 $"
 
 import argparse
 import collections;
@@ -4074,7 +4074,7 @@ def main():
         lambda env: { 'VBOX_WITH_DOCS_PACKING': '' } if g_oArgs.config_only_additions
                                                      or g_oArgs.config_disable_docs else {},
         lambda env: { 'VBOX_WITH_WEBSERVICES': '' } if g_oArgs.config_only_additions else {},
-        lambda env: { 'VBOX_WITH_WEBSERVICES': '1' } if g_oArgs.config_with_webservice else {},        
+        lambda env: { 'VBOX_WITH_WEBSERVICES': '1' } if g_oArgs.config_with_webservice else {},
         # Disable stuff which aren't available in OSE or if building the Validation Kit is disabled.
         lambda env: { 'VBOX_WITH_VALIDATIONKIT': '' , 'VBOX_WITH_WIN32_ADDITIONS': '' } if g_oArgs.config_ose
                                                                                         or g_oArgs.config_tools_disable_validationkit else {},
