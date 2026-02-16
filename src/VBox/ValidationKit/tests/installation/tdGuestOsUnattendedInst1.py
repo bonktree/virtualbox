@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-# $Id: tdGuestOsUnattendedInst1.py 113014 2026-02-13 15:43:01Z serkan.bayraktar@oracle.com $
+# $Id: tdGuestOsUnattendedInst1.py 113035 2026-02-16 12:25:04Z serkan.bayraktar@oracle.com $
 
 """
 VirtualBox Validation Kit - Guest OS unattended installation tests.
@@ -37,7 +37,7 @@ terms and conditions of either the GPL or the CDDL or both.
 
 SPDX-License-Identifier: GPL-3.0-only OR CDDL-1.0
 """
-__version__ = "$Revision: 113014 $"
+__version__ = "$Revision: 113035 $"
 
 
 # Standard Python imports.
@@ -471,7 +471,7 @@ class UnattendedVm(vboxtestvms.BaseTestVm):
         # Check if the OS type matches.
         #
         if oTestDrv.fpApiVer <= 7.1:
-            if re.match(r'^[A-Za-z]+', self.sKind).group(0) == re.match(r'^[A-Za-z]+', sDetectedOSTypeId).group(0):
+            if re.match(r'^[A-Za-z]+', self.sKind).group(0) != re.match(r'^[A-Za-z]+', sDetectedOSTypeId).group(0):
                 return reporter.error('sInstallIso=%s: Prefixes of  %s and %s do not match'
                                       % (sInstallIso, sDetectedOSTypeId, self.sKind));
         else:
