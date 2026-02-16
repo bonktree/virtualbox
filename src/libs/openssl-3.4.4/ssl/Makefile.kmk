@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 113020 2026-02-13 16:51:42Z alexander.rudnev@oracle.com $
+# $Id: Makefile.kmk 113047 2026-02-16 16:23:11Z alexander.rudnev@oracle.com $
 ## @file
 # Sub-Makefile for OpenSSL ssl.
 #
@@ -63,7 +63,7 @@ VBox-libssl_SOURCES  = \
 	ssl_cert_comp.c \
 	ssl_ciph.c \
 	ssl_conf.c \
-	ssl_err.c \
+	ssl_err_legacy.c \
 	ssl_init.c \
 	ssl_lib.c \
 	ssl_mcnf.c \

@@ -50,7 +50,6 @@
 #  define fileno  _fileno
 # endif
 #endif
-#endif
 
 /*
  * Following should not be needed, and we could have been stricter

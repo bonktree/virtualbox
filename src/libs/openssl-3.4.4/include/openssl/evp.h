@@ -31,7 +31,6 @@
 #include <openssl/evperr.h>
 #include <openssl/params.h>
 
-<<<<<<< .working
 #ifdef ___openssl_mangling_h___
 # undef EVP_idea_cfb
 # undef EVP_rc2_cfb
