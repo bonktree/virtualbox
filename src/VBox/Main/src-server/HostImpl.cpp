@@ -1,4 +1,4 @@
-/* $Id: HostImpl.cpp 113053 2026-02-17 09:59:52Z alexander.eichner@oracle.com $ */
+/* $Id: HostImpl.cpp 113054 2026-02-17 10:01:33Z alexander.eichner@oracle.com $ */
 /** @file
  * VirtualBox COM class implementation: Host
  */
@@ -4322,7 +4322,7 @@ BOOL Host::i_HostIsNativeApiSupported()
 #ifdef RT_ARCH_ARM64
         KVM_CAP_ARM_PSCI,
         KVM_CAP_ARM_SET_DEVICE_ADDR,
-        KVM_CAP_DEVICE_CTRL),
+        KVM_CAP_DEVICE_CTRL,
         KVM_CAP_ARM_PSCI_0_2,
         KVM_CAP_ARM_VM_IPA_SIZE
 #endif
