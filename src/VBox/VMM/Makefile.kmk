@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 112683 2026-01-25 17:23:05Z alexander.eichner@oracle.com $
+# $Id: Makefile.kmk 113056 2026-02-17 10:38:41Z alexander.eichner@oracle.com $
 ## @file
 # Top-level makefile for the VMM.
 #
@@ -960,9 +960,6 @@ if defined(VBOX_WITH_R0_MODULES) && !defined(VBOX_ONLY_BUILD)
 
  VMMR0_DEFS      = VBOX_VMM_TARGET_AGNOSTIC VBOX_IN_VMM IN_VMM_R0 IN_RT_R0 IN_DIS DIS_CORE_ONLY IN_INTNET_R0 \
  	$(VMM_COMMON_DEFS) RTASSERT_HAVE_SHOULD_PANIC
- ifdef VBOX_WITH_PCI_PASSTHROUGH
-  VMMR0_DEFS     += IN_PCIRAW_R0
- endif
  ifdef VBOX_WITH_TRIPLE_FAULT_HACK
   VMMR0_DEFS     += VBOX_WITH_TRIPLE_FAULT_HACK
  endif

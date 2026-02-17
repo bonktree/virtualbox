@@ -1,4 +1,4 @@
-/* $Id: PGMR3.cpp 112403 2026-01-11 19:29:08Z knut.osmundsen@oracle.com $ */
+/* $Id: PGMR3.cpp 113056 2026-02-17 10:38:41Z alexander.eichner@oracle.com $ */
 /** @file
  * PGM - Page Manager and Monitor. (Mixing stuff here, not good?)
  */
@@ -1886,25 +1886,7 @@ VMMR3_INT_DECL(int) PGMR3InitCompleted(PVM pVM, VMINITCOMPLETED enmWhat)
     switch (enmWhat)
     {
         case VMINITCOMPLETED_HM:
-#ifdef VBOX_WITH_PCI_PASSTHROUGH
-            if (pVM->pgm.s.fPciPassthrough)
-            {
-                AssertLogRelReturn(pVM->pgm.s.fRamPreAlloc, VERR_PCI_PASSTHROUGH_NO_RAM_PREALLOC);
-                AssertLogRelReturn(HMIsEnabled(pVM), VERR_PCI_PASSTHROUGH_NO_HM);
-                AssertLogRelReturn(HMIsNestedPagingActive(pVM), VERR_PCI_PASSTHROUGH_NO_NESTED_PAGING);
-
-                /*
-                 * Report assignments to the IOMMU (hope that's good enough for now).
-                 */
-                if (pVM->pgm.s.fPciPassthrough)
-                {
-                    int rc = VMMR3CallR0(pVM, VMMR0_DO_PGM_PHYS_SETUP_IOMMU, 0, NULL);
-                    AssertRCReturn(rc, rc);
-                }
-            }
-#else
             AssertLogRelReturn(!pVM->pgm.s.fPciPassthrough, VERR_PGM_PCI_PASSTHRU_MISCONFIG);
-#endif
             break;
 
         default:

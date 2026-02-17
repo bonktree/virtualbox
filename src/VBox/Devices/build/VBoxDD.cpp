@@ -1,4 +1,4 @@
-/* $Id: VBoxDD.cpp 112860 2026-02-06 21:07:19Z alexander.eichner@oracle.com $ */
+/* $Id: VBoxDD.cpp 113056 2026-02-17 10:38:41Z alexander.eichner@oracle.com $ */
 /** @file
  * VBoxDD - Built-in drivers & devices (part 1).
  */
@@ -210,11 +210,6 @@ extern "C" DECLEXPORT(int) VBoxDevicesRegister(PPDMDEVREGCB pCallbacks, uint32_t
 #endif
 #ifdef VBOX_WITH_VIRTIO_SCSI
     rc = pCallbacks->pfnRegister(pCallbacks, &g_DeviceVirtioSCSI);
-    if (RT_FAILURE(rc))
-        return rc;
-#endif
-#ifdef VBOX_WITH_PCI_PASSTHROUGH_IMPL
-    rc = pCallbacks->pfnRegister(pCallbacks, &g_DevicePciRaw);
     if (RT_FAILURE(rc))
         return rc;
 #endif
@@ -460,11 +455,6 @@ extern "C" DECLEXPORT(int) VBoxDriversRegister(PCPDMDRVREGCB pCallbacks, uint32_
         return rc;
 
     rc = pCallbacks->pfnRegister(pCallbacks, &g_DrvRamDisk);
-    if (RT_FAILURE(rc))
-        return rc;
-#endif
-#ifdef VBOX_WITH_PCI_PASSTHROUGH_IMPL
-    rc = pCallbacks->pfnRegister(pCallbacks, &g_DrvPciRaw);
     if (RT_FAILURE(rc))
         return rc;
 #endif

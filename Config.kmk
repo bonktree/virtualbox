@@ -1,4 +1,4 @@
-# $Id: Config.kmk 113047 2026-02-16 16:23:11Z alexander.rudnev@oracle.com $
+# $Id: Config.kmk 113056 2026-02-17 10:38:41Z alexander.eichner@oracle.com $
 ## @file
 # The global build configuration file for VBox.
 #
@@ -629,9 +629,6 @@ endif
 VBOX_WITH_AUDIO_DEBUG = 1
 # Enables the audio endpoint detection on Windows hosts.
 VBOX_WITH_AUDIO_MMNOTIFICATION_CLIENT = 1
-# Enable PCI passthrough support.
-# (disabled with 6.1, since it's not complete/useful enough)
-VBOX_WITH_PCI_PASSTHROUGH =
 # Enable statically linked dbus support.
 if1of ($(KBUILD_TARGET), linux solaris)
  VBOX_WITH_DBUS = 1
@@ -734,10 +731,6 @@ ifdef VBOX_WITH_USB
 endif
 ifdef VBOX_WITH_EHCI
  VBOX_WITH_EHCI_IMPL = 1
-endif
-ifdef VBOX_WITH_PCI_PASSTHROUGH
- ## @bugref{9218}: Disabled awaiting conversion of the device to new PDM device style.
- #VBOX_WITH_PCI_PASSTHROUGH_IMPL = 1
 endif
 ifndef VBOX_WITHOUT_HOSTWEBCAM
  VBOX_WITH_USB_VIDEO_IMPL = 1
@@ -1551,7 +1544,6 @@ endif
 ifdef VBOX_OSE
  VBOX_WITH_EXTPACK_PUEL =
  VBOX_WITH_EXTPACK_PUEL_BUILD =
- VBOX_WITH_PCI_PASSTHROUGH_IMPL =
  VBOX_WITH_OS2_ADDITIONS_BIN =
  VBOX_WITH_LIBSSH =
  # not yet
@@ -9494,7 +9486,7 @@ SVN                    ?= svn$(HOSTSUFF_EXE)
 GIT                    ?= git$(HOSTSUFF_EXE)
 VBOX_SVN_REV_KMK        = $(PATH_OUT)/revision.kmk
 ifndef VBOX_SVN_REV
- VBOX_SVN_REV_CONFIG_FALLBACK := $(patsubst %:,,  $Rev: 113047 $  )
+ VBOX_SVN_REV_CONFIG_FALLBACK := $(patsubst %:,,  $Rev: 113056 $  )
  VBOX_SVN_REV_FALLBACK := $(if-expr $(VBOX_SVN_REV_CONFIG_FALLBACK) > $(VBOX_SVN_REV_VERSION_FALLBACK),$(VBOX_SVN_REV_CONFIG_FALLBACK),$(VBOX_SVN_REV_VERSION_FALLBACK))
  VBOX_SVN_DEP          := $(firstword $(wildcard $(PATH_ROOT)/.svn/wc.db $(abspath $(PATH_ROOT)/../.svn/wc.db) $(abspath $(PATH_ROOT)/../../.svn/wc.db) $(PATH_ROOT)/.svn/entries))
  VBOX_GIT_DEP          := $(firstword $(wildcard $(PATH_ROOT)/.git/config $(abspath $(PATH_ROOT)/../.git/config) $(abspath $(PATH_ROOT)/../../.git/config)))
@@ -9508,7 +9500,7 @@ ifndef VBOX_SVN_REV
  ifneq ($(VBOX_GIT_DEP),)
   #
   # VBOX_SVN_REV_CONFIG_FALLBACK is not properly populated for a git checkout,
-  # as the $Rev: 113047 $ is not expanded, so we have to set it based on the information in the repo.
+  # as the $Rev: 113056 $ is not expanded, so we have to set it based on the information in the repo.
   #
   VBOX_SVN_REV_FALLBACK := $(shell $(GIT) log -1 $(PATH_ROOT)/Config.kmk | $(SED) -e 's/^[ \t]*//' -e '/svn:sync-xref-src-repo-rev\: r/!d' -e 's/svn:sync-xref-src-repo-rev\: r*//; t a; :a q')
  endif

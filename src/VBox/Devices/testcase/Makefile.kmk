@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 112403 2026-01-11 19:29:08Z knut.osmundsen@oracle.com $
+# $Id: Makefile.kmk 113056 2026-02-17 10:38:41Z alexander.eichner@oracle.com $
 ## @file
 # Sub-Makefile for the device testcases.
 #
@@ -47,7 +47,6 @@ VBOX_DEVICES_TESTS_FEATURES = \
 	$(if $(VBOX_WITH_NVIDIA_HDA),VBOX_WITH_NVIDIA_HDA,) \
 	$(if $(VBOX_WITH_LSILOGIC),VBOX_WITH_LSILOGIC,) \
 	$(if $(VBOX_WITH_NVME_IMPL),VBOX_WITH_NVME_IMPL,) \
-	$(if $(VBOX_WITH_PCI_PASSTHROUGH_IMPL),VBOX_WITH_PCI_PASSTHROUGH_IMPL,) \
 	$(if $(VBOX_WITH_RAW_MODE),VBOX_WITH_RAW_MODE,) \
 	$(if $(VBOX_WITH_SCSI),VBOX_WITH_SCSI,) \
 	$(if $(VBOX_WITH_USB),VBOX_WITH_USB,) \

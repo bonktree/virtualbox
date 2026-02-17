@@ -1,4 +1,4 @@
-/* $Id: VMMR0.cpp 112881 2026-02-09 09:30:41Z knut.osmundsen@oracle.com $ */
+/* $Id: VMMR0.cpp 113056 2026-02-17 10:38:41Z alexander.eichner@oracle.com $ */
 /** @file
  * VMM - Host Context Ring 0.
  */
@@ -47,9 +47,6 @@
 #include "VMMInternal.h"
 #include <VBox/vmm/vmcc.h>
 #include <VBox/vmm/gvm.h>
-#ifdef VBOX_WITH_PCI_PASSTHROUGH
-# include <VBox/vmm/pdmpci.h>
-#endif
 #include <VBox/vmm/pdmapic.h>
 
 #include <VBox/vmm/gvmm.h>
@@ -189,46 +186,35 @@ DECLEXPORT(int) ModuleInit(void *hMod)
                         if (RT_SUCCESS(rc))
                         {
 #ifndef VBOX_WITH_MINIMAL_R0
-# ifdef VBOX_WITH_PCI_PASSTHROUGH
-                            rc = PciRawR0Init();
-# endif
+                            rc = CPUMR0ModuleInit();
                             if (RT_SUCCESS(rc))
                             {
-                                rc = CPUMR0ModuleInit();
-                                if (RT_SUCCESS(rc))
-                                {
 # ifdef VBOX_WITH_TRIPLE_FAULT_HACK
-                                    rc = vmmR0TripleFaultHackInit();
+                                rc = vmmR0TripleFaultHackInit();
+                                if (RT_SUCCESS(rc))
+# endif
+                                {
+# ifdef VBOX_WITH_NEM_R0
+                                    rc = NEMR0Init();
                                     if (RT_SUCCESS(rc))
 # endif
-                                    {
-# ifdef VBOX_WITH_NEM_R0
-                                        rc = NEMR0Init();
-                                        if (RT_SUCCESS(rc))
-# endif
 #endif /* !VBOX_WITH_MINIMAL_R0 */
-                                        {
-                                            LogFlow(("ModuleInit: returns success\n"));
-                                            return VINF_SUCCESS;
-                                        }
-
-                                        /*
-                                         * Bail out.
-                                         */
-#ifndef VBOX_WITH_MINIMAL_R0
+                                    {
+                                        LogFlow(("ModuleInit: returns success\n"));
+                                        return VINF_SUCCESS;
                                     }
-# ifdef VBOX_WITH_TRIPLE_FAULT_HACK
-                                    vmmR0TripleFaultHackTerm();
-# endif
+
+                                    /*
+                                     * Bail out.
+                                     */
+#ifndef VBOX_WITH_MINIMAL_R0
                                 }
-                                else
-                                    LogRel(("ModuleInit: CPUMR0ModuleInit -> %Rrc\n", rc));
-# ifdef VBOX_WITH_PCI_PASSTHROUGH
-                                PciRawR0Term();
+# ifdef VBOX_WITH_TRIPLE_FAULT_HACK
+                                vmmR0TripleFaultHackTerm();
 # endif
                             }
                             else
-                                LogRel(("ModuleInit: PciRawR0Init -> %Rrc\n", rc));
+                                LogRel(("ModuleInit: CPUMR0ModuleInit -> %Rrc\n", rc));
                             IntNetR0Term();
 #endif /* !VBOX_WITH_MINIMAL_R0 */
                         }
@@ -289,9 +275,6 @@ DECLEXPORT(void) ModuleTerm(void *hMod)
     /*
      * PGM (Darwin), HM and PciRaw global cleanup.
      */
-# ifdef VBOX_WITH_PCI_PASSTHROUGH
-    PciRawR0Term();
-# endif
     PGMDeregisterStringFormatTypes();
     HMR0Term();
 # ifdef VBOX_WITH_TRIPLE_FAULT_HACK
@@ -488,36 +471,26 @@ static int vmmR0InitVM(PGVM pGVM, uint32_t uSvnRev, uint32_t uBuildType)
                             rc = fWithFullR0 ? IOMR0InitVM(pGVM) : VINF_SUCCESS;
                             if (RT_SUCCESS(rc))
                             {
-# ifdef VBOX_WITH_PCI_PASSTHROUGH
-                                rc = fWithFullR0 ? PciRawR0InitVM(pGVM) : VINF_SUCCESS;
-# endif
+                                rc = fWithFullR0 ? GIMR0InitVM(pGVM) : VINF_SUCCESS;
                                 if (RT_SUCCESS(rc))
                                 {
-                                    rc = fWithFullR0 ? GIMR0InitVM(pGVM) : VINF_SUCCESS;
-                                    if (RT_SUCCESS(rc))
-                                    {
 #endif /* !VBOX_WITH_MINIMAL_R0 */
-                                        GVMMR0DoneInitVM(pGVM);
+                                    GVMMR0DoneInitVM(pGVM);
 #ifndef VBOX_WITH_MINIMAL_R0
-                                        if (fWithFullR0)
-                                            PGMR0DoneInitVM(pGVM);
+                                    if (fWithFullR0)
+                                        PGMR0DoneInitVM(pGVM);
 #endif
 
-                                        /*
-                                         * Collect a bit of info for the VM release log.
-                                         */
-                                        pGVM->vmm.s.fIsPreemptPendingApiTrusty = RTThreadPreemptIsPendingTrusty();
-                                        pGVM->vmm.s.fIsPreemptPossible         = RTThreadPreemptIsPossible();;
-                                        return rc;
+                                    /*
+                                     * Collect a bit of info for the VM release log.
+                                     */
+                                    pGVM->vmm.s.fIsPreemptPendingApiTrusty = RTThreadPreemptIsPendingTrusty();
+                                    pGVM->vmm.s.fIsPreemptPossible         = RTThreadPreemptIsPossible();;
+                                    return rc;
 
-                                        /* bail out*/
+                                    /* bail out*/
 #ifndef VBOX_WITH_MINIMAL_R0
-                                        //GIMR0TermVM(pGVM);
-                                    }
-# ifdef VBOX_WITH_PCI_PASSTHROUGH
-                                    if (fWithFullR0)
-                                        PciRawR0TermVM(pGVM);
-# endif
+                                    //GIMR0TermVM(pGVM);
                                 }
                             }
                         }
@@ -595,11 +568,6 @@ VMMR0_INT_DECL(int) VMMR0TermVM(PGVM pGVM, VMCPUID idCpu)
 
 #ifndef VBOX_WITH_MINIMAL_R0
     bool const fWithFullR0 = !VM_IS_NON_NATIVE_WITH_LIMITED_R0(pGVM);
-
-# ifdef VBOX_WITH_PCI_PASSTHROUGH
-    if (fWithFullR0)
-        PciRawR0TermVM(pGVM);
-# endif
 #endif
 
     /*
@@ -1989,13 +1957,6 @@ DECL_NO_INLINE(static, int) vmmR0EntryExWorker(PGVM pGVM, VMCPUID idCpu, VMMR0OP
             rc = PGMR0PhysAllocateLargePage(pGVM, idCpu, u64Arg);
             break;
 
-        case VMMR0_DO_PGM_PHYS_SETUP_IOMMU:
-            if (idCpu != 0)
-                return VERR_INVALID_CPU_ID;
-            IF_NON_DEFAULT_VM_WITH_LIMITED_R0_RETURN_ERROR(g_GVM);
-            rc = PGMR0PhysSetupIoMmu(pGVM);
-            break;
-
         case VMMR0_DO_PGM_POOL_GROW:
             if (idCpu == NIL_VMCPUID)
                 return VERR_INVALID_CPU_ID;
@@ -2311,17 +2272,6 @@ DECL_NO_INLINE(static, int) vmmR0EntryExWorker(PGVM pGVM, VMCPUID idCpu, VMMR0OP
                 return VERR_INVALID_PARAMETER;
             rc = IntNetR0IfAbortWaitReq(pSession, (PINTNETIFABORTWAITREQ)pReqHdr);
             break;
-
-#if 0 //defined(VBOX_WITH_PCI_PASSTHROUGH) && !defined(VBOX_WITH_MINIMAL_R0)
-        /*
-         * Requests to host PCI driver service.
-         */
-        case VMMR0_DO_PCIRAW_REQ:
-            if (u64Arg || !pReqHdr || !vmmR0IsValidSession(pGVM, ((PPCIRAWSENDREQ)pReqHdr)->pSession, pSession) || idCpu != NIL_VMCPUID)
-                return VERR_INVALID_PARAMETER;
-            rc = PciRawR0ProcessReq(pGVM, pSession, (PPCIRAWSENDREQ)pReqHdr);
-            break;
-#endif
 
 #ifndef VBOX_WITH_MINIMAL_R0
 

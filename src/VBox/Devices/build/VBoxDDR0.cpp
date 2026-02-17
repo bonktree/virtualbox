@@ -1,4 +1,4 @@
-/* $Id: VBoxDDR0.cpp 112403 2026-01-11 19:29:08Z knut.osmundsen@oracle.com $ */
+/* $Id: VBoxDDR0.cpp 113056 2026-02-17 10:38:41Z alexander.eichner@oracle.com $ */
 /** @file
  * VBoxDDR0 - Built-in drivers & devices (part 1), ring-0 module.
  */
@@ -108,9 +108,6 @@ static PCPDMDEVREGR0 g_apVBoxDDR0DevRegs[] =
 #endif
 #ifdef VBOX_WITH_VIRTIO_SCSI
     &g_DeviceVirtioSCSI,
-#endif
-#ifdef VBOX_WITH_PCI_PASSTHROUGH_IMPL
-    &g_DevicePciRaw,
 #endif
     &g_DeviceGIMDev,
 #ifdef VBOX_WITH_NEW_LPC_DEVICE

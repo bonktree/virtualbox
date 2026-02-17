@@ -1,4 +1,4 @@
-/* $Id: tstDeviceStructSize.cpp 112403 2026-01-11 19:29:08Z knut.osmundsen@oracle.com $ */
+/* $Id: tstDeviceStructSize.cpp 113056 2026-02-17 10:38:41Z alexander.eichner@oracle.com $ */
 /** @file
  * tstDeviceStructSize - testcase for check structure sizes/alignment
  *                       and to verify that HC and RC uses the same
@@ -129,11 +129,6 @@
 #ifdef VBOX_WITH_NVME_IMPL
 # undef LOG_GROUP
 # include "../Storage/DevNVMe.cpp"
-#endif
-
-#ifdef VBOX_WITH_PCI_PASSTHROUGH_IMPL
-# undef LOG_GROUP
-# include "../Bus/DevPciRaw.cpp"
 #endif
 
 #ifdef VBOX_WITH_IOMMU_AMD
@@ -410,9 +405,6 @@ int main()
     CHECK_MEMBER_ALIGNMENT(VGASTATE, bmDirtyBitmap, 8);
     CHECK_MEMBER_ALIGNMENT(VGASTATE, pciRegions, 8);
     CHECK_MEMBER_ALIGNMENT(VMMDEV, CritSect, 8);
-#ifdef VBOX_WITH_PCI_PASSTHROUGH_IMPL
-    CHECK_MEMBER_ALIGNMENT(PCIRAWSENDREQ, u.aGetRegionInfo.u64RegionSize, 8);
-#endif
 #ifdef VBOX_WITH_IOMMU_AMD
     CHECK_MEMBER_ALIGNMENT(IOMMU, IommuBar, 8);
     CHECK_MEMBER_ALIGNMENT(IOMMU, aDevTabBaseAddrs, 8);

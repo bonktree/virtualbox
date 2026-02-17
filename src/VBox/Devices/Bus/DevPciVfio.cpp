@@ -1,4 +1,4 @@
-/* $Id: DevPciVfio.cpp 113050 2026-02-16 18:20:43Z alexander.eichner@oracle.com $ */
+/* $Id: DevPciVfio.cpp 113056 2026-02-17 10:38:41Z alexander.eichner@oracle.com $ */
 /** @file
  * PCI passthrough device emulation using VFIO/IOMMUFD.
  */
@@ -141,7 +141,6 @@
 #include <VBox/msi.h>
 #include <VBox/vmm/pdmdev.h>
 #include <VBox/vmm/stam.h>
-#include <VBox/vmm/pdmpci.h>
 #include <VBox/vmm/pdmpcidev.h>
 #include <iprt/assert.h>
 #include <iprt/mem.h>

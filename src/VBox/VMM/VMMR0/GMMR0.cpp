@@ -1,4 +1,4 @@
-/* $Id: GMMR0.cpp 112403 2026-01-11 19:29:08Z knut.osmundsen@oracle.com $ */
+/* $Id: GMMR0.cpp 113056 2026-02-17 10:38:41Z alexander.eichner@oracle.com $ */
 /** @file
  * GMM - Global Memory Manager.
  */
@@ -173,7 +173,6 @@
 *   Header Files                                                                                                                 *
 *********************************************************************************************************************************/
 #define LOG_GROUP LOG_GROUP_GMM
-#include <VBox/rawpci.h>
 #include <VBox/vmm/gmm.h>
 #include "GMMR0Internal.h"
 #include <VBox/vmm/vmcc.h>
