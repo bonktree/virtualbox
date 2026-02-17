@@ -1,4 +1,4 @@
-/* $Id: UIDetailsWidgetNATNetwork.cpp 113062 2026-02-17 12:37:07Z sergey.dubov@oracle.com $ */
+/* $Id: UIDetailsWidgetNATNetwork.cpp 113064 2026-02-17 12:58:12Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - UIDetailsWidgetNATNetwork class implementation.
  */
@@ -47,7 +47,7 @@
 
 /* Other VBox includes: */
 #include "iprt/cidr.h"
-#include "iprt/err.h"
+#include "iprt/errcore.h"
 #include "iprt/string.h"
 
 
