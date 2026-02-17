@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# $Id: configure.py 113043 2026-02-16 14:17:39Z andreas.loeffler@oracle.com $
+# $Id: configure.py 113057 2026-02-17 10:47:48Z andreas.loeffler@oracle.com $
 """
 Configuration script for building VirtualBox.
 
@@ -72,7 +72,7 @@ SPDX-License-Identifier: GPL-3.0-only
 # External Python modules or other dependencies are not allowed!
 #
 
-__revision__ = "$Revision: 113043 $"
+__revision__ = "$Revision: 113057 $"
 
 import argparse
 import collections;
@@ -2739,7 +2739,7 @@ class ToolCheck(CheckBase):
 
         sBinSubdir = mapBuildTarget2Bin.get((g_enmHostOS, g_enmHostArch), None);
         if not sBinSubdir: ## The toolchain is for cross compiling.
-            self.printError(f"Open Watcom not supported on host OS {g_enmHostOS}.{g_enmHostArch}.");
+            self.print(f"Open Watcom not supported on host OS {g_enmHostOS}.{g_enmHostArch}.");
             return False;
 
         sPath = self.sRootPath;
