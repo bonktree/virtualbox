@@ -1,4 +1,4 @@
-/* $Id: UINotificationCenter.h 113076 2026-02-18 16:44:32Z sergey.dubov@oracle.com $ */
+/* $Id: UINotificationCenter.h 113077 2026-02-18 18:28:10Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - UINotificationCenter class declaration.
  */
@@ -248,7 +248,7 @@ private:
     /** Holds the ID of message locked the loop. */
     QUuid                 m_uId;
     /** Holds the last showBlocking() result. */
-    int                   m_iLastResult;
+    Question::Result      m_enmLastResult;
     /** Holds the last handleNow() result. */
     bool                  m_fLastResult;
 };

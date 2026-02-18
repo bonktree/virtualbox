@@ -1,4 +1,4 @@
-/* $Id: UINotificationCenter.cpp 113076 2026-02-18 16:44:32Z sergey.dubov@oracle.com $ */
+/* $Id: UINotificationCenter.cpp 113077 2026-02-18 18:28:10Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - UINotificationCenter class implementation.
  */
@@ -194,7 +194,7 @@ UINotificationCenter::UINotificationCenter(QWidget *pParent)
     , m_iAnimatedValue(0)
     , m_fExtendedMode(false)
     , m_pTimerOpen(0)
-    , m_iLastResult(0)
+    , m_enmLastResult(Question::Result_Cancel)
     , m_fLastResult(false)
 {
     prepare();
@@ -314,7 +314,7 @@ int UINotificationCenter::showBlocking(UINotificationQuestion *pQuestion)
     AssertMsgReturn(!m_pEventLoop, ("UINotificationCenter::showBlocking() is called recursively!\n"), 0);
 
     /* Reset the result: */
-    m_iLastResult = 0;
+    m_enmLastResult = Question::Result_Cancel;
 
     /* Switch to extended mode: */
     m_fExtendedMode = true;
@@ -326,10 +326,10 @@ int UINotificationCenter::showBlocking(UINotificationQuestion *pQuestion)
 
     /* Is progress still valid? */
     if (guardQuestion.isNull())
-        return m_iLastResult;
+        return m_enmLastResult;
     /* Is question still pending? */
     if (guardQuestion->isDone())
-        return m_iLastResult;
+        return m_enmLastResult;
 
     /* Create a local event-loop: */
     QEventLoop eventLoop;
@@ -354,7 +354,7 @@ int UINotificationCenter::showBlocking(UINotificationQuestion *pQuestion)
     m_fExtendedMode = false;
 
     /* Return actual result: */
-    return m_iLastResult;
+    return m_enmLastResult;
 }
 
 bool UINotificationCenter::handleNow(UINotificationProgress *pProgress)
@@ -625,7 +625,7 @@ void UINotificationCenter::sltHandleModelItemRemoved(const QUuid &uId)
         /* Try to cast it to question to get the result: */
         UINotificationQuestion *pQuestion = qobject_cast<UINotificationQuestion*>(pObject);
         if (pQuestion)
-            m_iLastResult = pQuestion->result();
+            m_enmLastResult = pQuestion->result();
 
         /* Remove corresponding model item representation: */
         delete m_items.take(uId);

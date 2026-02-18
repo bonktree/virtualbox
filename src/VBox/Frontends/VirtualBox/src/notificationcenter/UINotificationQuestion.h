@@ -1,4 +1,4 @@
-/* $Id: UINotificationQuestion.h 113076 2026-02-18 16:44:32Z sergey.dubov@oracle.com $ */
+/* $Id: UINotificationQuestion.h 113077 2026-02-18 18:28:10Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - Various UINotificationQuestion declarations.
  */
@@ -41,6 +41,18 @@
 /* Forward declarations: */
 class UINotificationCenter;
 
+/** Question related stuff. */
+namespace Question
+{
+    /** Result options. */
+    enum Result
+    {
+        Result_Cancel = 0,
+        Result_Accept,
+        Result_AcceptAlternative
+    };
+}
+
 /** UINotificationSimple extension for question functionality. */
 class SHARED_LIBRARY_STUFF UINotificationQuestion : public UINotificationSimple
 {
@@ -55,9 +67,9 @@ public:
     QStringList buttonNames() const { return m_buttonNames; }
 
     /** Returns the result. */
-    int result() const { return m_iResult; }
-    /** Defines the @a iResult. */
-    void setResult(int iResult) { m_iResult = iResult; m_fDone = true; }
+    Question::Result result() const { return m_enmResult; }
+    /** Defines the @a enmResult. */
+    void setResult(Question::Result enmResult) { m_enmResult = enmResult; m_fDone = true; }
 
 protected:
 
@@ -162,9 +174,9 @@ private:
     QStringList  m_buttonNames;
 
     /** Holds the question result. */
-    int   m_iResult;
+    Question::Result  m_enmResult;
     /** Holds whether current question is done. */
-    bool  m_fDone;
+    bool              m_fDone;
 };
 
 #endif /* !FEQT_INCLUDED_SRC_notificationcenter_UINotificationQuestion_h */

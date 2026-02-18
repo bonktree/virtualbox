@@ -1,4 +1,4 @@
-/* $Id: UINotificationQuestion.cpp 113076 2026-02-18 16:44:32Z sergey.dubov@oracle.com $ */
+/* $Id: UINotificationQuestion.cpp 113077 2026-02-18 18:28:10Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - Various UINotificationQuestion implementations.
  */
@@ -46,7 +46,7 @@ UINotificationQuestion::UINotificationQuestion(const QString &strName,
                            strInternalName,
                            strHelpKeyword)
     , m_buttonNames(buttonNames)
-    , m_iResult(0)
+    , m_enmResult(Question::Result_Cancel)
     , m_fDone(false)
 {
 }
