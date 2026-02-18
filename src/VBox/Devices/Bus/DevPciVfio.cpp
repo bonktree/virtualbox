@@ -1,4 +1,4 @@
-/* $Id: DevPciVfio.cpp 113056 2026-02-17 10:38:41Z alexander.eichner@oracle.com $ */
+/* $Id: DevPciVfio.cpp 113068 2026-02-18 13:47:54Z alexander.eichner@oracle.com $ */
 /** @file
  * PCI passthrough device emulation using VFIO/IOMMUFD.
  */
@@ -264,10 +264,17 @@ typedef struct VFIOPCIFUN
     /** ROM region handle. */
     PGMMMIO2HANDLE       hRom;
 
+    /** The number of interrupt vectors for each interrupt type. */
+    AssertCompile(   VFIO_PCI_INTX_IRQ_INDEX == 0
+                  && VFIO_PCI_MSI_IRQ_INDEX  == 1
+                  && VFIO_PCI_MSIX_IRQ_INDEX == 2);
+    uint32_t             acIrqVectors[VFIO_PCI_MSIX_IRQ_INDEX + 1];
+
     /** The eventfd to wakeup the IRQ poller. */
     int                  iFdWakeup;
-    /** The poll structure for the interrupts. */
-    struct pollfd        aIrqFds[2];
+
+    /** The eventfds being pre-created. */
+    int                  afdEvts[VBOX_MSI_MAX_ENTRIES];
     /** The current IRQ mode. */
     uint8_t              uIrqModeCur;
     /** The new confogured IRQ mode. */
@@ -807,11 +814,19 @@ static DECLCALLBACK(int) pciVfioIrqPoller(PPDMDEVINS pDevIns, PPDMTHREAD pThread
     PPDMPCIDEV  pPciDev = pDevIns->apPciDevs[pFun->uPciFun];
 
     if (pThread->enmState == PDMTHREADSTATE_INITIALIZING)
-    {
-        pFun->aIrqFds[0].fd = pFun->iFdWakeup;
-        pFun->aIrqFds[0].events = POLLIN | POLLRDNORM | POLLRDBAND | POLLPRI | POLLERR;
         return VINF_SUCCESS;
+
+    /* The poll structure for the interrupts. */
+    uint32_t        cEntriesAlloc = 2;
+    struct pollfd   *paIrqFds = (struct pollfd *)RTMemAllocZ(cEntriesAlloc * sizeof(*paIrqFds));
+    if (!paIrqFds)
+    {
+        LogRel(("VFIO#%d.%u: Failed to allocate memory for %u interrupt polling entries"));
+        return VERR_NO_MEMORY;
     }
+
+    paIrqFds[0].fd = pFun->iFdWakeup;
+    paIrqFds[0].events = POLLIN | POLLRDNORM | POLLRDBAND | POLLPRI | POLLERR;
 
     uint32_t cIrqs = 0;
     while (pThread->enmState == PDMTHREADSTATE_RUNNING)
@@ -821,71 +836,97 @@ static DECLCALLBACK(int) pciVfioIrqPoller(PPDMDEVINS pDevIns, PPDMTHREAD pThread
         {
             switch (uIrqModeNew)
             {
-                case VFIO_PCI_MSI_IRQ_INDEX:
-                {
-                    cIrqs = 1;
-                    break;
-                }
                 case UINT8_MAX:
                 {
                     cIrqs = 0;
                     break;
                 }
                 default:
-                    AssertReleaseFailed();
+                {
+                    cIrqs = pFun->acIrqVectors[uIrqModeNew];
+                    break;
+                }
             }
 
-            pFun->uIrqModeCur = uIrqModeNew;
+            /* Resize the pollfd array if necessary. */
+            if (cIrqs > cEntriesAlloc + 1)
+            {
+                struct pollfd *paIrqFdsNew = (struct pollfd *)RTMemRealloc(paIrqFds, cIrqs * sizeof(*paIrqFds));
+                if (!paIrqFdsNew)
+                {
+                    /** @todo This is quite wrong, we could allocate all possible entries up front and potentially waste memory... */
+                    LogRel(("VFIO#%d.%u: Failed to allocate memory for %u interrupt polling entries"));
+                    RTMemFree(paIrqFds);
+                    return VERR_NO_MEMORY;
+                }
+
+                paIrqFds      = paIrqFdsNew;
+                cEntriesAlloc = cIrqs;
+            }
+
+            for (uint32_t i = 0; i < cIrqs; i++)
+            {
+                paIrqFds[i + 1].fd = pFun->afdEvts[i];
+                paIrqFds[i + 1].events = POLLIN | POLLRDNORM | POLLRDBAND | POLLPRI | POLLERR;
+            }
+
+            ASMAtomicWriteU8(&pFun->uIrqModeCur, uIrqModeNew);
+
+            /* Inform the initiator of the mode switch .*/
+            RTThreadUserSignal(pThread->Thread);
         }
 
-        int rcPsx = poll(&pFun->aIrqFds[0], 1 + cIrqs, -1);
+        int rcPsx = poll(&paIrqFds[0], 1 + cIrqs, -1);
         if (rcPsx > 0)
         {
-            if (pFun->aIrqFds[0].revents)
+            if (paIrqFds[0].revents)
             {
                 /* We got woken up externally. */
-                pFun->aIrqFds[0].revents = 0;
+                paIrqFds[0].revents = 0;
                 uint64_t u64;
-                ssize_t cb = read(pFun->aIrqFds[0].fd, &u64, sizeof(u64));
+                ssize_t cb = read(paIrqFds[0].fd, &u64, sizeof(u64));
                 Assert(cb == sizeof(u64)); RT_NOREF(cb);
                 if (pThread->enmState != PDMTHREADSTATE_RUNNING)
                     break;
             }
 
-            for (uint32_t i = 1; i < RT_ELEMENTS(pFun->aIrqFds); i++)
+            for (uint32_t i = 1; i < cIrqs + 1; i++)
             {
-                if (pFun->aIrqFds[i].revents)
+                if (paIrqFds[i].revents)
                 {
-                    pFun->aIrqFds[i].revents = 0;
+                    paIrqFds[i].revents = 0;
                     uint64_t u64;
-                    ssize_t cb = read(pFun->aIrqFds[i].fd, &u64, sizeof(u64));
+                    ssize_t cb = read(paIrqFds[i].fd, &u64, sizeof(u64));
                     Assert(cb == sizeof(u64)); RT_NOREF(cb);
 
-                    PDMDevHlpPCISetIrqEx(pDevIns, pPciDev, 0, 1);
+                    PDMDevHlpPCISetIrqEx(pDevIns, pPciDev, i - 1, 1);
 
-                    /** @todo The interrupt seems to be masked and we would need a mechanism
-                     * to get notified when the interrupt is de-asserted in the interrupt controller
-                     * (through an EOI for example) so we can unmask them. With KVM this is supported
-                     * when KVM_CAP_IRQFD_RESAMPLE is available.
-                     */
-#if 0
-                    union
+                    if (pFun->uIrqModeCur == VFIO_PCI_INTX_IRQ_INDEX)
                     {
-                        struct vfio_irq_set IrqSet;
-                        uint32_t            au32[sizeof(struct vfio_irq_set) / sizeof(uint32_t) + 1];
-                    } uBuf;
+                        /** @todo The interrupt seems to be masked and we would need a mechanism
+                         * to get notified when the interrupt is de-asserted in the interrupt controller
+                         * (through an EOI for example) so we can unmask them. With KVM this is supported
+                         * when KVM_CAP_IRQFD_RESAMPLE is available.
+                         */
+#if 0
+                        union
+                        {
+                            struct vfio_irq_set IrqSet;
+                            uint32_t            au32[sizeof(struct vfio_irq_set) / sizeof(uint32_t) + 1];
+                        } uBuf;
 
-                    uBuf.IrqSet.argsz = sizeof(uBuf);
-                    uBuf.IrqSet.flags = VFIO_IRQ_SET_DATA_EVENTFD | VFIO_IRQ_SET_ACTION_UNMASK;
-                    uBuf.IrqSet.index = i;
-                    uBuf.IrqSet.start = 0;
-                    uBuf.IrqSet.count = 1;
-                    uBuf.au32[sizeof(struct vfio_irq_set) / sizeof(uint32_t)] = pThis->aIrqFds[i].fd;
+                        uBuf.IrqSet.argsz = sizeof(uBuf);
+                        uBuf.IrqSet.flags = VFIO_IRQ_SET_DATA_EVENTFD | VFIO_IRQ_SET_ACTION_UNMASK;
+                        uBuf.IrqSet.index = i;
+                        uBuf.IrqSet.start = 0;
+                        uBuf.IrqSet.count = 1;
+                        uBuf.au32[sizeof(struct vfio_irq_set) / sizeof(uint32_t)] = pThis->aIrqFds[i].fd;
 
-                    int rcLnx = ioctl(pThis->iFdVfio, VFIO_DEVICE_SET_IRQS, &uBuf);
-                    if (rcLnx == -1)
-                        LogRel(("Unmasking one INTX interrupt failed with %d", errno));
+                        int rcLnx = ioctl(pThis->iFdVfio, VFIO_DEVICE_SET_IRQS, &uBuf);
+                        if (rcLnx == -1)
+                            LogRel(("Unmasking one INTX interrupt failed with %d", errno));
 #endif
+                    }
                 }
             }
         }
@@ -893,6 +934,7 @@ static DECLCALLBACK(int) pciVfioIrqPoller(PPDMDEVINS pDevIns, PPDMTHREAD pThread
             AssertFailed();
     }
 
+    RTMemFree(paIrqFds);
     LogFlowFunc(("Poller thread terminating\n"));
     return VINF_SUCCESS;
 }
@@ -919,13 +961,29 @@ static DECLCALLBACK(int) pciVfioIrqPollerWakeup(PPDMDEVINS pDevIns, PPDMTHREAD p
 }
 
 
-DECLINLINE(int) pciVfioQueryIrqInfo(PVFIOPCI pThis, PCVFIOPCIFUN pFun, uint32_t uIrq, struct vfio_irq_info *pIrqInfo)
+static int pciVfioIrqPollerSwitchMode(PVFIOPCI pThis, PVFIOPCIFUN pFun, uint32_t uVfioIrq, bool fWait)
 {
-    RT_ZERO(*pIrqInfo);
-    pIrqInfo->argsz = sizeof(*pIrqInfo);
-    pIrqInfo->index = uIrq;
+    /* Wakeup the IRQ poller to switch to the new mode. */
+    RTThreadUserReset(pFun->pThrdIrq->Thread);
+    ASMAtomicWriteU8(&pFun->uIrqModeNew, uVfioIrq);
+    pciVfioIrqPollerWakeup(pThis->pDevIns, pFun->pThrdIrq);
 
-    int rcLnx = ioctl(pFun->iFdVfio, VFIO_DEVICE_GET_IRQ_INFO, pIrqInfo);
+    /* Wait until it got confirmed. */
+    if (fWait)
+        return RTThreadUserWait(pFun->pThrdIrq->Thread, 5 * RT_MS_1SEC);
+
+    return VINF_SUCCESS;
+}
+
+
+DECLINLINE(int) pciVfioQueryIrqInfo(PVFIOPCI pThis, PCVFIOPCIFUN pFun, uint32_t uIrq, uint32_t *pcVectors)
+{
+    struct vfio_irq_info IrqInfo;
+    RT_ZERO(IrqInfo);
+    IrqInfo.argsz = sizeof(IrqInfo);
+    IrqInfo.index = uIrq;
+
+    int rcLnx = ioctl(pFun->iFdVfio, VFIO_DEVICE_GET_IRQ_INFO, &IrqInfo);
     if (rcLnx == -1)
         return PDMDevHlpVMSetError(pThis->pDevIns, RTErrConvertFromErrno(errno), RT_SRC_POS,
                                 N_("Getting information for irq %u of opened VFIO device failed with %d"), uIrq, errno);
@@ -936,34 +994,82 @@ DECLINLINE(int) pciVfioQueryIrqInfo(PVFIOPCI pThis, PCVFIOPCIFUN pFun, uint32_t 
             "VFIO#%d.%u:     index:       %#RU32\n"
             "VFIO#%d.%u:     count:       %#RU32\n",
             iInstance, pFun->uPciFun, uIrq,
-            iInstance, pFun->uPciFun, pIrqInfo->flags,
-            iInstance, pFun->uPciFun, pIrqInfo->index,
-            iInstance, pFun->uPciFun, pIrqInfo->count));
+            iInstance, pFun->uPciFun, IrqInfo.flags,
+            iInstance, pFun->uPciFun, IrqInfo.index,
+            iInstance, pFun->uPciFun, IrqInfo.count));
 
+    *pcVectors = IrqInfo.count;
     return VINF_SUCCESS;
 }
 
 
-static int pciVfioSetupIrq(PVFIOPCI pThis, PVFIOPCIFUN pFun, uint32_t uVfioIrq)
+static int pciVfioIrqReconfigure(PVFIOPCI pThis, PVFIOPCIFUN pFun, uint32_t uVfioIrq, uint16_t cVectors)
 {
-    struct vfio_irq_info IrqInfo; RT_ZERO(IrqInfo);
-    int rc = pciVfioQueryIrqInfo(pThis, pFun, uVfioIrq, &IrqInfo);
-    if (RT_FAILURE(rc))
-        return rc;
+    int rc = VINF_SUCCESS;
+#ifdef RT_STRICT
+    uint8_t uIrqModeCur = ASMAtomicReadU8(&pFun->uIrqModeCur);
+    Assert(   uIrqModeCur == uVfioIrq
+           || uIrqModeCur == UINT8_MAX);
+#endif
 
-    if (IrqInfo.count)
+    if (!cVectors)
+    {
+        /* Clear. */
+        rc = pciVfioIrqPollerSwitchMode(pThis, pFun, UINT8_MAX, true /*fWait*/);
+        if (RT_FAILURE(rc))
+            return PDMDevHlpVMSetError(pThis->pDevIns, rc, RT_SRC_POS,
+                                       N_("Switching the IRQ poller mode failed"));
+
+        /* Disable the interrupt mode. */
+        struct vfio_irq_set IrqSet;
+        IrqSet.argsz = sizeof(IrqSet);
+        IrqSet.flags = VFIO_IRQ_SET_DATA_NONE | VFIO_IRQ_SET_ACTION_TRIGGER;
+        IrqSet.index = uVfioIrq;
+        IrqSet.start = 0;
+        IrqSet.count = 0;
+
+        int rcLnx = ioctl(pFun->iFdVfio, VFIO_DEVICE_SET_IRQS, &IrqSet);
+        if (rcLnx == -1)
+            return PDMDevHlpVMSetError(pThis->pDevIns, RTErrConvertFromErrno(errno), RT_SRC_POS,
+                                       N_("Clearing interrupts on the device failed with %d"), errno);
+
+        if (   uVfioIrq == VFIO_PCI_MSI_IRQ_INDEX
+            || uVfioIrq == VFIO_PCI_MSIX_IRQ_INDEX)
+        {
+            /*
+             * When disabling MSI/MSI-X interrupts the kernel will always switch to INTx.
+             * In case it is masked in our device turn it off as well, otherwise switch
+             * to INTx mode and fall through below.
+             */
+            uint16_t u16Cmd = PDMPciDevGetCommand(pThis->pDevIns->apPciDevs[pFun->uPciFun]);
+            if (u16Cmd & RT_BIT(10))
+            {
+                /* Disable INTx again. */
+                IrqSet.argsz = sizeof(IrqSet);
+                IrqSet.flags = VFIO_IRQ_SET_DATA_NONE | VFIO_IRQ_SET_ACTION_TRIGGER;
+                IrqSet.index = VFIO_PCI_INTX_IRQ_INDEX;
+                IrqSet.start = 0;
+                IrqSet.count = 0;
+
+                rcLnx = ioctl(pFun->iFdVfio, VFIO_DEVICE_SET_IRQS, &IrqSet);
+                if (rcLnx == -1)
+                    return PDMDevHlpVMSetError(pThis->pDevIns, RTErrConvertFromErrno(errno), RT_SRC_POS,
+                                               N_("Clearing INTx interrupts on the device failed with %d"), errno);
+
+                return VINF_SUCCESS;
+            }
+            else
+                uVfioIrq = VFIO_PCI_INTX_IRQ_INDEX;
+        }
+        else
+            return VINF_SUCCESS;
+    }
+
+    if (cVectors)
     {
         if (uVfioIrq == VFIO_PCI_INTX_IRQ_INDEX)
         {
-            Assert(   IrqInfo.index == 0
-                   && IrqInfo.count == 1
-                   && (IrqInfo.flags & VFIO_IRQ_INFO_EVENTFD));
-
-            /* Create an assign an eventfd. */
-            int iFdEvt = 0;
-            rc = pciVfioLnxEventfd2(0 /*uValInit*/, 0 /*fFlags*/, &iFdEvt);
-            if (RT_FAILURE(rc))
-                return rc;
+            Assert(cVectors == 1);
 
             union
             {
@@ -973,60 +1079,51 @@ static int pciVfioSetupIrq(PVFIOPCI pThis, PVFIOPCIFUN pFun, uint32_t uVfioIrq)
 
             uBuf.IrqSet.argsz = sizeof(uBuf);
             uBuf.IrqSet.flags = VFIO_IRQ_SET_DATA_EVENTFD | VFIO_IRQ_SET_ACTION_TRIGGER;
-            uBuf.IrqSet.index = 0;
+            uBuf.IrqSet.index = uVfioIrq;
             uBuf.IrqSet.start = 0;
             uBuf.IrqSet.count = 1;
-            uBuf.au32[sizeof(struct vfio_irq_set) / sizeof(uint32_t)] = iFdEvt;
+            uBuf.au32[sizeof(struct vfio_irq_set) / sizeof(uint32_t)] = pFun->afdEvts[0];
 
             int rcLnx = ioctl(pFun->iFdVfio, VFIO_DEVICE_SET_IRQS, &uBuf);
             if (rcLnx == -1)
                 return PDMDevHlpVMSetError(pThis->pDevIns, RTErrConvertFromErrno(errno), RT_SRC_POS,
                                         N_("Assigning one INTX interrupt failed with %d (%u)"), errno, sizeof(uBuf));
-
-            pFun->aIrqFds[0].fd     = iFdEvt;
-            pFun->aIrqFds[0].events = POLLIN | POLLRDNORM | POLLRDBAND | POLLPRI | POLLERR;
         }
         else if (uVfioIrq == VFIO_PCI_MSI_IRQ_INDEX)
         {
-            Assert(   IrqInfo.index == 1
-                   && IrqInfo.count == 1
-                   && (IrqInfo.flags & VFIO_IRQ_INFO_EVENTFD));
-
-            /* Create an assign an eventfd. */
-            int iFdEvt = 0;
-            rc = pciVfioLnxEventfd2(0 /*uValInit*/, 0 /*fFlags*/, &iFdEvt);
-            if (RT_FAILURE(rc))
-                return rc;
-
             union
             {
                 struct vfio_irq_set IrqSet;
-                uint32_t            au32[sizeof(struct vfio_irq_set) / sizeof(uint32_t) + 1];
+                uint32_t            au32[sizeof(struct vfio_irq_set) / sizeof(uint32_t) + VBOX_MSI_MAX_ENTRIES];
             } uBuf;
 
-            uBuf.IrqSet.argsz = sizeof(uBuf);
+            uBuf.IrqSet.argsz = sizeof(uBuf.IrqSet) + cVectors * sizeof(uint32_t);
             uBuf.IrqSet.flags = VFIO_IRQ_SET_DATA_EVENTFD | VFIO_IRQ_SET_ACTION_TRIGGER;
-            uBuf.IrqSet.index = VFIO_PCI_MSI_IRQ_INDEX;
+            uBuf.IrqSet.index = uVfioIrq;
             uBuf.IrqSet.start = 0;
-            uBuf.IrqSet.count = 1;
-            uBuf.au32[sizeof(struct vfio_irq_set) / sizeof(uint32_t)] = iFdEvt;
+            uBuf.IrqSet.count = cVectors;
+
+            for (uint32_t i = 0; i < cVectors; i++)
+                uBuf.au32[sizeof(struct vfio_irq_set) / sizeof(uint32_t) + i] = pFun->afdEvts[i];
 
             int rcLnx = ioctl(pFun->iFdVfio, VFIO_DEVICE_SET_IRQS, &uBuf);
             if (rcLnx == -1)
                 return PDMDevHlpVMSetError(pThis->pDevIns, RTErrConvertFromErrno(errno), RT_SRC_POS,
                                         N_("Assigning one INTX interrupt failed with %d (%u)"), errno, sizeof(uBuf));
-
-            pFun->aIrqFds[1].fd     = iFdEvt;
-            pFun->aIrqFds[1].events = POLLIN | POLLRDNORM | POLLRDBAND | POLLPRI | POLLERR;
         }
+        else
+            AssertReleaseFailed();
         /** @todo MSI-X */
     }
     else /* Not available. */
-        Assert(IrqInfo.count == 0);
+        AssertLogRelMsgFailed(("VFIO#%d.%u: Tried to reconfigure interrupt with unavailable mode %u\n",
+                               pThis->iInstance, pFun->uPciFun, uVfioIrq));
 
-    /* Wakeup the IRQ poller to make up the new mode. */
-    ASMAtomicWriteU8(&pFun->uIrqModeNew, uVfioIrq);
-    pciVfioIrqPollerWakeup(pThis->pDevIns, pFun->pThrdIrq);
+    rc = pciVfioIrqPollerSwitchMode(pThis, pFun, uVfioIrq, false /*fWait*/);
+    if (RT_FAILURE(rc))
+        return PDMDevHlpVMSetError(pThis->pDevIns, rc, RT_SRC_POS,
+                                   N_("Switching the IRQ poller mode failed"));
+
     return VINF_SUCCESS;
 }
 
@@ -1049,7 +1146,6 @@ DECLINLINE(void) pciVfioCfgSpaceSetInterceptRoU8(PVFIOPCIFUN pFun, uint32_t off,
 
 DECLINLINE(void) pciVfioCfgSpaceSetInterceptU16(PVFIOPCIFUN pFun, uint32_t off, uint8_t fRd, uint8_t fWr)
 {
-    AssertReturnVoid(off < (sizeof(pFun->abPciCfgIntercept) - 1) * 8 / 4);
     pciVfioCfgSpaceSetInterceptU8(pFun, off,     fRd, fWr);
     pciVfioCfgSpaceSetInterceptU8(pFun, off + 1, fRd, fWr);
 }
@@ -1057,7 +1153,6 @@ DECLINLINE(void) pciVfioCfgSpaceSetInterceptU16(PVFIOPCIFUN pFun, uint32_t off, 
 
 DECLINLINE(void) pciVfioCfgSpaceSetInterceptRoU16(PVFIOPCIFUN pFun, uint32_t off, uint8_t fRd)
 {
-    AssertReturnVoid(off < (sizeof(pFun->abPciCfgIntercept) - 1) * 8 / 4);
     pciVfioCfgSpaceSetInterceptU8(pFun, off,     fRd, VFIO_PCI_CFG_SPACE_ACCESS_INVALID);
     pciVfioCfgSpaceSetInterceptU8(pFun, off + 1, fRd, VFIO_PCI_CFG_SPACE_ACCESS_INVALID);
 }
@@ -1065,7 +1160,6 @@ DECLINLINE(void) pciVfioCfgSpaceSetInterceptRoU16(PVFIOPCIFUN pFun, uint32_t off
 
 DECLINLINE(void) pciVfioCfgSpaceSetInterceptU32(PVFIOPCIFUN pFun, uint32_t off, uint8_t fRd, uint8_t fWr)
 {
-    AssertReturnVoid(off < (sizeof(pFun->abPciCfgIntercept) - 3) * 8 / 4);
     pciVfioCfgSpaceSetInterceptU16(pFun, off,     fRd, fWr);
     pciVfioCfgSpaceSetInterceptU16(pFun, off + 2, fRd, fWr);
 }
@@ -1756,6 +1850,17 @@ static DECLCALLBACK(VBOXSTRICTRC) pciVfioConfigWrite(PPDMDEVINS pDevIns, PPDMPCI
                         LogRel(("VFIO#%d.%u: Failed to map guest RAM into IOMMU for device, expect broken device (%Rrc)\n",
                                 pThis->iInstance, pFun->uPciFun, rc));
                 }
+
+                /* Check whether the INTx config changes. */
+                bool const fIntxEnabled = !RT_BOOL(u32Value & RT_BIT(10));
+                if (fIntxEnabled != (pFun->uIrqModeCur == VFIO_PCI_INTX_IRQ_INDEX))
+                {
+                    rc = pciVfioIrqReconfigure(pThis, pFun, VFIO_PCI_INTX_IRQ_INDEX, fIntxEnabled ? 1 : 0);
+                    if (RT_FAILURE(rc))
+                        LogRel(("VFIO#%d.%u: Failed to reconfigure the INTx interrupt config of the device, expect a broken device (%Rrc)\n",
+                                pThis->iInstance, pFun->uPciFun, rc));
+                }
+
                 /* Now write to the device. */
                 rc = pciVfioConfigPassthroughWrite(pFun, uAddress, cb, u32Value);
                 if (RT_FAILURE(rc))
@@ -1765,13 +1870,15 @@ static DECLCALLBACK(VBOXSTRICTRC) pciVfioConfigWrite(PPDMDEVINS pDevIns, PPDMPCI
             else if (   pFun->offMsiCtrl == uAddress
                      && cb == sizeof(uint16_t))
             {
-                if (u32Value & RT_BIT(0)) /* Configure MSI interrupts as soon as they get enabled. */
+                bool const fMsiEnabled = RT_BOOL(u32Value & RT_BIT(0));
+                uint8_t const cVectors = fMsiEnabled ? RT_BIT((u32Value >> 4) & 0x7) : 0;
+                if (fMsiEnabled != (pFun->uIrqModeCur == VFIO_PCI_MSI_IRQ_INDEX))
                 {
-                    rc = pciVfioSetupIrq(pThis, pFun, VFIO_PCI_MSI_IRQ_INDEX);
+                    rc = pciVfioIrqReconfigure(pThis, pFun, VFIO_PCI_MSI_IRQ_INDEX, cVectors);
                     if (RT_FAILURE(rc))
-                        return rc;
+                        LogRel(("VFIO#%d.%u: Failed to reconfigure the MSI interrupt config of the device, expect a broken device (%Rrc)\n",
+                                pThis->iInstance, pFun->uPciFun, rc));
                 }
-                /** @todo Disable MSI */
 
                 /* Now write to the device. */
                 rc = pciVfioConfigPassthroughWrite(pFun, uAddress, cb, u32Value);
@@ -1833,6 +1940,10 @@ static DECLCALLBACK(int) pciVfioDestruct(PPDMDEVINS pDevIns)
 
             close(pFun->iFdVfio);
         }
+
+        for (uint32_t i = 0; i < RT_ELEMENTS(pFun->afdEvts); i++)
+            if (pFun->afdEvts[i] != 0)
+                close(pFun->afdEvts[i]);
 
         if (pFun->iFdWakeup != -1)
             close(pFun->iFdWakeup);
@@ -2076,6 +2187,39 @@ static DECLCALLBACK(int) pciVfioConstruct(PPDMDEVINS pDevIns, int iInstance, PCF
         if (RT_FAILURE(rc))
             return rc;
 
+        /* Query the supported interrupt types now. */
+        static uint32_t s_aVfioPciIrqs[] =
+        {
+            VFIO_PCI_INTX_IRQ_INDEX,
+            VFIO_PCI_MSI_IRQ_INDEX,
+            VFIO_PCI_MSIX_IRQ_INDEX
+        };
+
+        for (uint32_t i = 0; i < RT_ELEMENTS(s_aVfioPciIrqs); i++)
+        {
+            uint32_t const uIrq = s_aVfioPciIrqs[i];
+            rc = pciVfioQueryIrqInfo(pThis, pFun, uIrq, &pFun->acIrqVectors[i]);
+            if (RT_FAILURE(rc))
+                return rc;
+        }
+
+        /*
+         * Pre create the event file descriptors to not risk running out of file descriptors
+         * while the VM is running.
+         */
+        uint32_t cMaxVectors = RT_MAX(RT_MAX(pFun->acIrqVectors[VFIO_PCI_MSI_IRQ_INDEX],
+                                             pFun->acIrqVectors[VFIO_PCI_MSIX_IRQ_INDEX]),
+                                      pFun->acIrqVectors[VFIO_PCI_INTX_IRQ_INDEX]);
+
+        for (uint32_t i = 0; i < cMaxVectors; i++)
+        {
+            rc = pciVfioLnxEventfd2(0 /*uValInit*/, 0 /*fFlags*/, &pFun->afdEvts[i]);
+            if (RT_FAILURE(rc))
+                return PDMDevHlpVMSetError(pDevIns, rc, RT_SRC_POS,
+                                           N_("Failed to create event file descriptor %u out of %u for interrupts"),
+                                           i, cMaxVectors);
+        }
+
         /* Parse the capability lists now. */
         rc = pciVfioCfgSpaceParseCapabilities(pThis, pFun, pPciDev);
         if (RT_FAILURE(rc))
@@ -2100,6 +2244,11 @@ static DECLCALLBACK(int) pciVfioConstruct(PPDMDEVINS pDevIns, int iInstance, PCF
         rc = PDMDevHlpThreadCreate(pDevIns, &pFun->pThrdIrq, pFun, pciVfioIrqPoller, pciVfioIrqPollerWakeup,
                                    0 /* cbStack */, RTTHREADTYPE_IO, szDev);
         AssertLogRelRCReturn(rc, rc);
+
+        rc = pciVfioIrqReconfigure(pThis, pFun, VFIO_PCI_INTX_IRQ_INDEX, pFun->acIrqVectors[VFIO_PCI_INTX_IRQ_INDEX]);
+        if (RT_FAILURE(rc))
+            return PDMDevHlpVMSetError(pDevIns, rc, RT_SRC_POS,
+                                       N_("Failed to set initial interrupt mode to INTx"));
 
         /* Subsequent function should use the same major as the previous one. */
         iPciDevNo = PDMPCIDEVREG_DEV_NO_SAME_AS_PREV;
