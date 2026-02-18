@@ -1,4 +1,4 @@
-/* $Id: UINotificationMessage.h 113071 2026-02-18 15:51:58Z sergey.dubov@oracle.com $ */
+/* $Id: UINotificationMessage.h 113073 2026-02-18 15:54:09Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - Various UINotificationMessage declarations.
  */
@@ -90,12 +90,9 @@ public:
     /** Possible notification types <= coped from MessageType. */
     enum NotificationType
     {
-        NotificationType_Info = 1,
-        NotificationType_Question,
-        NotificationType_Warning,
+        NotificationType_Warning = 1,
         NotificationType_Error,
-        NotificationType_Critical,
-        NotificationType_GuruMeditation
+        NotificationType_Critical
     };
 
     /** Returns whether object is done. */
