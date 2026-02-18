@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# $Id: configure.py 113057 2026-02-17 10:47:48Z andreas.loeffler@oracle.com $
+# $Id: configure.py 113069 2026-02-18 14:51:56Z andreas.loeffler@oracle.com $
 """
 Configuration script for building VirtualBox.
 
@@ -72,7 +72,7 @@ SPDX-License-Identifier: GPL-3.0-only
 # External Python modules or other dependencies are not allowed!
 #
 
-__revision__ = "$Revision: 113057 $"
+__revision__ = "$Revision: 113069 $"
 
 import argparse
 import collections;
@@ -471,9 +471,9 @@ def checkWhich(sCmdName, sToolDesc = None, sCustomPath = None, asVersionSwitches
     if sCustomPath:
         sCmdPath = os.path.join(sCustomPath, sCmdName);
         if isFile(sCmdPath) and os.access(sCmdPath, os.X_OK):
-            printVerbose(1, f"Found '{sCmdName}' at custom path: {sCmdPath}");
+            printVerbose(1, f"Found '{sCmdName}' at custom path: {sCustomPath}");
         else:
-            printVerbose(1, f"'{sCmdName}' not found at custom path: {sCmdPath}");
+            printVerbose(1, f"'{sCmdName}' not found at custom path: {sCustomPath}");
             return None, None;
     else:
         sCmdPath = shutil.which(sCmdName);
@@ -1889,10 +1889,12 @@ class ToolCheck(CheckBase):
         Will return (None, False) if not found.
         """
         sRootPath = self.sRootPath; # A custom path has precedence.
-        fInTree   = False;
-        if sRootPath:
-            self.printVerbose(1, f'Root path was set to: {sRootPath}');
-        else: # Search for in-tree tools.
+        if  sRootPath \
+        and not isDir(sRootPath):   # Use the parent directory if the given path isn't a directory.
+            sRootPath = os.path.dirname(sRootPath);
+
+        fInTree = False;
+        if not sRootPath: # Search for in-tree tools.
             sPath  = os.path.join(g_sScriptPath, g_oEnv['PATH_DEVTOOLS'] if g_oEnv['PATH_DEVTOOLS'] else 'tools');
             asToolsSubDir = [
                  "common",
@@ -1904,13 +1906,18 @@ class ToolCheck(CheckBase):
             for sCurDir in asPath:
                 _, sRootPath = self.getHighestVersionDir(sCurDir);
                 if sRootPath:
-                    self.printVerbose(1, f'In-tree path found for tool {self.sName}: {sRootPath}');
+                    self.printVerbose(1, f'In-tree path found: {sRootPath}');
                     fInTree = True;
                     break;
-        if not sRootPath:
-            self.printVerbose(1, f'No root path found for tool {self.sName}');
+
+        if sRootPath:
+            if not isDir(sRootPath):
+                self.printError(f"Root path '{sRootPath}' but does not exist or is not a directory");
+            else:
+                self.printVerbose(1, f'Root path set to: {sRootPath}');
         else:
-            self.printVerbose(1, f'Root path for tool {self.sName} determined: {sRootPath}');
+            self.printVerbose(1, 'No root path found');
+
         return sRootPath, fInTree;
 
     def performCheck(self):
