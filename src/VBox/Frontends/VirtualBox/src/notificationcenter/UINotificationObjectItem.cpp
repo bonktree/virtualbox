@@ -1,4 +1,4 @@
-/* $Id: UINotificationObjectItem.cpp 113087 2026-02-19 13:24:09Z sergey.dubov@oracle.com $ */
+/* $Id: UINotificationObjectItem.cpp 113089 2026-02-19 13:54:59Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - UINotificationObjectItem class implementation.
  */
@@ -166,6 +166,7 @@ void UINotificationObjectItem::prepareWidgets()
             m_pLabelDetails->setBrowserFont(myFont);
             m_pLabelDetails->setText(m_pObject->details());
             m_pLabelDetails->setVisible(m_fToggled && !m_pLabelDetails->text().isEmpty());
+            m_pLabelDetails->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Minimum);
 
             m_pLayoutMain->addWidget(m_pLabelDetails);
         }

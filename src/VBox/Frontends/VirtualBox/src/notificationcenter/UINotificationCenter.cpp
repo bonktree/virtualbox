@@ -1,4 +1,4 @@
-/* $Id: UINotificationCenter.cpp 113088 2026-02-19 13:38:35Z sergey.dubov@oracle.com $ */
+/* $Id: UINotificationCenter.cpp 113089 2026-02-19 13:54:59Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - UINotificationCenter class implementation.
  */
@@ -1030,7 +1030,9 @@ void UINotificationCenter::adjustGeometry()
     /* Invent some default width for simple mode, like 200px for example: */
     int iMaximumWidth = !isExtendedMode() ? 200 : iParentWidth;
     /* Make sure maximum width is more or equal to minimum one: */
-    iMaximumWidth = qMax(iMinimumWidth, iMaximumWidth);
+    iMaximumWidth = qMax(iMaximumWidth, iMinimumWidth);
+    /* Make sure maximum width is more or equal to minimum width hint: */
+    iMaximumWidth = qMax(iMaximumWidth, minimumSizeHint().width());
 
     /* Calculate and propagate details width hint: */
     int iDetailsWidthHint = iMaximumWidth;
