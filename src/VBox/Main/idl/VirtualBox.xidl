@@ -12611,7 +12611,7 @@
     uuid="d5dcece0-b202-4416-a138-03502784cc07"
     wsmap="managed"
     rest="managed"
-    reservedMethods="6" reservedAttributes="11"
+    reservedMethods="6" reservedAttributes="12"
     >
     <desc>
       The IHost interface represents the physical machine that this VirtualBox
