@@ -1,4 +1,4 @@
-/* $Id: VBoxMPTypes.h 112403 2026-01-11 19:29:08Z knut.osmundsen@oracle.com $ */
+/* $Id: VBoxMPTypes.h 113107 2026-02-20 15:59:17Z vitali.pelenjow@oracle.com $ */
 /** @file
  * VBox WDDM Miniport driver
  */
@@ -315,6 +315,12 @@ typedef struct VBOXWDDM_VMODES
     /* note that we not use array indices to indentify modes, because indices may change due to element removal */
     uint64_t aTransientResolutions[VBOX_VIDEO_MAX_SCREENS];
     uint64_t aPendingRemoveCurResolutions[VBOX_VIDEO_MAX_SCREENS];
+#ifdef VBOXWDDM_NEW_VIDPN
+    /* If the preferred resolution of a target is not 0x0, then the driver will build
+     * VidPN source and target lists using only the preferred resolution.
+     */
+    RTRECTSIZE aPreferredModes[VBOX_VIDEO_MAX_SCREENS];
+#endif
 } VBOXWDDM_VMODES;
 
 typedef struct VBOXVDMADDI_CMD_QUEUE

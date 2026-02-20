@@ -1,4 +1,4 @@
-/* $Id: VBoxMPWddm.cpp 112925 2026-02-10 17:57:15Z vitali.pelenjow@oracle.com $ */
+/* $Id: VBoxMPWddm.cpp 113107 2026-02-20 15:59:17Z vitali.pelenjow@oracle.com $ */
 /** @file
  * VBox WDDM Miniport driver
  */
@@ -3742,6 +3742,13 @@ DxgkDdiEscape(
                             LogRel2((VBOX_VIDEO_LOG_NAME ": RegSetDword '%ls'. Status 0x%X, dwVal %d\n", wszNameBuf, Status, fConnectReq));
                         }
                     }
+#ifdef VBOXWDDM_NEW_VIDPN
+                    else if (pTarget->fConnected)
+                    {
+                        Status = VBoxWddmChildStatusReportReconnected(pDevExt, i);
+                        Assert(NT_SUCCESS(Status));
+                    }
+#endif
                 }
 
                 if (RT_LIKELY(hKey))
@@ -3842,6 +3849,9 @@ DxgkDdiEscape(
                 break;
             }
             case VBOXESC_UPDATEMODES:
+#ifdef VBOXWDDM_NEW_VIDPN
+            case VBOXESC_UPDATEMODES_SET_PREFERRED:
+#endif
             {
                 LOG(("=> VBOXESC_UPDATEMODES"));
 
@@ -3878,7 +3888,37 @@ DxgkDdiEscape(
                 }
 
                 VBOXDISPIFESCAPE_UPDATEMODES *pData = (VBOXDISPIFESCAPE_UPDATEMODES*)pEscapeHdr;
-                Status = VBoxVidPnUpdateModes(pDevExt, pData->u32TargetId, &pData->Size);
+#ifdef VBOXWDDM_NEW_VIDPN
+                if (pEscapeHdr->escapeCode == VBOXESC_UPDATEMODES_SET_PREFERRED)
+                {
+                    if (pData->u32TargetId == D3DDDI_ID_UNINITIALIZED)
+                    {
+                        uint32_t cDisplays = (uint32_t)VBoxCommonFromDeviceExt(pDevExt)->cDisplays;
+                        for (uint32_t u32TargetId = 0; u32TargetId < cDisplays; ++u32TargetId)
+                        {
+                            Status = VBoxVidPnUpdateModes(pDevExt, u32TargetId, &pData->Size, TRUE);
+                            if (!NT_SUCCESS(Status))
+                            {
+                                WARN(("VBoxVidPnUpdateModes failed Status(%#x)\n", Status));
+                                return Status;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        Status = VBoxVidPnUpdateModes(pDevExt, pData->u32TargetId, &pData->Size, TRUE);
+                        if (!NT_SUCCESS(Status))
+                        {
+                            WARN(("VBoxVidPnUpdateModes failed Status(%#x)\n", Status));
+                            return Status;
+                        }
+                    }
+
+                    Status = STATUS_SUCCESS;
+                    break;
+                }
+#endif
+                Status = VBoxVidPnUpdateModes(pDevExt, pData->u32TargetId, &pData->Size, FALSE);
                 if (!NT_SUCCESS(Status))
                 {
                     WARN(("VBoxVidPnUpdateModes failed Status(%#x)\n", Status));

@@ -112,6 +112,60 @@ static DECLCALLBACK(int) vgsvcDisplayConfigInit(void)
     return VINF_SUCCESS;
 }
 
+static void ResetPreferredMode(void)
+{
+    NTSTATUS rcNt;
+
+    D3DKMT_ENUMADAPTERS EnumAdapters;
+    RT_ZERO(EnumAdapters);
+    EnumAdapters.NumAdapters = RT_ELEMENTS(EnumAdapters.Adapters);
+    rcNt = g_pfnD3DKMTEnumAdapters(&EnumAdapters);
+    VGSvcVerbose(3, "D3DKMTEnumAdapters rcNt=%#x NumAdapters=%u\n", rcNt, EnumAdapters.NumAdapters);
+
+    for (ULONG i = 0; i < EnumAdapters.NumAdapters; ++i)
+    {
+        D3DKMT_ADAPTERINFO *pAdapterInfo = &EnumAdapters.Adapters[i];
+        VGSvcVerbose(3, "#%u: NumOfSources=%u hAdapter=0x%p Luid(%u, %u)\n",
+            i, pAdapterInfo->NumOfSources, pAdapterInfo->hAdapter, pAdapterInfo->AdapterLuid.HighPart, pAdapterInfo->AdapterLuid.LowPart);
+    }
+
+    D3DKMT_OPENADAPTERFROMLUID OpenAdapterData;
+    RT_ZERO(OpenAdapterData);
+    OpenAdapterData.AdapterLuid = EnumAdapters.Adapters[0].AdapterLuid;
+    rcNt = g_pfnD3DKMTOpenAdapterFromLuid(&OpenAdapterData);
+    VGSvcVerbose(3, "D3DKMTOpenAdapterFromLuid rcNt=%#x hAdapter=0x%p\n", rcNt, OpenAdapterData.hAdapter);
+
+    if (OpenAdapterData.hAdapter)
+    {
+        /*
+         * Disable the preferred modes for all targets by setting the resolutions to 0x0.
+         */
+        VBOXDISPIFESCAPE_UPDATEMODES UpdateModes;
+        RT_ZERO(UpdateModes);
+        UpdateModes.EscapeHdr.escapeCode = VBOXESC_UPDATEMODES_SET_PREFERRED;
+        UpdateModes.u32TargetId = D3DDDI_ID_UNINITIALIZED;
+        UpdateModes.Size.cx = 0;
+        UpdateModes.Size.cy = 0;
+
+        D3DKMT_ESCAPE EscapeData;
+        RT_ZERO(EscapeData);
+        EscapeData.hAdapter = OpenAdapterData.hAdapter;
+        EscapeData.Type = D3DKMT_ESCAPE_DRIVERPRIVATE;
+        EscapeData.Flags.HardwareAccess = 1;
+        EscapeData.pPrivateDriverData = &UpdateModes;
+        EscapeData.PrivateDriverDataSize = sizeof(UpdateModes);
+
+        rcNt = g_pfnD3DKMTEscape(&EscapeData);
+        VGSvcVerbose(3, "D3DKMTEscape(VBOXESC_UPDATEMODES_SET_PREFERRED) rcNt=%#x\n", rcNt);
+
+        D3DKMT_CLOSEADAPTER CloseAdapter;
+        CloseAdapter.hAdapter = OpenAdapterData.hAdapter;
+
+        rcNt = g_pfnD3DKMTCloseAdapter(&CloseAdapter);
+        VGSvcVerbose(3, "D3DKMTCloseAdapter rcNt=%#x\n", rcNt);
+    }
+}
+
 void ReconnectDisplays(uint32_t cDisplays, VMMDevDisplayDef *paDisplays)
 {
     D3DKMT_HANDLE hAdapter;
@@ -153,6 +207,29 @@ void ReconnectDisplays(uint32_t cDisplays, VMMDevDisplayDef *paDisplays)
 
     if (hAdapter)
     {
+        /* Set a single resolution mode for each display.
+         * The miniport driver will use this mode instead of a list of resolutions.
+         */
+        for (uint32_t i = 0; i < cDisplays; ++i)
+        {
+            VBOXDISPIFESCAPE_UPDATEMODES UpdateModes;
+            RT_ZERO(UpdateModes);
+            UpdateModes.EscapeHdr.escapeCode = VBOXESC_UPDATEMODES_SET_PREFERRED;
+            UpdateModes.u32TargetId = paDisplays[i].idDisplay;
+            UpdateModes.Size.cx = paDisplays[i].cx;
+            UpdateModes.Size.cy = paDisplays[i].cy;
+
+            D3DKMT_ESCAPE EscapeData = {0};
+            EscapeData.hAdapter = hAdapter;
+            EscapeData.Type = D3DKMT_ESCAPE_DRIVERPRIVATE;
+            EscapeData.Flags.HardwareAccess = 1;
+            EscapeData.pPrivateDriverData = &UpdateModes;
+            EscapeData.PrivateDriverDataSize = sizeof(UpdateModes);
+
+            rcNt = g_pfnD3DKMTEscape(&EscapeData);
+            VGSvcVerbose(3, "D3DKMTEscape(VBOXESC_UPDATEMODES_SET_PREFERRED) rcNt=%#x\n", rcNt);
+        }
+
         VBOXDISPIFESCAPE_RECONNECT_TARGETS VBoxEscapeReconnectTargets = {{0}};
 
         VBoxEscapeReconnectTargets.EscapeHdr.escapeCode = VBOXESC_RECONNECT_TARGETS;
@@ -258,6 +335,8 @@ DECLCALLBACK(int) vgsvcDisplayConfigWorker(bool volatile *pfShutdown)
             /* Release the GRAPHICS capability and delegate VBoxTray processing of resize requests */
             if (fCapAcquired)
             {
+                ResetPreferredMode();
+
                 rc = VbglR3AcquireGuestCaps(0, VMMDEV_GUEST_SUPPORTS_GRAPHICS, false);
                 if (RT_SUCCESS(rc))
                 {
@@ -309,6 +388,9 @@ DECLCALLBACK(int) vgsvcDisplayConfigWorker(bool volatile *pfShutdown)
                 }
 
                 ReconnectDisplays(cDisplays, &aDisplays[0]);
+
+                /* Throttle a bit. Constantly reconnecting displays caused bugchecks in DXGK code. */
+                RTThreadSleep(1000);
             }
         }
         else if (rc == VERR_TIMEOUT)

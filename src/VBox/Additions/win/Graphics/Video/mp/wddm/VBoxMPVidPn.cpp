@@ -1,4 +1,4 @@
-/* $Id: VBoxMPVidPn.cpp 112403 2026-01-11 19:29:08Z knut.osmundsen@oracle.com $ */
+/* $Id: VBoxMPVidPn.cpp 113107 2026-02-20 15:59:17Z vitali.pelenjow@oracle.com $ */
 /** @file
  * VBox WDDM Miniport driver
  */
@@ -825,7 +825,7 @@ static NTSTATUS vboxVidPnCollectInfoForPathTarget(PVBOXMP_DEVEXT pDevExt,
         {
             CR_SORTARRAY Arr;
             CrSaInit(&Arr, 0);
-            Status = vboxVidPnTargetModeSetToArray(hVidPnModeSet, pVidPnModeSetInterface, &aModes[VidPnTargetId]);
+            Status = vboxVidPnTargetModeSetToArray(hVidPnModeSet, pVidPnModeSetInterface, &Arr);
             CrSaIntersect(&aModes[VidPnTargetId], &Arr);
             CrSaCleanup(&Arr);
         }
@@ -927,12 +927,26 @@ static NTSTATUS vboxVidPnCollectInfoForPathTarget(PVBOXMP_DEVEXT pDevExt,
     if (!ASMBitTest(aAdjustedModeMap, VidPnTargetId))
     {
         Assert(CrSaGetSize(&aModes[VidPnTargetId]) == 0);
+#ifdef VBOXWDDM_NEW_VIDPN
+        RTRECTSIZE preferredMode;
+        VBoxWddmVModesQueryPreferred(pDevExt, VidPnTargetId, &preferredMode);
+        if (preferredMode.cx)
+        {
+            int rc = CrSaAdd(&aModes[VidPnTargetId], CR_RSIZE2U64(preferredMode));
+            AssertRCReturn(rc, STATUS_UNSUCCESSFUL);
+        }
+        else
+        {
+#endif
         int rc = CrSaClone(pSupportedModes, &aModes[VidPnTargetId]);
         if (!RT_SUCCESS(rc))
         {
             WARN(("CrSaClone failed %d", rc));
             return STATUS_UNSUCCESSFUL;
         }
+#ifdef VBOXWDDM_NEW_VIDPN
+        }
+#endif
         ASMBitSet(aAdjustedModeMap, VidPnTargetId);
     }
     else
@@ -1118,7 +1132,7 @@ static NTSTATUS vboxVidPnCollectInfoForPathSource(PVBOXMP_DEVEXT pDevExt,
         {
             CR_SORTARRAY Arr;
             CrSaInit(&Arr, 0);
-            Status = vboxVidPnSourceModeSetToArray(hVidPnModeSet, pVidPnModeSetInterface, &aModes[VidPnTargetId]);
+            Status = vboxVidPnSourceModeSetToArray(hVidPnModeSet, pVidPnModeSetInterface, &Arr);
             CrSaIntersect(&aModes[VidPnTargetId], &Arr);
             CrSaCleanup(&Arr);
         }
@@ -1225,6 +1239,17 @@ static NTSTATUS vboxVidPnCollectInfoForPathSource(PVBOXMP_DEVEXT pDevExt,
 
     if (!ASMBitTest(aAdjustedModeMap, VidPnTargetId))
     {
+#ifdef VBOXWDDM_NEW_VIDPN
+        RTRECTSIZE preferredMode;
+        VBoxWddmVModesQueryPreferred(pDevExt, VidPnTargetId, &preferredMode);
+        if (preferredMode.cx)
+        {
+            int rc = CrSaAdd(&aModes[VidPnTargetId], CR_RSIZE2U64(preferredMode));
+            AssertRCReturn(rc, STATUS_UNSUCCESSFUL);
+        }
+        else
+        {
+#endif
         Assert(CrSaGetSize(&aModes[VidPnTargetId]) == 0);
         int rc = CrSaClone(pSupportedModes, &aModes[VidPnTargetId]);
         if (!RT_SUCCESS(rc))
@@ -1232,6 +1257,9 @@ static NTSTATUS vboxVidPnCollectInfoForPathSource(PVBOXMP_DEVEXT pDevExt,
             WARN(("CrSaClone failed %d", rc));
             return STATUS_UNSUCCESSFUL;
         }
+#ifdef VBOXWDDM_NEW_VIDPN
+        }
+#endif
         ASMBitSet(aAdjustedModeMap, VidPnTargetId);
     }
     else
@@ -1414,9 +1442,9 @@ NTSTATUS VBoxVidPnRecommendMonitorModes(PVBOXMP_DEVEXT pDevExt, D3DDDI_VIDEO_PRE
     return STATUS_SUCCESS;
 }
 
-NTSTATUS VBoxVidPnUpdateModes(PVBOXMP_DEVEXT pDevExt, uint32_t u32TargetId, const RTRECTSIZE *pSize)
+NTSTATUS VBoxVidPnUpdateModes(PVBOXMP_DEVEXT pDevExt, uint32_t u32TargetId, const RTRECTSIZE *pSize, bool fSetPreferred)
 {
-    LogRel2((VBOX_VIDEO_LOG_NAME ": VBoxVidPnUpdateModes u32TargetId(%d) mode(%d x %d)\n", u32TargetId, pSize->cx, pSize->cy));
+    LogRel2((VBOX_VIDEO_LOG_NAME ": VBoxVidPnUpdateModes u32TargetId(%d) mode(%d x %d), fSetPreferred(%d)\n", u32TargetId, pSize->cx, pSize->cy, fSetPreferred));
 
     if (u32TargetId >= (uint32_t)VBoxCommonFromDeviceExt(pDevExt)->cDisplays)
     {
@@ -1424,7 +1452,7 @@ NTSTATUS VBoxVidPnUpdateModes(PVBOXMP_DEVEXT pDevExt, uint32_t u32TargetId, cons
         return STATUS_INVALID_PARAMETER;
     }
 
-    int rc = VBoxWddmVModesAdd(pDevExt, u32TargetId, pSize, TRUE);
+    int rc = VBoxWddmVModesAdd(pDevExt, u32TargetId, pSize, TRUE, fSetPreferred);
     LOGF(("VBoxWddmVModesAdd returned (%d)", rc));
 
     if (RT_FAILURE(rc))
@@ -1501,7 +1529,7 @@ NTSTATUS VBoxVidPnRecommendFunctional(PVBOXMP_DEVEXT pDevExt, D3DKMDT_HVIDPN hVi
 
         if (!ASMBitTest(aVisitedSourceMap, iSource))
         {
-            int rc = VBoxWddmVModesAdd(pDevExt, i, &pData->aSources[iSource].Size, TRUE);
+            int rc = VBoxWddmVModesAdd(pDevExt, i, &pData->aSources[iSource].Size, TRUE, /*fPreferred=*/ FALSE);
             if (RT_FAILURE(rc))
             {
                 WARN(("VBoxWddmVModesAdd failed %d", rc));
@@ -1994,6 +2022,7 @@ NTSTATUS VBoxVidPnCofuncModality(PVBOXMP_DEVEXT pDevExt, D3DKMDT_HVIDPN hVidPn, 
         D3DKMDT_ENUMCOFUNCMODALITY_PIVOT_TYPE enmCurPivot = vboxVidPnCofuncModalityCurrentPathPivot(enmPivot, pPivot, VidPnSourceId, VidPnTargetId);
 
         bool bUpdatePath = false;
+#ifndef VBOXWDDM_NEW_VIDPN
         D3DKMDT_VIDPN_PRESENT_PATH AdjustedPath = {0};
         AdjustedPath.VidPnSourceId = pPath->VidPnSourceId;
         AdjustedPath.VidPnTargetId = pPath->VidPnTargetId;
@@ -2022,6 +2051,42 @@ NTSTATUS VBoxVidPnCofuncModality(PVBOXMP_DEVEXT pDevExt, D3DKMDT_HVIDPN hVidPn, 
                 goto done;
             }
         }
+#else
+        D3DKMDT_VIDPN_PRESENT_PATH UpdatedPath = *pPath;
+
+        if (   enmPivot != D3DKMDT_EPT_SCALING
+            && pPath->ContentTransformation.Scaling == D3DKMDT_VPPS_UNPINNED
+            && (   pPath->ContentTransformation.ScalingSupport.Identity == 0
+                || pPath->ContentTransformation.ScalingSupport.Centered == 1
+                || pPath->ContentTransformation.ScalingSupport.Stretched == 1
+                || pPath->ContentTransformation.ScalingSupport.AspectRatioCenteredMax == 1
+                || pPath->ContentTransformation.ScalingSupport.Custom == 1)
+           )
+        {
+            RT_ZERO(UpdatedPath.ContentTransformation.ScalingSupport);
+            UpdatedPath.ContentTransformation.ScalingSupport.Identity = 1;
+            bUpdatePath = true;
+        }
+
+        if (   enmPivot != D3DKMDT_EPT_ROTATION
+            && pPath->ContentTransformation.Rotation == D3DKMDT_VPPR_UNPINNED
+            && (   pPath->ContentTransformation.RotationSupport.Identity == 0
+                || pPath->ContentTransformation.RotationSupport.Rotate90 == 1
+                || pPath->ContentTransformation.RotationSupport.Rotate180 == 1
+                || pPath->ContentTransformation.RotationSupport.Rotate270 == 1)
+           )
+        {
+            RT_ZERO(UpdatedPath.ContentTransformation.RotationSupport);
+            UpdatedPath.ContentTransformation.RotationSupport.Identity = 1;
+            bUpdatePath = true;
+        }
+
+        if (bUpdatePath)
+        {
+            Status = pVidPnTopologyInterface->pfnUpdatePathSupportInfo(hVidPnTopology, &UpdatedPath);
+            AssertBreak(NT_SUCCESS(Status));
+        }
+#endif
 
         Assert(CrSaCovers(VBoxWddmVModesGet(pDevExt, VidPnTargetId), &aModes[VidPnTargetId]));
 
@@ -2995,7 +3060,9 @@ void VBoxVidPnDumpTargetMode(const char *pPrefix, const D3DKMDT_VIDPN_TARGET_MOD
     LOGREL_EXACT(("%s", pPrefix));
     LOGREL_EXACT(("ID: %d, ", pVidPnTargetModeInfo->Id));
     vboxVidPnDumpSignalInfo("VSI: ", &pVidPnTargetModeInfo->VideoSignalInfo, ", ");
-    LOGREL_EXACT(("Preference(%s)%s", vboxVidPnDumpStrModePreference(pVidPnTargetModeInfo->Preference), pSuffix));
+    /* Avoid MSVC quirk: D3DKMDT_VIDPN_TARGET_MODE::Preference is a two bit field and values 2 and 3 get sign-extended. */
+    D3DKMDT_MODE_PREFERENCE const Preference = (D3DKMDT_MODE_PREFERENCE)(pVidPnTargetModeInfo->Preference & 0x3);
+    LOGREL_EXACT(("Preference(%s)%s", vboxVidPnDumpStrModePreference(Preference), pSuffix));
 }
 
 void VBoxVidPnDumpMonitorMode(const char *pPrefix, const D3DKMDT_MONITOR_SOURCE_MODE *pVidPnModeInfo, const char *pSuffix)

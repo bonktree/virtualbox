@@ -1,4 +1,4 @@
-/* $Id: VBoxMPVModes.cpp 112403 2026-01-11 19:29:08Z knut.osmundsen@oracle.com $ */
+/* $Id: VBoxMPVModes.cpp 113107 2026-02-20 15:59:17Z vitali.pelenjow@oracle.com $ */
 /** @file
  * VBox WDDM Miniport driver
  */
@@ -311,6 +311,7 @@ int vboxWddmVModesAdd(PVBOXMP_DEVEXT pExt, VBOXWDDM_VMODES *pModes, uint32_t u32
     return rc;
 }
 
+#ifndef VBOXWDDM_NEW_VIDPN
 #define VBOXWDDM_PROPNAME_PREFIX "/VirtualBox/VMInfo/Video/"
 
 int vboxWddmAddVModesFromGuestProps(VBOXWDDM_VMODES *pModes, uint32_t u32Target)
@@ -370,6 +371,7 @@ int vboxWddmAddVModesFromGuestProps(VBOXWDDM_VMODES *pModes, uint32_t u32Target)
 
     return VERR_NOT_SUPPORTED;
 }
+#endif /* !VBOXWDDM_NEW_VIDPN */
 
 
 int vboxWddmVModesInitForTarget(PVBOXMP_DEVEXT pExt, VBOXWDDM_VMODES *pModes, uint32_t u32Target)
@@ -473,6 +475,7 @@ void VBoxWddmVModesCleanup()
     vboxWddmVModesCleanup(pModes);
 }
 
+#ifndef VBOXWDDM_NEW_VIDPN
 int vboxWddmAddVModesFromGuestHints(VBOXWDDM_VMODES *pModes, int cDisplays)
 {
     VMMDevDisplayChangeRequestMulti *pReq = NULL;
@@ -533,6 +536,7 @@ int vboxWddmAddVModesFromGuestHints(VBOXWDDM_VMODES *pModes, int cDisplays)
 
     return rc;
 }
+#endif /* !VBOXWDDM_NEW_VIDPN */
 
 int VBoxWddmVModesInit(PVBOXMP_DEVEXT pExt)
 {
@@ -541,17 +545,21 @@ int VBoxWddmVModesInit(PVBOXMP_DEVEXT pExt)
 
     vboxWddmVModesInit(pModes, VBoxCommonFromDeviceExt(pExt)->cDisplays);
 
+#ifndef VBOXWDDM_NEW_VIDPN
     for (int i = 0; i < VBoxCommonFromDeviceExt(pExt)->cDisplays; ++i)
     {
         vboxWddmAddVModesFromGuestProps(pModes, (uint32_t)i);
     }
 
     vboxWddmAddVModesFromGuestHints(pModes, VBoxCommonFromDeviceExt(pExt)->cDisplays);
+#endif
 
     for (int i = 0; i < VBoxCommonFromDeviceExt(pExt)->cDisplays; ++i)
     {
+#ifndef VBOXWDDM_NEW_VIDPN
         if (CrSaGetSize(&pModes->Modes.aTargets[i]))
             continue;
+#endif
 
         rc = vboxWddmVModesInitForTarget(pExt, pModes, (uint32_t)i);
         if (RT_FAILURE(rc))
@@ -564,6 +572,31 @@ int VBoxWddmVModesInit(PVBOXMP_DEVEXT pExt)
     return VINF_SUCCESS;
 }
 
+#if 0 /* Can be used for debugging. */
+static void dumpVModes(VBOXWDDM_VMODES *pVModes, uint32_t u32Target)
+{
+    RTRECTSIZE size;
+
+    LogRel(("[%u]: video modes:\n", u32Target));
+
+    CR_SORTARRAY *pArray = &pVModes->Modes.aTargets[u32Target];
+    for (uint32_t i = 0; i < CrSaGetSize(pArray); ++i)
+    {
+        size = CR_U642RSIZE(CrSaGetVal(pArray, i));
+        LogRel(("[%u]: [%u] %ux%u\n", u32Target, i, size.cx, size.cy));
+    }
+
+    size = CR_U642RSIZE(pVModes->aTransientResolutions[u32Target]);
+    LogRel(("[%u]: tr %ux%u\n", u32Target, size.cx, size.cy));
+
+    size = CR_U642RSIZE(pVModes->aPendingRemoveCurResolutions[u32Target]);
+    LogRel(("[%u]: pr %ux%u\n", u32Target, size.cx, size.cy));
+
+    size = pVModes->aPreferredModes[u32Target];
+    LogRel(("[%u]: p %ux%u\n", u32Target, size.cx, size.cy));
+}
+#endif
+
 const CR_SORTARRAY* VBoxWddmVModesGet(PVBOXMP_DEVEXT pExt, uint32_t u32Target)
 {
     if (u32Target >= (uint32_t)VBoxCommonFromDeviceExt(pExt)->cDisplays)
@@ -575,13 +608,37 @@ const CR_SORTARRAY* VBoxWddmVModesGet(PVBOXMP_DEVEXT pExt, uint32_t u32Target)
     return &g_VBoxWddmVModes.Modes.aTargets[u32Target];
 }
 
+#ifdef VBOXWDDM_NEW_VIDPN
+void VBoxWddmVModesQueryPreferred(PVBOXMP_DEVEXT pExt, uint32_t u32Target, RTRECTSIZE *pResolution)
+{
+    if (u32Target >= (uint32_t)VBoxCommonFromDeviceExt(pExt)->cDisplays)
+    {
+        WARN(("invalid target"));
+        RT_ZERO(*pResolution);
+        return;
+    }
+
+    *pResolution = g_VBoxWddmVModes.aPreferredModes[u32Target];
+}
+#endif
+
 int VBoxWddmVModesRemove(PVBOXMP_DEVEXT pExt, uint32_t u32Target, const RTRECTSIZE *pResolution)
 {
     return vboxWddmVModesRemove(pExt, &g_VBoxWddmVModes, u32Target, pResolution);
 }
 
-int VBoxWddmVModesAdd(PVBOXMP_DEVEXT pExt, uint32_t u32Target, const RTRECTSIZE *pResolution, BOOLEAN fTrancient)
+int VBoxWddmVModesAdd(PVBOXMP_DEVEXT pExt, uint32_t u32Target, const RTRECTSIZE *pResolution, BOOLEAN fTrancient, BOOLEAN fPreferred)
 {
+#ifdef VBOXWDDM_NEW_VIDPN
+    if (fPreferred)
+    {
+        g_VBoxWddmVModes.aPreferredModes[u32Target] = *pResolution;
+        if (pResolution->cx == 0)
+            return VINF_SUCCESS;
+    }
+#else
+    RT_NOREF(fPreferred);
+#endif
     return vboxWddmVModesAdd(pExt, &g_VBoxWddmVModes, u32Target, pResolution, fTrancient);
 }
 
