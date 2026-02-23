@@ -1,4 +1,4 @@
-/* $Id: NEMInternal.h 112930 2026-02-11 09:12:03Z ramshankar.venkataraman@oracle.com $ */
+/* $Id: NEMInternal.h 113132 2026-02-23 18:18:04Z alexander.eichner@oracle.com $ */
 /** @file
  * NEM - Internal header file.
  */
@@ -235,6 +235,8 @@ typedef struct NEM
     /** KVM_CAP_SPLIT_IRQCHIP */
     bool                        fKvmApic;
 # endif
+    /** Size of the nested virt state, 0 if not supported. */
+    uint32_t                    cbNestedState;
 
     /** Hint where there might be a free slot. */
     uint16_t                    idPrevSlot;
@@ -460,6 +462,8 @@ typedef struct NEMCPU
     int32_t                     fdVCpu;
     /** Pointer to the KVM_RUN data exchange region. */
     R3PTRTYPE(struct kvm_run *) pRun;
+    /** The nested virt state as fetched from KVM. */
+    R3PTRTYPE(struct kvm_nested_state *) pNestedState;
 # ifdef VBOX_VMM_TARGET_ARMV8
     /** The IRQ device levels from device_irq_level. */
     uint64_t                    fIrqDeviceLvls;

@@ -1,4 +1,4 @@
-/* $Id: NEMR3NativeTemplate-linux.cpp.h 113079 2026-02-18 20:15:09Z klaus.espenlaub@oracle.com $ */
+/* $Id: NEMR3NativeTemplate-linux.cpp.h 113132 2026-02-23 18:18:04Z alexander.eichner@oracle.com $ */
 /** @file
  * NEM - Native execution manager, native ring-3 Linux backend, common bits for x86 and arm64.
  */
@@ -690,7 +690,7 @@ static int nemR3LnxInitCheckCapabilities(PVM pVM, PRTERRINFO pErrInfo)
         CAP_ENTRY__L(KVM_CAP_SPAPR_RESIZE_HPT),
         CAP_ENTRY__L(KVM_CAP_PPC_MMU_RADIX),
         CAP_ENTRY__L(KVM_CAP_PPC_MMU_HASH_V3),
-        CAP_ENTRY__L(KVM_CAP_IMMEDIATE_EXIT),
+        CAP_ENTRY_ML(KVM_CAP_IMMEDIATE_EXIT),
         CAP_ENTRY__L(KVM_CAP_MIPS_VZ),
         CAP_ENTRY__L(KVM_CAP_MIPS_TE),
         CAP_ENTRY__L(KVM_CAP_MIPS_64BIT),
@@ -711,7 +711,7 @@ static int nemR3LnxInitCheckCapabilities(PVM pVM, PRTERRINFO pErrInfo)
         CAP_ENTRY__L(KVM_CAP_HYPERV_EVENTFD),
         CAP_ENTRY__L(KVM_CAP_HYPERV_TLBFLUSH),
         CAP_ENTRY__L(KVM_CAP_S390_HPAGE_1M),
-        CAP_ENTRY__L(KVM_CAP_NESTED_STATE),
+        CAP_ENTRY__S(KVM_CAP_NESTED_STATE, cbNestedState),
         CAP_ENTRY__L(KVM_CAP_ARM_INJECT_SERROR_ESR),
         CAP_ENTRY__L(KVM_CAP_MSR_PLATFORM_INFO),
         CAP_ENTRY__L(KVM_CAP_PPC_NESTED_HV),                 /* 160 */
@@ -1100,6 +1100,10 @@ DECLHIDDEN(int) nemR3NativeTerm(PVM pVM)
             munmap(pVCpu->nem.s.pRun, pVM->nem.s.cbVCpuMmap);
             pVCpu->nem.s.pRun = NULL;
         }
+#ifdef VBOX_VMM_TARGET_X86
+        if (pVCpu->nem.s.pNestedState)
+            RTMemFree(pVCpu->nem.s.pNestedState);
+#endif
     }
 
     /*

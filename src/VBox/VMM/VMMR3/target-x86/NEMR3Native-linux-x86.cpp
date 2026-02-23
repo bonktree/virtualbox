@@ -1,4 +1,4 @@
-/* $Id: NEMR3Native-linux-x86.cpp 113119 2026-02-23 11:52:10Z alexander.eichner@oracle.com $ */
+/* $Id: NEMR3Native-linux-x86.cpp 113132 2026-02-23 18:18:04Z alexander.eichner@oracle.com $ */
 /** @file
  * NEM - Native execution manager, native ring-3 Linux backend.
  */
@@ -41,6 +41,7 @@
 #include <VBox/vmm/vmcc.h>
 
 #include <iprt/alloca.h>
+#include <iprt/mem.h>
 #include <iprt/string.h>
 #include <iprt/system.h>
 #include <iprt/x86.h>
@@ -212,6 +213,12 @@ static int nemR3LnxUpdateCpuIdsLeaves(PVM pVM, PVMCPU pVCpu)
                           &pReq->entries[i].ebx,
                           &pReq->entries[i].ecx,
                           &pReq->entries[i].edx);
+
+        /** @todo Expose nested paging for SVM if nested hwvirt is enabled, even though our own hypervisor
+         * and IEM doesn't support it. Can be removed as soon as nested paging is supported for SVM. */
+        if (paLeaves[i].uLeaf == 0x8000000a && paLeaves[i].uSubLeaf == 0 && pReq->entries[i].eax != 0)
+            pReq->entries[i].edx |= X86_CPUID_SVM_FEATURE_EDX_NESTED_PAGING;
+
         pReq->entries[i].function   = paLeaves[i].uLeaf;
         pReq->entries[i].index      = paLeaves[i].uSubLeaf;
         pReq->entries[i].flags      = !paLeaves[i].fSubLeafMask ? 0 : KVM_CPUID_FLAG_SIGNIFCANT_INDEX;
@@ -396,6 +403,16 @@ DECLHIDDEN(int) nemR3NativeInitCompletedRing3(PVM pVM)
     /** @todo add more? */
     MSR_RANGE_END(64);
 
+    if (pVM->cpum.ro.GuestFeatures.fSvm)
+    {
+        /* SVM AMD range: c001_0000 to c001_3000 */
+        MSR_RANGE_BEGIN(0xc0010000, 0xc0013000, KVM_MSR_FILTER_READ | KVM_MSR_FILTER_WRITE);
+        MSR_RANGE_ADD(MSR_K8_VM_CR);
+        MSR_RANGE_ADD(MSR_K8_VM_HSAVE_PA);
+        /** @todo add more? */
+        MSR_RANGE_END(64);
+    }
+
     /** @todo Specify other ranges too? Like hyper-V and KVM to make sure we get
      *        the MSR requests instead of KVM. */
 
@@ -405,7 +422,7 @@ DECLHIDDEN(int) nemR3NativeInitCompletedRing3(PVM pVM)
                           "Failed to enable KVM_X86_SET_MSR_FILTER failed: %u", errno);
 
     /* Init som per vCPU things. */
-    for (VMCPUID idCpu = 1; idCpu < pVM->cCpus; idCpu++)
+    for (VMCPUID idCpu = 0; idCpu < pVM->cCpus; idCpu++)
     {
         PVMCPU pVCpu = pVM->apCpusR3[idCpu];
 
@@ -417,11 +434,22 @@ DECLHIDDEN(int) nemR3NativeInitCompletedRing3(PVM pVM)
         pVCpu->nem.s.cVarMtrrs = u64MsrMtrrCap & MSR_IA32_MTRR_CAP_VCNT_MASK;
 
         /* Need to set the MP state for all APs when the in-kernel APIC is used, so it can receive a SIPI. */
-        if (pVM->nem.s.fKvmApic)
+        if (   pVM->nem.s.fKvmApic
+            && idCpu != 0)
         {
             struct kvm_mp_state MpState = { KVM_MP_STATE_INIT_RECEIVED };
             rcLnx = ioctl(pVCpu->nem.s.fdVCpu, KVM_SET_MP_STATE, &MpState);
             AssertLogRelMsgReturn(rcLnx == 0, ("rcLnx=%d errno=%d\n", rcLnx, errno), VERR_NEM_IPE_4);
+        }
+
+        if (   pVM->cpum.ro.GuestFeatures.fSvm
+            && pVM->nem.s.cbNestedState)
+        {
+            pVCpu->nem.s.pNestedState = (struct kvm_nested_state *)RTMemAllocZ(pVM->nem.s.cbNestedState);
+            if (!pVCpu->nem.s.pNestedState)
+                return VMSetError(pVM, VERR_NEM_VM_CREATE_FAILED, RT_SRC_POS,
+                                  "Out of memory trying to allocate %u bytes of memory for the nested virtualization state",
+                                  pVM->nem.s.cbNestedState);
         }
     }
 
@@ -449,6 +477,8 @@ DECLHIDDEN(int) nemR3NativeInitCompletedRing3(PVM pVM)
  */
 static int nemHCLnxImportState(PVMCPUCC pVCpu, uint64_t fWhat, PCPUMCTX pCtx, struct kvm_run *pRun)
 {
+    PVM pVM = pVCpu->CTX_SUFF(pVM);
+
     fWhat &= pVCpu->cpum.GstCtx.fExtrn;
     if (!fWhat)
         return VINF_SUCCESS;
@@ -678,8 +708,10 @@ static int nemHCLnxImportState(PVMCPUCC pVCpu, uint64_t fWhat, PCPUMCTX pCtx, st
     /*
      * MSRs.
      */
-    if (fWhat & (  CPUMCTX_EXTRN_KERNEL_GS_BASE | CPUMCTX_EXTRN_SYSCALL_MSRS | CPUMCTX_EXTRN_SYSENTER_MSRS
-                 | CPUMCTX_EXTRN_TSC_AUX        | CPUMCTX_EXTRN_OTHER_MSRS))
+    if (   (fWhat & (  CPUMCTX_EXTRN_KERNEL_GS_BASE | CPUMCTX_EXTRN_SYSCALL_MSRS | CPUMCTX_EXTRN_SYSENTER_MSRS
+                     | CPUMCTX_EXTRN_TSC_AUX        | CPUMCTX_EXTRN_OTHER_MSRS))
+        || (  pVM->cpum.ro.GuestFeatures.fSvm
+            && (fWhat & CPUMCTX_EXTRN_HWVIRT)))
     {
         union
         {
@@ -723,6 +755,14 @@ static int nemHCLnxImportState(PVMCPUCC pVCpu, uint64_t fWhat, PCPUMCTX pCtx, st
              * We also have: Mttr*, MiscEnable, FeatureControl. */
         }
 
+        /* Import nested virt MSR here to avoid an additional ioctl() below. */
+        if (   (fWhat & CPUMCTX_EXTRN_HWVIRT)
+            && pVM->cpum.ro.GuestFeatures.fSvm)
+        {
+            ADD_MSR(MSR_K8_VM_HSAVE_PA, pCtx->hwvirt.svm.uMsrHSavePa);
+            /** @todo What about MSR_K8_VM_CR ? */
+        }
+
         uBuf.Core.pad   = 0;
         uBuf.Core.nmsrs = iMsr;
         int rc = ioctl(pVCpu->nem.s.fdVCpu, KVM_GET_MSRS, &uBuf);
@@ -764,6 +804,24 @@ static int nemHCLnxImportState(PVMCPUCC pVCpu, uint64_t fWhat, PCPUMCTX pCtx, st
 
         Assert(KvmEvents.nmi.injected == 0);
         Assert(KvmEvents.nmi.pending  == 0);
+    }
+
+    if (   (fWhat & CPUMCTX_EXTRN_HWVIRT)
+        && pVM->cpum.ro.GuestFeatures.fSvm)
+    {
+        struct kvm_nested_state *pNestedState = pVCpu->nem.s.pNestedState;
+        AssertPtr(pNestedState);
+        AssertCompile(sizeof(pCtx->hwvirt.svm.Vmcb) == KVM_STATE_NESTED_SVM_VMCB_SIZE);
+
+        int rcLnx = ioctl(pVCpu->nem.s.fdVCpu, KVM_GET_NESTED_STATE, pNestedState);
+        AssertLogRelMsgReturn(rcLnx == 0, ("rcLnx=%d errno=%d\n", rcLnx, errno), VERR_NEM_IPE_3);
+        Assert(pNestedState->format == KVM_STATE_NESTED_FORMAT_SVM);
+
+        pCtx->hwvirt.svm.GCPhysVmcb = pNestedState->hdr.svm.vmcb_pa;
+        memcpy(&pCtx->hwvirt.svm.Vmcb, &pNestedState->data.svm[0], KVM_STATE_NESTED_SVM_VMCB_SIZE);
+        pCtx->hwvirt.fGif = RT_BOOL(pNestedState->flags & KVM_STATE_NESTED_GIF_SET);
+
+        /** @todo What about abMsrBitmap, abIoBitmap, HostState, uPrevPauseTick, cPauseFilter, cPauseFilterThreshold and fInterceptEvents. */
     }
 
     /*
@@ -1080,8 +1138,10 @@ static int nemHCLnxExportState(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx, struct kvm_
     /*
      * MSRs.
      */
-    if (fExtrn & (  CPUMCTX_EXTRN_KERNEL_GS_BASE | CPUMCTX_EXTRN_SYSCALL_MSRS | CPUMCTX_EXTRN_SYSENTER_MSRS
-                  | CPUMCTX_EXTRN_TSC_AUX        | CPUMCTX_EXTRN_OTHER_MSRS))
+    if (   (fExtrn & (  CPUMCTX_EXTRN_KERNEL_GS_BASE | CPUMCTX_EXTRN_SYSCALL_MSRS | CPUMCTX_EXTRN_SYSENTER_MSRS
+                      | CPUMCTX_EXTRN_TSC_AUX        | CPUMCTX_EXTRN_OTHER_MSRS))
+        || (  pVM->cpum.ro.GuestFeatures.fSvm
+            && (fExtrn & CPUMCTX_EXTRN_HWVIRT)))
     {
         union
         {
@@ -1147,6 +1207,14 @@ static int nemHCLnxExportState(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx, struct kvm_
              * We also have: MiscEnable, FeatureControl. */
         }
 
+        /* Export the MSR here to avoid an additional ioctl below. */
+        if (   (fExtrn & CPUMCTX_EXTRN_HWVIRT)
+            && pVM->cpum.ro.GuestFeatures.fSvm)
+        {
+            ADD_MSR(MSR_K8_VM_HSAVE_PA, pCtx->hwvirt.svm.uMsrHSavePa);
+            /** @todo What about MSR_K8_VM_CR ? */
+        }
+
         uBuf.Core.pad   = 0;
         uBuf.Core.nmsrs = iMsr;
         int rc = ioctl(pVCpu->nem.s.fdVCpu, KVM_SET_MSRS, &uBuf);
@@ -1200,6 +1268,24 @@ static int nemHCLnxExportState(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx, struct kvm_
         }
 
         int rcLnx = ioctl(pVCpu->nem.s.fdVCpu, KVM_SET_VCPU_EVENTS, &KvmEvents);
+        AssertLogRelMsgReturn(rcLnx == 0, ("rcLnx=%d errno=%d\n", rcLnx, errno), VERR_NEM_IPE_3);
+    }
+
+    if (   (fExtrn & CPUMCTX_EXTRN_HWVIRT)
+        && pVM->cpum.ro.GuestFeatures.fSvm)
+    {
+        struct kvm_nested_state *pNestedState = pVCpu->nem.s.pNestedState;
+        AssertPtr(pNestedState);
+        AssertCompile(sizeof(pCtx->hwvirt.svm.Vmcb) == KVM_STATE_NESTED_SVM_VMCB_SIZE);
+
+        pNestedState->format = KVM_STATE_NESTED_FORMAT_SVM;
+        pNestedState->size   = KVM_STATE_NESTED_SVM_VMCB_SIZE + RT_UOFFSETOF(struct kvm_nested_state, data);
+        pNestedState->flags  = pCtx->hwvirt.fGif ? KVM_STATE_NESTED_GIF_SET : 0;
+
+        pNestedState->hdr.svm.vmcb_pa = pCtx->hwvirt.svm.GCPhysVmcb;
+        memcpy(&pNestedState->data.svm[0], &pCtx->hwvirt.svm.Vmcb, KVM_STATE_NESTED_SVM_VMCB_SIZE);
+
+        int rcLnx = ioctl(pVCpu->nem.s.fdVCpu, KVM_SET_NESTED_STATE, pNestedState);
         AssertLogRelMsgReturn(rcLnx == 0, ("rcLnx=%d errno=%d\n", rcLnx, errno), VERR_NEM_IPE_3);
     }
 
@@ -1550,15 +1636,22 @@ static VBOXSTRICTRC nemHCLnxHandleInterruptFF(PVM pVM, PVMCPU pVCpu, struct kvm_
                 int rc = PDMGetInterrupt(pVCpu, &bInterrupt);
                 if (RT_SUCCESS(rc))
                 {
-                    Assert(KvmEvents.interrupt.injected == false);
-#if 0
-                    int rcLnx = ioctl(pVCpu->nem.s.fdVm, KVM_INTERRUPT, (unsigned long)bInterrupt);
-                    AssertLogRelMsgReturn(rcLnx == 0, ("rcLnx=%d errno=%d\n", rcLnx, errno), VERR_NEM_IPE_5);
-#else
-                    KvmEvents.interrupt.nr       = bInterrupt;
-                    KvmEvents.interrupt.soft     = false;
-                    KvmEvents.interrupt.injected = true;
-#endif
+                    if (pVM->nem.s.fKvmApic)
+                    {
+                        Assert(!VMCPU_FF_IS_SET(pVCpu, VMCPU_FF_INTERRUPT_APIC));
+                        struct kvm_interrupt Irq;
+                        Irq.irq = bInterrupt;
+                        rcLnx = ioctl(pVCpu->nem.s.fdVCpu, KVM_INTERRUPT, &Irq);
+                        AssertLogRelMsgReturn(rcLnx == 0, ("rcLnx=%d errno=%d\n", rcLnx, errno), VERR_NEM_IPE_5);
+                    }
+                    else
+                    {
+                        Assert(KvmEvents.interrupt.injected == false);
+                        KvmEvents.interrupt.nr       = bInterrupt;
+                        KvmEvents.interrupt.soft     = false;
+                        KvmEvents.interrupt.injected = true;
+                    }
+
                     Log8(("Queuing interrupt %#x on %u: %04x:%08RX64 efl=%#x\n", bInterrupt, pVCpu->idCpu,
                           pVCpu->cpum.GstCtx.cs.Sel, pVCpu->cpum.GstCtx.rip, pVCpu->cpum.GstCtx.eflags.u));
                 }
