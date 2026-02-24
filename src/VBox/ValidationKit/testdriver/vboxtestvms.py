@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# $Id: vboxtestvms.py 112958 2026-02-11 15:28:15Z serkan.bayraktar@oracle.com $
+# $Id: vboxtestvms.py 113145 2026-02-24 13:36:38Z serkan.bayraktar@oracle.com $
 
 """
 VirtualBox Test VMs
@@ -36,7 +36,7 @@ terms and conditions of either the GPL or the CDDL or both.
 
 SPDX-License-Identifier: GPL-3.0-only OR CDDL-1.0
 """
-__version__ = "$Revision: 112958 $"
+__version__ = "$Revision: 113145 $"
 
 # Standard Python imports.
 import copy;
@@ -130,7 +130,9 @@ g_aaNameToDetails = \
     [ 'Linux_64',       'Debian11_64',           g_k64,    1, 256, ['deb11[0-9]*-64', 'debian11[0-9]*-64', ]],
     [ 'Linux_arm64',    'Debian11_arm64',        g_k64,    1, 256, ['deb11[0-9]*-arm64', 'debian11[0-9]*-arm64', ]],
     [ 'Linux_64',       'Debian12_64',           g_k64,    1, 256, ['deb12[0-9]*-64', 'debian12[0-9]*-64', ]],
+    [ 'Linux_arm64',    'Debian12_arm64',        g_k64,    1, 256, ['deb12[0-9]*-arm64', 'debian12[0-9]*-arm64', ]],
     [ 'Linux_64',       'Debian13_64',           g_k64,    1, 256, ['deb13[0-9]*-64', 'debian13[0-9]*-64', ]],
+    [ 'Linux_arm64',    'Debian13_arm64',        g_k64,    1, 256, ['deb13[0-9]*-arm64', 'debian13[0-9]*-arm64', ]],
     [ 'Linux',          'Debian',                g_k32,    1, 256, ['deb[0-9]*', 'debian[0-9]*', ]],
     [ 'Linux_64',       'Debian_64',             g_k64,    1, 256, ['deb[0-9]*-64', 'debian[0-9]*-64', ]],
     [ 'Linux_arm64',    'Debian_arm64',          g_k64,    1, 256, ['deb[0-9]*-arm64', 'debian[0-9]*-arm64', ]],
