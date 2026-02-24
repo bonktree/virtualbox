@@ -1,4 +1,4 @@
-/* $Id: VMMDevState.h 112403 2026-01-11 19:29:08Z knut.osmundsen@oracle.com $ */
+/* $Id: VMMDevState.h 113153 2026-02-24 23:06:29Z vitali.pelenjow@oracle.com $ */
 /** @file
  * VMMDev - Guest <-> VMM/Host communication device, internal header.
  */
@@ -59,7 +59,8 @@ typedef VMMDEVREQLOCK *PVMMDEVREQLOCK;
 typedef struct DISPLAYCHANGEREQUEST
 {
     bool fPending;
-    bool afAlignment[3];
+    bool fAcknowledged;
+    bool afAlignment[2];
     VMMDevDisplayDef displayChangeDef;
     VMMDevDisplayDef lastReadDisplayChangeDef;
 } DISPLAYCHANGEREQUEST;

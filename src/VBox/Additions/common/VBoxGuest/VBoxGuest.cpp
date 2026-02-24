@@ -1,4 +1,4 @@
-/* $Id: VBoxGuest.cpp 112972 2026-02-12 14:07:31Z alexander.eichner@oracle.com $ */
+/* $Id: VBoxGuest.cpp 113153 2026-02-24 23:06:29Z vitali.pelenjow@oracle.com $ */
 /** @file
  * VBoxGuest - Guest Additions Driver, Common Code.
  */
@@ -2413,6 +2413,7 @@ static int vgdrvCheckIfVmmReqIsAllowed(PVBOXGUESTDEVEXT pDevExt, PVBOXGUESTSESSI
         case VMMDevReq_VideoUpdateMonitorPositions:
         case VMMDevReq_GetDisplayChangeRequestEx:
         case VMMDevReq_GetDisplayChangeRequestMulti:
+        case VMMDevReq_GetDisplayChangeRequestMulti2:
         case VMMDevReq_GetSeamlessChangeRequest:
         case VMMDevReq_GetVRDPChangeRequest:
         case VMMDevReq_LogString:

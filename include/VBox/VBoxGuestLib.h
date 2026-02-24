@@ -810,6 +810,8 @@ VBGLR3DECL(int)     VbglR3GetDisplayChangeRequest(uint32_t *pcx, uint32_t *pcy, 
                                                   uint32_t *pdx, uint32_t *pdy, bool *pfEnabled, bool *pfChangeOrigin, bool fAck);
 VBGLR3DECL(int)     VbglR3GetDisplayChangeRequestMulti(uint32_t cDisplaysIn, uint32_t *pcDisplaysOut,
                                                        VMMDevDisplayDef *paDisplays, bool fAck);
+VBGLR3DECL(int)     VbglR3GetDisplayChangeRequestMulti2(uint32_t cDisplaysIn, uint32_t *pcDisplaysOut,
+                                                        VMMDevDisplayDef *paDisplays, bool fAck);
 VBGLR3DECL(bool)    VbglR3HostLikesVideoMode(uint32_t cx, uint32_t cy, uint32_t cBits);
 VBGLR3DECL(int)     VbglR3VideoModeGetHighestSavedScreen(unsigned *pidMaxScreen);
 VBGLR3DECL(int)     VbglR3SaveVideoMode(unsigned cScreen, unsigned cx, unsigned cy, unsigned cBits,

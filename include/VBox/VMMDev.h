@@ -178,6 +178,7 @@ typedef enum VMMDevRequestType
     VMMDevReq_VideoModeSupported2        = 57, /**< @since version 3.2.0 */
     VMMDevReq_GetDisplayChangeRequestEx  = 80, /**< @since version 4.2.4 */
     VMMDevReq_GetDisplayChangeRequestMulti = 81,
+    VMMDevReq_GetDisplayChangeRequestMulti2= 82,
 #ifdef VBOX_WITH_HGCM
     VMMDevReq_HGCMConnect                = 60,
     VMMDevReq_HGCMDisconnect             = 61,
@@ -1238,6 +1239,8 @@ AssertCompileSize(VMMDevDisplayChangeRequestEx, 24+32);
 #define VMMDEV_DISPLAY_CX       UINT32_C(0x00000008) /**< Change the horizontal resolution of the display. */
 #define VMMDEV_DISPLAY_CY       UINT32_C(0x00000010) /**< Change the vertical resolution of the display. */
 #define VMMDEV_DISPLAY_BPP      UINT32_C(0x00000020) /**< Change the color depth of the display. */
+#define VMMDEV_DISPLAY_CHGREQ   UINT32_C(0x00010000) /**< A display change request has been sent for this display
+                                                      *   and acknowledged by the guest, VMMDevReq_GetDisplayChangeRequestMulti2 only. */
 
 /** Definition of one monitor. Used by VMMDevReq_GetDisplayChangeRequestMulti. */
 typedef struct VMMDevDisplayDef
@@ -1883,6 +1886,7 @@ DECLINLINE(size_t) vmmdevGetRequestSize(VMMDevRequestType requestType)
         case VMMDevReq_GetDisplayChangeRequestEx:
             return sizeof(VMMDevDisplayChangeRequestEx);
         case VMMDevReq_GetDisplayChangeRequestMulti:
+        case VMMDevReq_GetDisplayChangeRequestMulti2:
             return RT_UOFFSETOF(VMMDevDisplayChangeRequestMulti, aDisplays[0]);
         case VMMDevReq_VideoModeSupported:
             return sizeof(VMMDevVideoModeSupportedRequest);

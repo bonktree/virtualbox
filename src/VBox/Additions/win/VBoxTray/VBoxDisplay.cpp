@@ -1,4 +1,4 @@
-/* $Id: VBoxDisplay.cpp 112862 2026-02-08 18:20:21Z vitali.pelenjow@oracle.com $ */
+/* $Id: VBoxDisplay.cpp 113153 2026-02-24 23:06:29Z vitali.pelenjow@oracle.com $ */
 /** @file
  * VBoxSeamless - Display notifications.
  */
@@ -861,11 +861,10 @@ static void ApplyLastDisplayChangeRequest(PVBOXDISPLAYCONTEXT pCtx)
 
     int              rc;
     uint32_t         i;
-    VMMDevDisplayDef aDisplays[64];
+    VMMDevDisplayDef aDisplays[VBOX_VIDEO_MAX_SCREENS];
     uint32_t         cDisplays;
 
-    bool fRequestHappened = false;
-
+    /* First check if there is a pending request. */
     uint32_t fEvents = 0;
     rc = VbglR3WaitEvent(VMMDEV_EVENT_DISPLAY_CHANGE_REQUEST, 0 /*ms*/, &fEvents);
     if (   RT_SUCCESS(rc)
@@ -879,60 +878,85 @@ static void ApplyLastDisplayChangeRequest(PVBOXDISPLAYCONTEXT pCtx)
          * by this change request.
          */
         cDisplays = RT_ELEMENTS(aDisplays);
-        rc = VbglR3GetDisplayChangeRequestMulti(cDisplays, &cDisplays, &aDisplays[0], true /* fAck */);
-        if (RT_SUCCESS(rc))
-            fRequestHappened = true;
+        VbglR3GetDisplayChangeRequestMulti(cDisplays, &cDisplays, &aDisplays[0], true /* fAck */);
     }
 
     /* (Re-)read the last display change request: fAck == false.
      * The host fills all 'cDisplays' entries, even for not existing screens.
      * Therefore this returns the latest state: both the screens updated by
      * latest VMMDEV_EVENT_DISPLAY_CHANGE_REQUEST event and screens which might
-     * be updated earlier.
+     * have been updated earlier.
      */
+    uint32_t const cTotalDisplays = VBoxDisplayGetCount();
+
+    /* Find displays which were changed. */
+    uint32_t cResizedDisplays = 0;
+
     /* Request the info only for actually present displays. */
-    cDisplays = VBoxDisplayGetCount();
-    rc = VbglR3GetDisplayChangeRequestMulti(cDisplays, &cDisplays, &aDisplays[0], false /* fAck */);
-    if (RT_SUCCESS(rc) && !fRequestHappened)
+    cDisplays = cTotalDisplays;
+    rc = VbglR3GetDisplayChangeRequestMulti2(cDisplays, &cDisplays, &aDisplays[0], false /* fAck */);
+    if (RT_SUCCESS(rc))
     {
-        /* Check that there was actually a display change request. */
-        /* Qt frontend actually re-sends unconditionally the last seen display change request on VM start.
-         * So 'fRequestHappened' will be always true if VM was started with the frontend.
-         * This is usually not a problem because the display resolution is normally the same
-         * as the current resolution of the guest.
-         */
         for (i = 0; i < cDisplays; ++i)
         {
             VMMDevDisplayDef const *p = &aDisplays[i];
-
-            /* Check values as they are set by 'vmmdevConstruct', 'vmmdevReset' on the host.
-             * If there was a display change request then at least the primary display
-             * will not have VMMDEV_DISPLAY_DISABLED flag.
-             * Actually, p->fDisplayFlags == 0 should be the 'no hint available' value,
-             * but host code sets the VMMDEV_DISPLAY_DISABLED flag currently. See todos
-             * about initialization of 'displayChangeData' in 'vmmdevConstruct', 'vmmdevReset'.
-             */
-            if (   (p->fDisplayFlags == VMMDEV_DISPLAY_DISABLED || p->fDisplayFlags == 0)
-                && p->idDisplay == i
-                && p->xOrigin == 0
-                && p->yOrigin == 0
-                && p->cx == 0
-                && p->cy == 0
-                && p->cBitsPerPixel == 0)
+            if (p->fDisplayFlags & VMMDEV_DISPLAY_CHGREQ)
             {
-                continue; /* Unmodified. */
+                if (i > cResizedDisplays)
+                    aDisplays[cResizedDisplays] = *p;
+                ++cResizedDisplays;
             }
+        }
+    }
+    else
+    {
+        /* Older interface. */
+        cDisplays = cTotalDisplays;
+        rc = VbglR3GetDisplayChangeRequestMulti(cDisplays, &cDisplays, &aDisplays[0], false /* fAck */);
+        if (RT_SUCCESS(rc))
+        {
+            /* Check that there was actually a display change request. */
+            /* Qt frontend actually re-sends unconditionally the last seen display change request on VM start.
+             * So 'fRequestHappened' will be always true if VM was started with the frontend.
+             * This is usually not a problem because the display resolution is normally the same
+             * as the current resolution of the guest.
+             */
+            for (i = 0; i < cDisplays; ++i)
+            {
+                VMMDevDisplayDef const *p = &aDisplays[i];
 
-            fRequestHappened = true;
-            break;
+                /* Check values as they are set by 'vmmdevConstruct', 'vmmdevReset' on the host.
+                 * If there was a display change request then VMMDEV_DISPLAY_CX, VMMDEV_DISPLAY_CY
+                 * and VMMDEV_DISPLAY_BPP flags are set (see Main::Display::setScreenLayout
+                 * and Display::setVideoModeHint).
+                 *
+                 * Actually, p->fDisplayFlags == 0 should be the 'no hint available' value,
+                 * but host code sets the VMMDEV_DISPLAY_DISABLED flag currently. See todos
+                 * about initialization of 'displayChangeData' in 'vmmdevConstruct', 'vmmdevReset'.
+                 */
+                if (   (p->fDisplayFlags == VMMDEV_DISPLAY_DISABLED || p->fDisplayFlags == 0)
+                    && p->idDisplay == i
+                    && p->xOrigin == 0
+                    && p->yOrigin == 0
+                    && p->cx == 0
+                    && p->cy == 0
+                    && p->cBitsPerPixel == 0)
+                {
+                    continue; /* Unmodified. */
+                }
+
+                if (i > cResizedDisplays)
+                    aDisplays[cResizedDisplays] = *p;
+                ++cResizedDisplays;
+            }
         }
     }
 
-    if (fRequestHappened)
+    if (RT_SUCCESS(rc) && cResizedDisplays > 0)
     {
-        LogRel(("Got multi resize request %d displays\n", cDisplays));
+        LogRel(("Got multi resize request %d displays\n", cResizedDisplays));
 
-        for (i = 0; i < cDisplays; ++i)
+        for (i = 0; i < cResizedDisplays; ++i)
         {
             LogRel(("[%d]: %d 0x%02X %d,%d %dx%d %d\n",
                 i, aDisplays[i].idDisplay,
@@ -944,7 +968,7 @@ static void ApplyLastDisplayChangeRequest(PVBOXDISPLAYCONTEXT pCtx)
                 aDisplays[i].cBitsPerPixel));
         }
 
-        VBoxDispIfResizeDisplayWin7Wddm(&pCtx->pEnv->dispIf, cDisplays, &aDisplays[0]);
+        VBoxDispIfResizeDisplayWin7Wddm(&pCtx->pEnv->dispIf, cResizedDisplays, &aDisplays[0]);
     }
 }
 #endif /* VBOX_WITH_WDDM */
