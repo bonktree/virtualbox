@@ -1,4 +1,4 @@
-/* $Id: UINotificationQuestion.h 113148 2026-02-24 15:57:56Z sergey.dubov@oracle.com $ */
+/* $Id: UINotificationQuestion.h 113150 2026-02-24 16:11:18Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - Various UINotificationQuestion declarations.
  */
@@ -84,6 +84,10 @@ public:
 
     /** Confirms removal of the last DVD device. */
     static bool confirmRemovingOfLastDVDDevice(QWidget *pParent);
+    /** Confirms storage bus change with optical devices removal. */
+    static bool confirmStorageBusChangeWithOpticalRemoval(QWidget *pParent);
+    /** Confirms storage bus change with excessive devices removal. */
+    static bool confirmStorageBusChangeWithExcessiveRemoval(QWidget *pParent);
 
 protected:
 

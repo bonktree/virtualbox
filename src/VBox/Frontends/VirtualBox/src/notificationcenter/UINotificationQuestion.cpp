@@ -1,4 +1,4 @@
-/* $Id: UINotificationQuestion.cpp 113148 2026-02-24 15:57:56Z sergey.dubov@oracle.com $ */
+/* $Id: UINotificationQuestion.cpp 113150 2026-02-24 16:11:18Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - Various UINotificationQuestion implementations.
  */
@@ -85,6 +85,36 @@ bool UINotificationQuestion::confirmRemovingOfLastDVDDevice(QWidget *pParent)
         QStringList() << QString() /* cancel button text */
                       << QApplication::translate("UIMessageCenter", "Remove", "medium") /* ok button text */,
         false /* ok button by default? */,
+        QString() /* internal name */,
+        QString() /* help keyword*/,
+        pParent);
+}
+
+/* static */
+bool UINotificationQuestion::confirmStorageBusChangeWithOpticalRemoval(QWidget *pParent)
+{
+    return createBlockingQuestion(
+        QApplication::translate("UIMessageCenter", "Confirm storage bus change?"),
+        QApplication::translate("UIMessageCenter", "<p>This controller has optical devices attached.  You have requested storage "
+                                                   "bus change to type which doesn't support optical devices.</p><p>If you "
+                                                   "proceed optical devices will be removed.</p>"),
+        QStringList() /* no button name redefinition */,
+        true /* ok button by default? */,
+        QString() /* internal name */,
+        QString() /* help keyword*/,
+        pParent);
+}
+
+/* static */
+bool UINotificationQuestion::confirmStorageBusChangeWithExcessiveRemoval(QWidget *pParent)
+{
+    return createBlockingQuestion(
+        QApplication::translate("UIMessageCenter", "Confirm storage bus change?"),
+        QApplication::translate("UIMessageCenter", "<p>This controller has devices attached.  You have requested storage bus "
+                                                   "change to type which supports smaller amount of attached devices.</p><p>If "
+                                                   "you proceed excessive devices will be removed.</p>"),
+        QStringList() /* no button name redefinition */,
+        true /* ok button by default? */,
         QString() /* internal name */,
         QString() /* help keyword*/,
         pParent);

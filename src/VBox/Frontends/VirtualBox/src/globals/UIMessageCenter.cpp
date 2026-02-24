@@ -1,4 +1,4 @@
-/* $Id: UIMessageCenter.cpp 113148 2026-02-24 15:57:56Z sergey.dubov@oracle.com $ */
+/* $Id: UIMessageCenter.cpp 113150 2026-02-24 16:11:18Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - UIMessageCenter class implementation.
  */
@@ -656,22 +656,6 @@ bool UIMessageCenter::confirmSettingsReloading(QWidget *pParent /* = 0 */) const
     setWarningShown("confirmSettingsReloading", false);
 
     return fResult;
-}
-
-bool UIMessageCenter::confirmStorageBusChangeWithOpticalRemoval(QWidget *pParent /* = 0 */) const
-{
-    return questionBinary(pParent, MessageType_Question,
-                          tr("<p>This controller has optical devices attached.  You have requested storage bus "
-                             "change to type which doesn't support optical devices.</p><p>If you proceed optical "
-                             "devices will be removed.</p>"));
-}
-
-bool UIMessageCenter::confirmStorageBusChangeWithExcessiveRemoval(QWidget *pParent /* = 0 */) const
-{
-    return questionBinary(pParent, MessageType_Question,
-                          tr("<p>This controller has devices attached.  You have requested storage bus change to "
-                             "type which supports smaller amount of attached devices.</p><p>If you proceed "
-                             "excessive devices will be removed.</p>"));
 }
 
 bool UIMessageCenter::confirmCancelingPortForwardingDialog(QWidget *pParent /* = 0 */) const

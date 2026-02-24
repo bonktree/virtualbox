@@ -1,4 +1,4 @@
-/* $Id: UIStorageSettingsEditor.cpp 113148 2026-02-24 15:57:56Z sergey.dubov@oracle.com $ */
+/* $Id: UIStorageSettingsEditor.cpp 113150 2026-02-24 16:11:18Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - UIStorageSettingsEditor class implementation.
  */
@@ -62,7 +62,6 @@
 #include "UIMediumEnumerator.h"
 #include "UIMediumSelector.h"
 #include "UIMediumTools.h"
-#include "UIMessageCenter.h"
 #include "UINotificationQuestion.h"
 #include "UIStorageSettingsEditor.h"
 
@@ -2284,7 +2283,7 @@ bool StorageModel::setData(const QModelIndex &specifiedIndex, const QVariant &aV
                         const QList<QUuid> opticalIds = pItemController->attachmentIDs(KDeviceType_DVD);
                         if (!opticalIds.isEmpty())
                         {
-                            if (!msgCenter().confirmStorageBusChangeWithOpticalRemoval(qobject_cast<QWidget*>(QObject::parent())))
+                            if (!UINotificationQuestion::confirmStorageBusChangeWithOpticalRemoval(qobject_cast<QWidget*>(QObject::parent())))
                                 return false;
                             foreach (const QUuid &uId, opticalIds)
                                 delAttachment(pItemController->id(), uId);
@@ -2300,7 +2299,7 @@ bool StorageModel::setData(const QModelIndex &specifiedIndex, const QVariant &aV
                     const QList<QUuid> ids = pItemController->attachmentIDs();
                     if (uMaxPortCount * uMaxDevicePerPortCount < (uint)ids.size())
                     {
-                        if (!msgCenter().confirmStorageBusChangeWithExcessiveRemoval(qobject_cast<QWidget*>(QObject::parent())))
+                        if (!UINotificationQuestion::confirmStorageBusChangeWithExcessiveRemoval(qobject_cast<QWidget*>(QObject::parent())))
                             return false;
                         for (int i = uMaxPortCount * uMaxDevicePerPortCount; i < ids.size(); ++i)
                             delAttachment(pItemController->id(), ids.at(i));
