@@ -1,4 +1,4 @@
-﻿/* $Id: UIAdvancedSettingsDialog.cpp 112954 2026-02-11 14:42:55Z sergey.dubov@oracle.com $ */
+﻿/* $Id: UIAdvancedSettingsDialog.cpp 113147 2026-02-24 15:56:22Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - UIAdvancedSettingsDialog class implementation.
  */
@@ -1087,6 +1087,34 @@ void UIAdvancedSettingsDialog::polishEvent()
     sltUpdateDisabledWidgetsLookAndFeel();
 }
 
+void UIAdvancedSettingsDialog::keyPressEvent(QKeyEvent *pEvent)
+{
+    /* Handle Enter/Return and Escape keys only if event reached us: */
+    switch (pEvent->key())
+    {
+        case Qt::Key_Enter:
+        case Qt::Key_Return:
+        {
+            AssertPtrReturn(m_pButtonBox, QMainWindow::keyPressEvent(pEvent));
+            QPushButton *pButton = m_pButtonBox->button(QDialogButtonBox::Ok);
+            AssertPtrReturn(m_pButtonBox, QMainWindow::keyPressEvent(pEvent));
+            return pButton->click();
+        }
+        case Qt::Key_Escape:
+        {
+            AssertPtrReturn(m_pButtonBox, QMainWindow::keyPressEvent(pEvent));
+            QPushButton *pButton = m_pButtonBox->button(QDialogButtonBox::Cancel);
+            AssertPtrReturn(m_pButtonBox, QMainWindow::keyPressEvent(pEvent));
+            return pButton->click();
+        }
+        default:
+            break;
+    }
+
+    /* Call to base-class: */
+    return QMainWindow::keyPressEvent(pEvent);
+}
+
 void UIAdvancedSettingsDialog::closeEvent(QCloseEvent *pEvent)
 {
     /* Ignore event initially: */
@@ -1599,8 +1627,6 @@ void UIAdvancedSettingsDialog::prepareButtonBox()
         m_pButtonBox->setStandardButtons(QDialogButtonBox::Ok | QDialogButtonBox::Cancel |
                                          QDialogButtonBox::NoButton | QDialogButtonBox::Help);
         m_pButtonBox->button(QDialogButtonBox::Help)->setShortcut(UIShortcutPool::standardSequence(QKeySequence::HelpContents));
-        m_pButtonBox->button(QDialogButtonBox::Ok)->setShortcut(Qt::Key_Return);
-        m_pButtonBox->button(QDialogButtonBox::Cancel)->setShortcut(Qt::Key_Escape);
         connect(m_pButtonBox, &QIDialogButtonBox::rejected, this, &UIAdvancedSettingsDialog::sltClose);
         connect(m_pButtonBox, &QIDialogButtonBox::accepted, this, &UIAdvancedSettingsDialog::accept);
         connect(m_pButtonBox->button(QDialogButtonBox::Help), &QAbstractButton::pressed,

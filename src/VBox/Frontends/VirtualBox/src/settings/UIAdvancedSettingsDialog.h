@@ -1,4 +1,4 @@
-/* $Id: UIAdvancedSettingsDialog.h 112850 2026-02-06 11:10:07Z sergey.dubov@oracle.com $ */
+/* $Id: UIAdvancedSettingsDialog.h 113147 2026-02-24 15:56:22Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - UIAdvancedSettingsDialog class declaration.
  */
@@ -121,6 +121,8 @@ protected:
     virtual void showEvent(QShowEvent *pEvent) RT_OVERRIDE;
     /** Handles first show event. */
     virtual void polishEvent();
+    /** Handles key-press @a pEvent. */
+    virtual void keyPressEvent(QKeyEvent *pEvent) RT_OVERRIDE;
     /** Handles close @a pEvent. */
     virtual void closeEvent(QCloseEvent *pEvent) RT_OVERRIDE;
 
