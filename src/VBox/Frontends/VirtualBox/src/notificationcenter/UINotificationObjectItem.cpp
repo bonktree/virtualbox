@@ -1,4 +1,4 @@
-/* $Id: UINotificationObjectItem.cpp 113136 2026-02-24 10:49:48Z sergey.dubov@oracle.com $ */
+/* $Id: UINotificationObjectItem.cpp 113137 2026-02-24 10:55:13Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - UINotificationObjectItem class implementation.
  */
@@ -350,8 +350,8 @@ void UINotificationQuestionItem::prepareWidgets()
         UINotificationQuestion *pQuestion = question();
         AssertPtrReturnVoid(pQuestion);
         const QStringList buttonNames = pQuestion->buttonNames();
-        const int iButtonAmount = buttonNames.size();
-        AssertReturnVoid(iButtonAmount >= 2 && iButtonAmount < 3);
+        const int iButtonAmount = qMax(2, buttonNames.size());
+        AssertReturnVoid(iButtonAmount <= 3);
 
         /* Compose a list of button types: */
         QList<QDialogButtonBox::StandardButton> buttonTypes;
