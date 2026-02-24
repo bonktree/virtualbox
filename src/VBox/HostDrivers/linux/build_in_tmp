@@ -1,5 +1,5 @@
 #!/bin/sh
-# $Id: build_in_tmp 112403 2026-01-11 19:29:08Z knut.osmundsen@oracle.com $
+# $Id: build_in_tmp 113149 2026-02-24 16:02:14Z vadim.galitsyn@oracle.com $
 ## @file
 # Script to build a kernel module in /tmp.
 #
@@ -69,6 +69,9 @@ while true; do
       shift
       MODULE_SOURCE="$1"
       shift
+    elif [ "$1" = "--skip-depmod" ]; then
+      shift
+      SKIP_DEPMOD="1"
     else
       break
     fi
@@ -83,6 +86,9 @@ fi
 if [ -n "$USE_MOD_SYMVERS" ]; then
   cp $USE_MOD_SYMVERS $tmpdir/Module.symvers
   MAKE_EXTRAOPTS="KBUILD_EXTRA_SYMBOLS=$tmpdir/Module.symvers"
+fi
+if [ -n "$SKIP_DEPMOD" ]; then
+  MAKE_EXTRAOPTS="DEPMOD=/bin/true $MAKE_EXTRAOPTS"
 fi
 
 # make, cleanup if success

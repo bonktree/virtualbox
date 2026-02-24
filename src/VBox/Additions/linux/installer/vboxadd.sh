@@ -1,7 +1,7 @@
 #! /bin/sh
-# $Id: vboxadd.sh 113095 2026-02-19 16:20:30Z vadim.galitsyn@oracle.com $
+# $Id: vboxadd.sh 113149 2026-02-24 16:02:14Z vadim.galitsyn@oracle.com $
 ## @file
-# Linux Additions kernel module init script ($Revision: 113095 $)
+# Linux Additions kernel module init script ($Revision: 113149 $)
 #
 
 #
@@ -573,6 +573,7 @@ setup_modules()
     if ! myerr=`$BUILDINTMP \
         --save-module-symvers /tmp/vboxguest-Module.symvers \
         --module-source $MODULE_SRC/vboxguest \
+        --skip-depmod \
         --no-print-directory install 2>&1`; then
         # If check_module_dependencies.sh fails it prints a message itself.
         module_build_log "$myerr"
@@ -584,34 +585,39 @@ setup_modules()
     if ! myerr=`$BUILDINTMP \
         --use-module-symvers /tmp/vboxguest-Module.symvers \
         --module-source $MODULE_SRC/vboxsf \
+        --skip-depmod \
         --no-print-directory install 2>&1`; then
         module_build_log "$myerr"
         info  "Look at $LOG to find out what went wrong"
         return 0
     fi
 
-    if [ -n "$have_vboxvideo_build" ]; then
-        log "Building the graphics driver module."
-        if ! myerr=`$BUILDINTMP \
-            --use-module-symvers /tmp/vboxguest-Module.symvers \
-            --module-source $MODULE_SRC/vboxvideo \
-            --no-print-directory install 2>&1`; then
-            module_build_log "$myerr"
-            info "Look at $LOG to find out what went wrong"
-        fi
-    fi
     [ -d /etc/depmod.d ] || mkdir /etc/depmod.d
 
     echo "override vboxguest * misc" > /etc/depmod.d/vboxvideo-upstream.conf
     echo "override vboxsf * misc" >> /etc/depmod.d/vboxvideo-upstream.conf
 
     if [ -n "$have_vboxvideo_build" ]; then
+        log "Building the graphics driver module."
+        if ! myerr=`$BUILDINTMP \
+            --use-module-symvers /tmp/vboxguest-Module.symvers \
+            --module-source $MODULE_SRC/vboxvideo \
+            --skip-depmod \
+            --no-print-directory install 2>&1`; then
+            module_build_log "$myerr"
+            info "Look at $LOG to find out what went wrong"
+        fi
+
         echo "override vboxvideo * misc" >> /etc/depmod.d/vboxvideo-upstream.conf
     fi
 
-    sign_modules "${KERN_VER}"
-
-    update_initramfs "${KERN_VER}"
+    if [ $? -eq 0 ]; then
+        sign_modules "${KERN_VER}"
+        update_initramfs "${KERN_VER}"
+    else
+        info "Modules setup has failed."
+        cleanup
+    fi
 
     return 0
 }
@@ -1327,7 +1333,7 @@ reload)
 # current kernel.
 setup)
     check_root
-    cleanup && start
+    setup && start
     ;;
 # Builds kernel modules for the specified kernels if they are not already built.
 quicksetup)
