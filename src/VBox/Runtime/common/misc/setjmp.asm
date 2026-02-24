@@ -1,4 +1,4 @@
-; $Id: setjmp.asm 112989 2026-02-13 09:35:27Z knut.osmundsen@oracle.com $
+; $Id: setjmp.asm 113142 2026-02-24 12:23:15Z knut.osmundsen@oracle.com $
 ;; @file
 ; IPRT - No-CRT setjmp & longjmp - AMD64 & X86.
 ;
@@ -43,8 +43,14 @@
 %ifdef RT_OS_WINDOWS
  %ifdef RT_ARCH_AMD64
 EXTERN_IMP2 RtlUnwind
+  %ifdef IN_RING0
+EXTERN_IMP2 IoWithinStackLimits
+  %endif
  %else
 EXTERN_IMP2 RtlUnwind@16
+  %ifdef IN_RING0
+EXTERN_IMP2 IoWithinStackLimits@8
+  %endif
   %ifdef RT_OS_WINDOWS
    %ifdef IN_RING3
     %ifndef IPRT_WITHOUT_NLG_STUFF
@@ -405,22 +411,53 @@ RT_NOCRT_BEGINPROC longjmp
         ; Check that SP is sane.
         ;
         mov     xDX, [xCX + RTJMPBUF.uSp]
- %ifdef RT_ARCH_AMD64
+
+ %ifdef IN_RING3
+        ; In ring-3 we just access the NT_TIB structure.
+  %ifdef RT_ARCH_AMD64
         cmp     xDX, [gs:NT_TIB.StackBase]
- %else
+  %else
         cmp     xDX, [fs:NT_TIB.StackBase]
- %endif
+  %endif
         jbe     .stack_ptr_ok1
         int3                                    ; better way to fail?
 .stack_ptr_ok1:
- %ifdef RT_ARCH_AMD64
+  %ifdef RT_ARCH_AMD64
         cmp     xDX, [gs:NT_TIB.StackLimit]
- %else
+  %else
         cmp     xDX, [fs:NT_TIB.StackLimit]
- %endif
+  %endif
         ja      .stack_ptr_ok2
         int3                                    ; better way to fail?
 .stack_ptr_ok2:
+ %elifdef IN_RING0
+        ; In ring-0 NT_TIB can't be used and we should call IoWithinStackLimits
+        ; (or KeQueryCurrentStackInformationEx) to do the sanity checks.
+  %ifdef RT_ARCH_AMD64
+        mov     [rsp + MY_FRAME_SIZE + 16], eax ; Save return value in shadow param 1 slot.
+        mov     [rsp + MY_FRAME_SIZE + 8], rcx  ; Save jmp_buf pointer in shadow param 0 slot.
+        mov     rcx, rdx                        ; param 0: RegionStart
+        mov     edx, 8                          ; param 1: RegionSize
+        call    IMP2(IoWithinStackLimits)
+        test    al, al
+        jnz     .r0_amd64_stack_ptr_ok
+        int3                                    ; better way to fail?
+.r0_amd64_stack_ptr_ok:
+        mov     eax, [rsp + MY_FRAME_SIZE + 16] ; Restore return value.
+        mov     rcx, [rsp + MY_FRAME_SIZE + 8]  ; Restore jmp_buf pointer.
+  %else
+        push    4                               ; param 1: RegionSize
+        push    xDX                             ; param 0: RegionStart
+        call    IMP2(IoWithinStackLimits@8)
+        test    al, al
+        jnz     .r0_x86_stack_ptr_ok
+        int3                                    ; better way to fail?
+.r0_x86_stack_ptr_ok:
+        mov     ecx, [ebp + 8]                  ; Restore the jump buffer pointer from the parameter list.
+        mov     eax, [ebp + 12]                 ; Reload the return value.
+  %endif
+
+ %endif
 
         ;
         ; We will probably need to use RtlUnwind here to do the unwinding.
