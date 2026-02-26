@@ -1,4 +1,4 @@
-/* $Id: UIMessageCenter.h 113177 2026-02-26 13:22:14Z sergey.dubov@oracle.com $ */
+/* $Id: UIMessageCenter.h 113178 2026-02-26 13:48:56Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - UIMessageCenter class declaration.
  */
@@ -312,7 +312,6 @@ public:
       * @{ */
         bool confirmCloudProfileRemoval(const QString &strName, QWidget *pParent = 0) const;
         bool confirmCloudProfilesImport(QWidget *pParent = 0) const;
-        int confirmCloudProfileManagerClosing(QWidget *pParent = 0) const;
     /** @} */
 
     /** @name VirtualBox Manager / Cloud Console Manager warnings.

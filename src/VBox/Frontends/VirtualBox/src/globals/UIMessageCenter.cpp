@@ -1,4 +1,4 @@
-/* $Id: UIMessageCenter.cpp 113177 2026-02-26 13:22:14Z sergey.dubov@oracle.com $ */
+/* $Id: UIMessageCenter.cpp 113178 2026-02-26 13:48:56Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - UIMessageCenter class implementation.
  */
@@ -991,21 +991,6 @@ bool UIMessageCenter::confirmCloudProfilesImport(QWidget *pParent /* = 0 */) con
                           tr("Import") /* ok button text */,
                           QString() /* cancel button text */,
                           false /* ok button by default? */);
-}
-
-int UIMessageCenter::confirmCloudProfileManagerClosing(QWidget *pParent /* = 0 */) const
-{
-    return question(pParent, MessageType_Question,
-                    tr("<p>Do you want to close the Cloud Profile Manager?</p>"
-                       "<p>There seems to be an unsaved changes. "
-                       "You can choose to <b>Accept</b> or <b>Reject</b> them automatically "
-                       "or cancel to keep the dialog opened.</p>"),
-                    0 /* auto-confirm id */,
-                    AlertButton_Choice1,
-                    AlertButton_Choice2,
-                    AlertButton_Cancel | AlertButtonOption_Default | AlertButtonOption_Escape,
-                    tr("Accept", "cloud profile manager changes"),
-                    tr("Reject", "cloud profile manager changes"));
 }
 
 bool UIMessageCenter::confirmCloudConsoleApplicationRemoval(const QString &strName, QWidget *pParent /* = 0 */) const

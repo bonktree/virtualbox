@@ -1,4 +1,4 @@
-/* $Id: UICloudProfileManager.cpp 113062 2026-02-17 12:37:07Z sergey.dubov@oracle.com $ */
+/* $Id: UICloudProfileManager.cpp 113178 2026-02-26 13:48:56Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - UICloudProfileManager class implementation.
  */
@@ -208,44 +208,6 @@ void UICloudProfileManagerWidget::sltRetranslateUI()
                                    << UICloudProfileManager::tr("Source")
                                    << UICloudProfileManager::tr("List VMs"));
     m_pTreeWidget->setWhatsThis(UICloudProfileManager::tr("Registered cloud providers and profiles"));
-}
-
-bool UICloudProfileManagerWidget::makeSureChangesResolved()
-{
-    /* Check if currently selected item is of profile type: */
-    QITreeWidgetItem *pItem = QITreeWidgetItem::toItem(m_pTreeWidget->currentItem());
-    UIItemCloudProfile *pProfileItem = qobject_cast<UIItemCloudProfile*>(pItem);
-    if (!pProfileItem)
-        return true;
-
-    /* Get item data: */
-    UIDataCloudProfile oldData = *pProfileItem;
-    UIDataCloudProfile newData = m_pDetailsWidget->data();
-
-    /* Check if data has changed: */
-    if (newData == oldData)
-        return true;
-
-    /* Ask whether user wants to Accept/Reset changes or still not sure: */
-    const int iResult = msgCenter().confirmCloudProfileManagerClosing(window());
-    switch (iResult)
-    {
-        case AlertButton_Choice1:
-        {
-            sltApplyCloudProfileDetailsChanges();
-            return true;
-        }
-        case AlertButton_Choice2:
-        {
-            sltResetCloudProfileDetailsChanges();
-            return true;
-        }
-        default:
-            break;
-    }
-
-    /* False by default: */
-    return false;
 }
 
 void UICloudProfileManagerWidget::sltResetCloudProfileDetailsChanges()
@@ -1039,21 +1001,6 @@ void UICloudProfileManager::finalize()
 UICloudProfileManagerWidget *UICloudProfileManager::widget()
 {
     return qobject_cast<UICloudProfileManagerWidget*>(QIManagerDialog::widget());
-}
-
-void UICloudProfileManager::closeEvent(QCloseEvent *pEvent)
-{
-    /* Make sure all changes resolved: */
-    if (widget()->makeSureChangesResolved())
-    {
-        /* Call to base class: */
-        QIManagerDialog::closeEvent(pEvent);
-    }
-    else
-    {
-        /* Just ignore the event otherwise: */
-        pEvent->ignore();
-    }
 }
 
 
