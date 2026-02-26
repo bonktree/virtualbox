@@ -1,4 +1,4 @@
-/* $Id: UINotificationQuestion.h 113173 2026-02-26 11:58:51Z sergey.dubov@oracle.com $ */
+/* $Id: UINotificationQuestion.h 113175 2026-02-26 12:33:20Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - Various UINotificationQuestion declarations.
  */
@@ -123,6 +123,24 @@ public:
         static bool confirmCancelingPortForwardingDialog(QWidget *pParent);
         /** Confirms restoring default keys. */
         static bool confirmRestoringDefaultKeys(QWidget *pParent);
+    /** @} */
+
+    /** @name Extension Pack Manager warnings
+      * @{ */
+        /** Confirms installing extension pack. */
+        static bool confirmInstallExtensionPack(const QString &strPackName,
+                                                const QString &strPackVersion,
+                                                const QString &strPackDescription,
+                                                QWidget *pParent);
+        /** Confirms replacing extension pack. */
+        static bool confirmReplaceExtensionPack(const QString &strPackName,
+                                                const QString &strPackVersionNew,
+                                                const QString &strPackVersionOld,
+                                                const QString &strPackDescription,
+                                                QWidget *pParent);
+        /** Confirms removing extension pack. */
+        static bool confirmRemoveExtensionPack(const QString &strPackName,
+                                               QWidget *pParent);
     /** @} */
 
 protected:

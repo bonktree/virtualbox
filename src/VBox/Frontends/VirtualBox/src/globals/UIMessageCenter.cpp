@@ -1,4 +1,4 @@
-/* $Id: UIMessageCenter.cpp 113173 2026-02-26 11:58:51Z sergey.dubov@oracle.com $ */
+/* $Id: UIMessageCenter.cpp 113175 2026-02-26 12:33:20Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - UIMessageCenter class implementation.
  */
@@ -781,94 +781,6 @@ int UIMessageCenter::confirmSnapshotRestoring(const QString &strSnapshotName, bo
                    AlertButton_Cancel | AlertButtonOption_Default | AlertButtonOption_Escape,
                    0 /* 3rd button */,
                    tr("Restore"), tr("Cancel"), QString() /* 3rd button text */);
-}
-
-bool UIMessageCenter::confirmInstallExtensionPack(const QString &strPackName, const QString &strPackVersion,
-                                                  const QString &strPackDescription, QWidget *pParent /* = 0*/) const
-{
-    return questionBinary(pParent, MessageType_Question,
-                          tr("<p>You are about to install a VirtualBox extension pack. "
-                             "Extension packs complement the functionality of VirtualBox and can contain system level software "
-                             "that could be potentially harmful to your system. Please review the description below and only proceed "
-                             "if you have obtained the extension pack from a trusted source.</p>"
-                             "<p><table cellpadding=0 cellspacing=5>"
-                             "<tr><td><b>Name:&nbsp;&nbsp;</b></td><td>%1</td></tr>"
-                             "<tr><td><b>Version:&nbsp;&nbsp;</b></td><td>%2</td></tr>"
-                             "<tr><td><b>Description:&nbsp;&nbsp;</b></td><td>%3</td></tr>"
-                             "</table></p>")
-                             .arg(strPackName).arg(strPackVersion).arg(strPackDescription),
-                          0 /* auto-confirm id */,
-                          tr("Install", "extension pack"));
-}
-
-bool UIMessageCenter::confirmReplaceExtensionPack(const QString &strPackName, const QString &strPackVersionNew,
-                                                  const QString &strPackVersionOld, const QString &strPackDescription,
-                                                  QWidget *pParent /* = 0*/) const
-{
-    /* Prepare initial message: */
-    QString strBelehrung = tr("Extension packs complement the functionality of VirtualBox and can contain "
-                              "system level software that could be potentially harmful to your system. "
-                              "Please review the description below and only proceed if you have obtained "
-                              "the extension pack from a trusted source.");
-
-    /* Compare versions: */
-    QByteArray  ba1     = strPackVersionNew.toUtf8();
-    QByteArray  ba2     = strPackVersionOld.toUtf8();
-    int         iVerCmp = RTStrVersionCompare(ba1.constData(), ba2.constData());
-
-    /* Show the question: */
-    bool fRc;
-    if (iVerCmp > 0)
-        fRc = questionBinary(pParent, MessageType_Question,
-                             tr("<p>An older version of the extension pack is already installed, would you like to upgrade? "
-                                "<p>%1</p>"
-                                "<p><table cellpadding=0 cellspacing=5>"
-                                "<tr><td><b>Name:&nbsp;&nbsp;</b></td><td>%2</td></tr>"
-                                "<tr><td><b>New Version:&nbsp;&nbsp;</b></td><td>%3</td></tr>"
-                                "<tr><td><b>Current Version:&nbsp;&nbsp;</b></td><td>%4</td></tr>"
-                                "<tr><td><b>Description:&nbsp;&nbsp;</b></td><td>%5</td></tr>"
-                                "</table></p>")
-                                .arg(strBelehrung).arg(strPackName).arg(strPackVersionNew).arg(strPackVersionOld).arg(strPackDescription),
-                             0 /* auto-confirm id */,
-                             tr("&Upgrade"));
-    else if (iVerCmp < 0)
-        fRc = questionBinary(pParent, MessageType_Question,
-                             tr("<p>An newer version of the extension pack is already installed, would you like to downgrade? "
-                                "<p>%1</p>"
-                                "<p><table cellpadding=0 cellspacing=5>"
-                                "<tr><td><b>Name:&nbsp;&nbsp;</b></td><td>%2</td></tr>"
-                                "<tr><td><b>New Version:&nbsp;&nbsp;</b></td><td>%3</td></tr>"
-                                "<tr><td><b>Current Version:&nbsp;&nbsp;</b></td><td>%4</td></tr>"
-                                "<tr><td><b>Description:&nbsp;&nbsp;</b></td><td>%5</td></tr>"
-                                "</table></p>")
-                                .arg(strBelehrung).arg(strPackName).arg(strPackVersionNew).arg(strPackVersionOld).arg(strPackDescription),
-                             0 /* auto-confirm id */,
-                             tr("&Downgrade"));
-    else
-        fRc = questionBinary(pParent, MessageType_Question,
-                             tr("<p>The extension pack is already installed with the same version, would you like reinstall it? "
-                                "<p>%1</p>"
-                                "<p><table cellpadding=0 cellspacing=5>"
-                                "<tr><td><b>Name:&nbsp;&nbsp;</b></td><td>%2</td></tr>"
-                                "<tr><td><b>Version:&nbsp;&nbsp;</b></td><td>%3</td></tr>"
-                                "<tr><td><b>Description:&nbsp;&nbsp;</b></td><td>%4</td></tr>"
-                                "</table></p>")
-                                .arg(strBelehrung).arg(strPackName).arg(strPackVersionOld).arg(strPackDescription),
-                             0 /* auto-confirm id */,
-                             tr("&Reinstall"));
-    return fRc;
-}
-
-bool UIMessageCenter::confirmRemoveExtensionPack(const QString &strPackName, QWidget *pParent /* = 0*/) const
-{
-    return questionBinary(pParent, MessageType_Question,
-                          tr("<p>You are about to remove the VirtualBox extension pack <b>%1</b>.</p>"
-                             "<p>Are you sure you want to proceed?</p>")
-                             .arg(strPackName),
-                          0 /* auto-confirm id */,
-                          tr("Remove") /* ok button text */,
-                          QString() /* cancel button text */,
-                          false /* ok button by default? */);
 }
 
 bool UIMessageCenter::confirmMediumRelease(const UIMedium &medium, bool fInduced, QWidget *pParent /* = 0 */) const

@@ -1,4 +1,4 @@
-/* $Id: UIMessageCenter.h 113173 2026-02-26 11:58:51Z sergey.dubov@oracle.com $ */
+/* $Id: UIMessageCenter.h 113175 2026-02-26 12:33:20Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - UIMessageCenter class declaration.
  */
@@ -296,16 +296,6 @@ public:
     /** @name VirtualBox Manager / Snapshot Pane warnings.
       * @{ */
         int confirmSnapshotRestoring(const QString &strSnapshotName, bool fAlsoCreateNewSnapshot) const;
-    /** @} */
-
-    /** @name VirtualBox Manager / Extension Manager warnings.
-      * @{ */
-        bool confirmInstallExtensionPack(const QString &strPackName, const QString &strPackVersion,
-                                         const QString &strPackDescription, QWidget *pParent = 0) const;
-        bool confirmReplaceExtensionPack(const QString &strPackName, const QString &strPackVersionNew,
-                                         const QString &strPackVersionOld, const QString &strPackDescription,
-                                         QWidget *pParent = 0) const;
-        bool confirmRemoveExtensionPack(const QString &strPackName, QWidget *pParent = 0) const;
     /** @} */
 
     /** @name VirtualBox Manager / Media Manager warnings.

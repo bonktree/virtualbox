@@ -1,4 +1,4 @@
-/* $Id: UINotificationQuestion.cpp 113173 2026-02-26 11:58:51Z sergey.dubov@oracle.com $ */
+/* $Id: UINotificationQuestion.cpp 113175 2026-02-26 12:33:20Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - Various UINotificationQuestion implementations.
  */
@@ -191,7 +191,7 @@ bool UINotificationQuestion::confirmRemovingOfLastDVDDevice(QWidget *pParent)
                       << QApplication::translate("UIMessageCenter", "Remove", "medium") /* ok button text */,
         false /* ok button by default? */,
         QString() /* internal name */,
-        QString() /* help keyword*/,
+        QString() /* help keyword */,
         pParent);
 }
 
@@ -206,7 +206,7 @@ bool UINotificationQuestion::confirmStorageBusChangeWithOpticalRemoval(QWidget *
         QStringList() /* no button name redefinition */,
         true /* ok button by default? */,
         QString() /* internal name */,
-        QString() /* help keyword*/,
+        QString() /* help keyword */,
         pParent);
 }
 
@@ -221,7 +221,7 @@ bool UINotificationQuestion::confirmStorageBusChangeWithExcessiveRemoval(QWidget
         QStringList() /* no button name redefinition */,
         true /* ok button by default? */,
         QString() /* internal name */,
-        QString() /* help keyword*/,
+        QString() /* help keyword */,
         pParent);
 }
 
@@ -234,8 +234,8 @@ bool UINotificationQuestion::confirmCancelingPortForwardingDialog(QWidget *pPare
                                                    "<p>If you proceed your changes will be discarded.</p>"),
         QStringList() /* no button name redefinition */,
         false /* ok button by default? */,
-        QString() /* ok button text */,
-        QString() /* cancel button text */,
+        QString() /* internal name */,
+        QString() /* help keyword */,
         pParent);
 }
 
@@ -249,8 +249,134 @@ bool UINotificationQuestion::confirmRestoringDefaultKeys(QWidget *pParent)
                                                    "You may not be able to boot affected VM anymore.</p>"),
         QStringList() /* no button name redefinition */,
         false /* ok button by default? */,
-        QString() /* ok button text */,
-        QString() /* cancel button text */,
+        QString() /* internal name */,
+        QString() /* help keyword */,
+        pParent);
+}
+
+/* static */
+bool UINotificationQuestion::confirmInstallExtensionPack(const QString &strPackName,
+                                                         const QString &strPackVersion,
+                                                         const QString &strPackDescription,
+                                                         QWidget *pParent)
+{
+    return createBlockingQuestion(
+        QApplication::translate("UIMessageCenter", "Install extension pack?"),
+        QApplication::translate("UIMessageCenter", "<p>You are about to install a VirtualBox extension pack. Extension packs "
+                                                   "complement the functionality of VirtualBox and can contain system level "
+                                                   "software that could be potentially harmful to your system. Please review "
+                                                   "the description below and only proceed if you have obtained the extension "
+                                                   "pack from a trusted source.</p>"
+                                                   "<p><table cellpadding=0 cellspacing=5>"
+                                                   "<tr><td><b>Name:&nbsp;&nbsp;</b></td><td>%1</td></tr>"
+                                                   "<tr><td><b>Version:&nbsp;&nbsp;</b></td><td>%2</td></tr>"
+                                                   "<tr><td><b>Description:&nbsp;&nbsp;</b></td><td>%3</td></tr>"
+                                                   "</table></p>")
+                                                   .arg(strPackName).arg(strPackVersion).arg(strPackDescription),
+        QStringList() << QString() /* cancel button text */
+                      << QApplication::translate("UIMessageCenter", "Install", "extension pack") /* ok button text */,
+        true /* ok button by default? */,
+        QString() /* internal name */,
+        QString() /* help keyword */,
+        pParent);
+}
+
+bool UINotificationQuestion::confirmReplaceExtensionPack(const QString &strPackName,
+                                                         const QString &strPackVersionNew,
+                                                         const QString &strPackVersionOld,
+                                                         const QString &strPackDescription,
+                                                         QWidget *pParent)
+{
+    /* Prepare initial message: */
+    const QString strTitle =
+        QApplication::translate("UIMessageCenter", "Replace extension pack?");
+    const QString strBelehrung =
+        QApplication::translate("UIMessageCenter", "Extension packs complement the functionality of VirtualBox and can contain "
+                                                   "system level software that could be potentially harmful to your system. "
+                                                   "Please review the description below and only proceed if you have obtained "
+                                                   "the extension pack from a trusted source.");
+
+    /* Compare versions: */
+    QByteArray ba1     = strPackVersionNew.toUtf8();
+    QByteArray ba2     = strPackVersionOld.toUtf8();
+    int        iVerCmp = RTStrVersionCompare(ba1.constData(), ba2.constData());
+
+    /* Show the question: */
+    bool fRc;
+    if (iVerCmp > 0)
+        fRc = createBlockingQuestion(
+            strTitle,
+            QApplication::translate("UIMessageCenter", "<p>An older version of the extension pack is already installed, would "
+                                                       "you like to upgrade? "
+                                                       "<p>%1</p>"
+                                                       "<p><table cellpadding=0 cellspacing=5>"
+                                                       "<tr><td><b>Name:&nbsp;&nbsp;</b></td><td>%2</td></tr>"
+                                                       "<tr><td><b>New Version:&nbsp;&nbsp;</b></td><td>%3</td></tr>"
+                                                       "<tr><td><b>Current Version:&nbsp;&nbsp;</b></td><td>%4</td></tr>"
+                                                       "<tr><td><b>Description:&nbsp;&nbsp;</b></td><td>%5</td></tr>"
+                                                       "</table></p>")
+                                                       .arg(strBelehrung).arg(strPackName).arg(strPackVersionNew)
+                                                       .arg(strPackVersionOld).arg(strPackDescription),
+            QStringList() << QString() /* cancel button text */
+                          << QApplication::translate("UIMessageCenter", "Upgrade", "extension pack") /* ok button text */,
+            true /* ok button by default? */,
+            QString() /* internal name */,
+            QString() /* help keyword */,
+            pParent);
+    else if (iVerCmp < 0)
+        fRc = createBlockingQuestion(
+            strTitle,
+            QApplication::translate("UIMessageCenter", "<p>An newer version of the extension pack is already installed, would "
+                                                       "you like to downgrade? "
+                                                       "<p>%1</p>"
+                                                       "<p><table cellpadding=0 cellspacing=5>"
+                                                       "<tr><td><b>Name:&nbsp;&nbsp;</b></td><td>%2</td></tr>"
+                                                       "<tr><td><b>New Version:&nbsp;&nbsp;</b></td><td>%3</td></tr>"
+                                                       "<tr><td><b>Current Version:&nbsp;&nbsp;</b></td><td>%4</td></tr>"
+                                                       "<tr><td><b>Description:&nbsp;&nbsp;</b></td><td>%5</td></tr>"
+                                                       "</table></p>")
+                                                       .arg(strBelehrung).arg(strPackName).arg(strPackVersionNew)
+                                                       .arg(strPackVersionOld).arg(strPackDescription),
+            QStringList() << QString() /* cancel button text */
+                          << QApplication::translate("UIMessageCenter", "Downgrade", "extension pack") /* ok button text */,
+            true /* ok button by default? */,
+            QString() /* internal name */,
+            QString() /* help keyword */,
+            pParent);
+    else
+        fRc = createBlockingQuestion(
+            strTitle,
+            QApplication::translate("UIMessageCenter", "<p>The extension pack is already installed with the same version, would "
+                                                       "you like reinstall it? "
+                                                       "<p>%1</p>"
+                                                       "<p><table cellpadding=0 cellspacing=5>"
+                                                       "<tr><td><b>Name:&nbsp;&nbsp;</b></td><td>%2</td></tr>"
+                                                       "<tr><td><b>Version:&nbsp;&nbsp;</b></td><td>%3</td></tr>"
+                                                       "<tr><td><b>Description:&nbsp;&nbsp;</b></td><td>%4</td></tr>"
+                                                       "</table></p>")
+                                                       .arg(strBelehrung).arg(strPackName).arg(strPackVersionOld)
+                                                       .arg(strPackDescription),
+            QStringList() << QString() /* cancel button text */
+                          << QApplication::translate("UIMessageCenter", "Reinstall", "extension pack") /* ok button text */,
+            true /* ok button by default? */,
+            QString() /* internal name */,
+            QString() /* help keyword */,
+            pParent);
+    return fRc;
+}
+
+bool UINotificationQuestion::confirmRemoveExtensionPack(const QString &strPackName,
+                                                        QWidget *pParent)
+{
+    return createBlockingQuestion(
+        QApplication::translate("UIMessageCenter", "Remove extension pack?"),
+        QApplication::translate("UIMessageCenter", "<p>You are about to remove the VirtualBox extension pack <b>%1</b>.</p>"
+                                                   "<p>Are you sure you want to proceed?</p>").arg(strPackName),
+        QStringList() << QString() /* cancel button text */
+                      << QApplication::translate("UIMessageCenter", "Remove", "extension pack") /* ok button text */,
+        false /* ok button by default? */,
+        QString() /* internal name */,
+        QString() /* help keyword */,
         pParent);
 }
 

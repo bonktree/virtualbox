@@ -1,4 +1,4 @@
-/* $Id: UIExtensionPackManager.cpp 112403 2026-01-11 19:29:08Z knut.osmundsen@oracle.com $ */
+/* $Id: UIExtensionPackManager.cpp 113175 2026-02-26 12:33:20Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - UIExtensionPackManager class implementation.
  */
@@ -44,7 +44,6 @@
 #include "UIExtraDataManager.h"
 #include "UIGlobalSession.h"
 #include "UIIconPool.h"
-#include "UIMessageCenter.h"
 #include "UINotificationCenter.h"
 #include "UIShortcutPool.h"
 #include "UITranslationEventListener.h"
@@ -249,7 +248,7 @@ void UIExtensionPackManagerWidget::sltUninstallExtensionPack()
         /* Get name of current package: */
         const QString strSelectedPackageName = pItemEP->name();
         /* Ask user about package removing: */
-        if (msgCenter().confirmRemoveExtensionPack(strSelectedPackageName, this))
+        if (UINotificationQuestion::confirmRemoveExtensionPack(strSelectedPackageName, this))
         {
             /* Get VirtualBox for further activities: */
             const CVirtualBox comVBox = gpGlobalSession->virtualBox();
