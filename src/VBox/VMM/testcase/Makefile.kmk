@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 113159 2026-02-25 12:40:41Z knut.osmundsen@oracle.com $
+# $Id: Makefile.kmk 113167 2026-02-26 07:03:38Z knut.osmundsen@oracle.com $
 ## @file
 # Sub-Makefile for the VMM testcases.
 #
@@ -791,8 +791,6 @@ tstVMMR0CallHost-1_SOURCES = \
 tstVMMR0CallHost-1_SOURCES.amd64 = \
 	$(VBOX_PATH_VMM_SRC)/VMMR0/VMMR0JmpA-amd64.asm \
 	$(VBOX_PATH_VMM_SRC)/../Runtime/common/misc/setjmp.asm
-tstVMMR0CallHost-1_SOURCES.x86 = \
-	$(VBOX_PATH_VMM_SRC)/VMMR0/VMMR0JmpA-x86.asm
 
 
 #
