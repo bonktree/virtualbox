@@ -1,4 +1,4 @@
-/* $Id: UIMessageCenter.cpp 113180 2026-02-26 16:01:36Z sergey.dubov@oracle.com $ */
+/* $Id: UIMessageCenter.cpp 113206 2026-03-02 11:30:45Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - UIMessageCenter class implementation.
  */
@@ -488,6 +488,24 @@ void UIMessageCenter::cannotStartRuntime() const
 
     /* Show error: */
     alert(0, MessageType_Error, strError.arg(strTable.arg(strUsage)));
+}
+
+bool UIMessageCenter::cannotRestoreSnapshot(const CMachine &machine, const QString &strSnapshotName, const QString &strMachineName) const
+{
+    error(0, MessageType_Error,
+          tr("Failed to restore the snapshot <b>%1</b> of the virtual machine <b>%2</b>.")
+             .arg(strSnapshotName, strMachineName),
+          UIErrorString::formatErrorInfo(machine));
+    return false;
+}
+
+bool UIMessageCenter::cannotRestoreSnapshot(const CProgress &progress, const QString &strSnapshotName, const QString &strMachineName) const
+{
+    error(0, MessageType_Error,
+          tr("Failed to restore the snapshot <b>%1</b> of the virtual machine <b>%2</b>.")
+             .arg(strSnapshotName, strMachineName),
+          UIErrorString::formatErrorInfo(progress));
+    return false;
 }
 
 void UIMessageCenter::cannotCreateVirtualBoxClient(const CVirtualBoxClient &comClient) const
@@ -1073,24 +1091,6 @@ bool UIMessageCenter::proposeDeleteOldExtentionPacks(const QStringList &strFiles
                           tr("Delete", "extension pack"));
 }
 #endif /* VBOX_GUI_WITH_NETWORK_MANAGER */
-
-bool UIMessageCenter::cannotRestoreSnapshot(const CMachine &machine, const QString &strSnapshotName, const QString &strMachineName) const
-{
-    error(0, MessageType_Error,
-          tr("Failed to restore the snapshot <b>%1</b> of the virtual machine <b>%2</b>.")
-             .arg(strSnapshotName, strMachineName),
-          UIErrorString::formatErrorInfo(machine));
-    return false;
-}
-
-bool UIMessageCenter::cannotRestoreSnapshot(const CProgress &progress, const QString &strSnapshotName, const QString &strMachineName) const
-{
-    error(0, MessageType_Error,
-          tr("Failed to restore the snapshot <b>%1</b> of the virtual machine <b>%2</b>.")
-             .arg(strSnapshotName, strMachineName),
-          UIErrorString::formatErrorInfo(progress));
-    return false;
-}
 
 bool UIMessageCenter::warnAboutNetworkInterfaceNotFound(const QString &strMachineName, const QString &strIfNames) const
 {

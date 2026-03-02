@@ -1,4 +1,4 @@
-/* $Id: UIMessageCenter.h 113180 2026-02-26 16:01:36Z sergey.dubov@oracle.com $ */
+/* $Id: UIMessageCenter.h 113206 2026-03-02 11:30:45Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - UIMessageCenter class declaration.
  */
@@ -261,6 +261,9 @@ public:
 
         void cannotStartSelector() const;
         void cannotStartRuntime() const;
+
+        bool cannotRestoreSnapshot(const CMachine &machine, const QString &strSnapshotName, const QString &strMachineName) const;
+        bool cannotRestoreSnapshot(const CProgress &progress, const QString &strSnapshotName, const QString &strMachineName) const;
     /** @} */
 
     /** @name General COM warnings.
@@ -328,9 +331,6 @@ public:
 
     /** @name Runtime UI warnings.
       * @{ */
-        bool cannotRestoreSnapshot(const CMachine &machine, const QString &strSnapshotName, const QString &strMachineName) const;
-        bool cannotRestoreSnapshot(const CProgress &progress, const QString &strSnapshotName, const QString &strMachineName) const;
-
         bool warnAboutNetworkInterfaceNotFound(const QString &strMachineName, const QString &strIfNames) const;
 
         bool warnAboutGuruMeditation(const QString &strLogFolder);
