@@ -1,4 +1,4 @@
-/* $Id: UINotificationQuestion.h 113207 2026-03-02 11:33:36Z sergey.dubov@oracle.com $ */
+/* $Id: UINotificationQuestion.h 113209 2026-03-02 12:21:07Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - Various UINotificationQuestion declarations.
  */
@@ -39,6 +39,7 @@
 #include "UINotificationObject.h"
 
 /* Forward declarations: */
+class UIMedium;
 class UINotificationCenter;
 
 /** Question related stuff. */
@@ -141,6 +142,21 @@ public:
         /** Confirms removing extension pack. */
         static bool confirmRemoveExtensionPack(const QString &strPackName,
                                                QWidget *pParent);
+    /** @} */
+
+    /** @name VirtualBox Manager / Media Manager warnings.
+      * @{ */
+        /** Confirms medium releasing. */
+        static bool confirmMediumRelease(const UIMedium &guiMedium,
+                                         bool fInduced,
+                                         const QStringList &usage,
+                                         QWidget *pParent);
+        /** Confirms medium removal. */
+        static bool confirmMediumRemoval(const UIMedium &guiMedium,
+                                         QWidget *pParent);
+        /** Confirms hard disk storage destruction. */
+        static int confirmDeleteHardDiskStorage(const QString &strLocation,
+                                                QWidget *pParent);
     /** @} */
 
     /** @name Network Manager warnings.

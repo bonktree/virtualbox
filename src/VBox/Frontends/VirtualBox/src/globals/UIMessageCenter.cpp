@@ -1,4 +1,4 @@
-/* $Id: UIMessageCenter.cpp 113207 2026-03-02 11:33:36Z sergey.dubov@oracle.com $ */
+/* $Id: UIMessageCenter.cpp 113209 2026-03-02 12:21:07Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - UIMessageCenter class implementation.
  */
@@ -799,107 +799,6 @@ int UIMessageCenter::confirmSnapshotRestoring(const QString &strSnapshotName, bo
                    AlertButton_Cancel | AlertButtonOption_Default | AlertButtonOption_Escape,
                    0 /* 3rd button */,
                    tr("Restore"), tr("Cancel"), QString() /* 3rd button text */);
-}
-
-bool UIMessageCenter::confirmMediumRelease(const UIMedium &medium, bool fInduced, QWidget *pParent /* = 0 */) const
-{
-    /* Prepare the usage: */
-    QStringList usage;
-    CVirtualBox vbox = gpGlobalSession->virtualBox();
-    foreach (const QUuid &uMachineID, medium.curStateMachineIds())
-    {
-        CMachine machine = vbox.FindMachine(uMachineID.toString());
-        if (!vbox.isOk() || machine.isNull())
-            continue;
-        usage << machine.GetName();
-    }
-    /* Show the question: */
-    return !fInduced
-           ? questionBinary(pParent, MessageType_Question,
-                            tr("<p>Are you sure you want to release the disk image file <nobr><b>%1</b></nobr>?</p>"
-                               "<p>This will detach it from the following virtual machine(s): <b>%2</b>.</p>")
-                               .arg(medium.location(), usage.join(", ")),
-                            0 /* auto-confirm id */,
-                            tr("Release", "detach medium"))
-           : questionBinary(pParent, MessageType_Question,
-                            tr("<p>The changes you requested require this disk to "
-                               "be released from the machines it is attached to.</p>"
-                               "<p>Are you sure you want to release the disk image file <nobr><b>%1</b></nobr>?</p>"
-                               "<p>This will detach it from the following virtual machine(s): <b>%2</b>.</p>")
-                               .arg(medium.location(), usage.join(", ")),
-                            0 /* auto-confirm id */,
-                            tr("Release", "detach medium"));
-}
-
-bool UIMessageCenter::confirmMediumRemoval(const UIMedium &medium, QWidget *pParent /* = 0*/) const
-{
-    /* Prepare the message: */
-    QString strMessage;
-    switch (medium.type())
-    {
-        case UIMediumDeviceType_HardDisk:
-        {
-            strMessage = tr("<p>Are you sure you want to remove the virtual hard disk "
-                            "<nobr><b>%1</b></nobr> from the list of known disk image files?</p>");
-            /* Compose capabilities flag: */
-            qulonglong caps = 0;
-            QVector<KMediumFormatCapabilities> capabilities;
-            capabilities = medium.medium().GetMediumFormat().GetCapabilities();
-            for (int i = 0; i < capabilities.size(); ++i)
-                caps |= capabilities[i];
-            /* Check capabilities for additional options: */
-            if (caps & KMediumFormatCapabilities_File)
-            {
-                if (medium.state() == KMediumState_Inaccessible)
-                    strMessage += tr("<p>As this hard disk is inaccessible its image file"
-                                     " cannot be deleted.</p>");
-            }
-            break;
-        }
-        case UIMediumDeviceType_DVD:
-        {
-            strMessage = tr("<p>Are you sure you want to remove the virtual optical disk "
-                            "<nobr><b>%1</b></nobr> from the list of known disk image files?</p>");
-            strMessage += tr("<p>Note that the storage unit of this medium will not be "
-                             "deleted and that it will be possible to use it later again.</p>");
-            break;
-        }
-        case UIMediumDeviceType_Floppy:
-        {
-            strMessage = tr("<p>Are you sure you want to remove the virtual floppy disk "
-                            "<nobr><b>%1</b></nobr> from the list of known disk image files?</p>");
-            strMessage += tr("<p>Note that the storage unit of this medium will not be "
-                             "deleted and that it will be possible to use it later again.</p>");
-            break;
-        }
-        default:
-            break;
-    }
-    /* Show the question: */
-    return questionBinary(pParent, MessageType_Question,
-                          strMessage.arg(medium.location()),
-                          0 /* auto-confirm id */,
-                          tr("Remove", "medium") /* ok button text */,
-                          QString() /* cancel button text */,
-                          false /* ok button by default? */);
-}
-
-int UIMessageCenter::confirmDeleteHardDiskStorage(const QString &strLocation, QWidget *pParent /* = 0*/) const
-{
-    return questionTrinary(pParent, MessageType_Question,
-                           tr("<p>Do you want to delete the storage unit of the virtual hard disk "
-                              "<nobr><b>%1</b></nobr>?</p>"
-                              "<p>If you select <b>Delete</b> then the specified storage unit "
-                              "will be permanently deleted. This operation <b>cannot be "
-                              "undone</b>.</p>"
-                              "<p>If you select <b>Keep</b> then the hard disk will be only "
-                              "removed from the list of known hard disks, but the storage unit "
-                              "will be left untouched which makes it possible to add this hard "
-                              "disk to the list later again.</p>")
-                              .arg(strLocation),
-                           0 /* auto-confirm id */,
-                           tr("Delete", "hard disk storage"),
-                           tr("Keep", "hard disk storage"));
 }
 
 bool UIMessageCenter::confirmInaccesibleMediaClear(const QStringList &mediaNameList, UIMediumDeviceType enmType, QWidget *pParent /* = 0 */)

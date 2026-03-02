@@ -1,4 +1,4 @@
-/* $Id: UINotificationQuestion.cpp 113207 2026-03-02 11:33:36Z sergey.dubov@oracle.com $ */
+/* $Id: UINotificationQuestion.cpp 113209 2026-03-02 12:21:07Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - Various UINotificationQuestion implementations.
  */
@@ -29,8 +29,13 @@
 #include <QApplication>
 
 /* GUI includes: */
+#include "UIMedium.h"
 #include "UINotificationCenter.h"
 #include "UINotificationQuestion.h"
+
+/* COM includes: */
+#include "CMediumFormat.h"
+#include "KMediumFormatCapabilities.h"
 
 
 /* static */
@@ -376,6 +381,130 @@ bool UINotificationQuestion::confirmRemoveExtensionPack(const QString &strPackNa
                                                    "<p>Are you sure you want to proceed?</p>").arg(strPackName),
         QStringList() << QString() /* cancel button text */
                       << QApplication::translate("UIMessageCenter", "Remove", "extension pack") /* ok button text */,
+        false /* ok button by default? */,
+        QString() /* internal name */,
+        QString() /* help keyword */,
+        pParent);
+}
+
+/* static */
+bool UINotificationQuestion::confirmMediumRelease(const UIMedium &guiMedium,
+                                                  bool fInduced,
+                                                  const QStringList &usage,
+                                                  QWidget *pParent)
+{
+    /* Show the question: */
+    return !fInduced
+           ? createBlockingQuestion(
+                QApplication::translate("UIMessageCenter", "Release disk image?"),
+                QApplication::translate("UIMessageCenter", "<p>Are you sure you want to release the disk image file "
+                                                           "<nobr><b>%1</b></nobr>?</p><p>This will detach it from the following "
+                                                           "virtual machine(s): <b>%2</b>.</p>")
+                                                           .arg(guiMedium.location(), usage.join(", ")),
+                QStringList() << QString() /* cancel button text */
+                              << QApplication::translate("UIMessageCenter", "Release", "disk image file") /* ok button text */,
+                true /* ok button by default? */,
+                QString() /* internal name */,
+                QString() /* help keyword */,
+                pParent)
+           : createBlockingQuestion(
+                QApplication::translate("UIMessageCenter", "Release disk image?"),
+                QApplication::translate("UIMessageCenter", "<p>The changes you requested require this disk to be released from "
+                                                           "the machines it is attached to.</p><p>Are you sure you want to "
+                                                           "release the disk image file <nobr><b>%1</b></nobr>?</p><p>This will "
+                                                           "detach it from the following virtual machine(s): <b>%2</b>.</p>")
+                                                           .arg(guiMedium.location(), usage.join(", ")),
+                QStringList() << QString() /* cancel button text */
+                              << QApplication::translate("UIMessageCenter", "Release", "disk image file") /* ok button text */,
+                true /* ok button by default? */,
+                QString() /* internal name */,
+                QString() /* help keyword */,
+                pParent);
+}
+
+/* static */
+bool UINotificationQuestion::confirmMediumRemoval(const UIMedium &guiMedium,
+                                                  QWidget *pParent)
+{
+    /* Prepare the message: */
+    QString strHeader;
+    QString strMessage;
+    switch (guiMedium.type())
+    {
+        case UIMediumDeviceType_HardDisk:
+        {
+            strHeader = QApplication::translate("UIMessageCenter", "Remove hard disk?");
+            strMessage = QApplication::translate("UIMessageCenter", "<p>Are you sure you want to remove the virtual hard disk "
+                                                                    "<nobr><b>%1</b></nobr> from the list of known disk image "
+                                                                    "files?</p>");
+            /* Compose capabilities flag: */
+            qulonglong caps = 0;
+            QVector<KMediumFormatCapabilities> capabilities;
+            capabilities = guiMedium.medium().GetMediumFormat().GetCapabilities();
+            for (int i = 0; i < capabilities.size(); ++i)
+                caps |= capabilities[i];
+            /* Check capabilities for additional options: */
+            if (caps & KMediumFormatCapabilities_File)
+            {
+                if (guiMedium.state() == KMediumState_Inaccessible)
+                    strMessage += QApplication::translate("UIMessageCenter", "<p>As this hard disk is inaccessible its image "
+                                                                             "file cannot be deleted.</p>");
+            }
+            break;
+        }
+        case UIMediumDeviceType_DVD:
+        {
+            strHeader = QApplication::translate("UIMessageCenter", "Remove optical disk?");
+            strMessage = QApplication::translate("UIMessageCenter", "<p>Are you sure you want to remove the virtual optical disk "
+                                                                    "<nobr><b>%1</b></nobr> from the list of known disk image "
+                                                                    "files?</p>");
+            strMessage += QApplication::translate("UIMessageCenter", "<p>Note that the storage unit of this medium will not be "
+                                                                     "deleted and that it will be possible to use it later "
+                                                                     "again.</p>");
+            break;
+        }
+        case UIMediumDeviceType_Floppy:
+        {
+            strHeader = QApplication::translate("UIMessageCenter", "Remove floppy disk?");
+            strMessage = QApplication::translate("UIMessageCenter", "<p>Are you sure you want to remove the virtual floppy disk "
+                                                                    "<nobr><b>%1</b></nobr> from the list of known disk image "
+                                                                    "files?</p>");
+            strMessage += QApplication::translate("UIMessageCenter", "<p>Note that the storage unit of this medium will not be "
+                                                                     "deleted and that it will be possible to use it later "
+                                                                     "again.</p>");
+            break;
+        }
+        default:
+            break;
+    }
+    /* Show the question: */
+    return createBlockingQuestion(
+                strHeader,
+                strMessage.arg(guiMedium.location()),
+                QStringList() << QString() /* cancel button text */
+                              << QApplication::translate("UIMessageCenter", "Remove", "disk image file") /* ok button text */,
+                true /* ok button by default? */,
+                QString() /* internal name */,
+                QString() /* help keyword */,
+                pParent);
+}
+
+/* static */
+int UINotificationQuestion::confirmDeleteHardDiskStorage(const QString &strLocation,
+                                                         QWidget *pParent)
+{
+    return createBlockingQuestion(
+        QApplication::translate("UIMessageCenter", "Delete hard disk?"),
+        QApplication::translate("UIMessageCenter", "<p>Do you want to delete the storage unit of the virtual hard disk "
+                                                   "<nobr><b>%1</b></nobr>?</p><p>If you select <b>Delete</b> then the specified "
+                                                   "storage unit will be permanently deleted. This operation <b>cannot be "
+                                                   "undone</b>.</p><p>If you select <b>Keep</b> then the hard disk will be only "
+                                                   "removed from the list of known hard disks, but the storage unit will be left "
+                                                   "untouched which makes it possible to add this hard disk to the list later "
+                                                   "again.</p>").arg(strLocation),
+        QStringList() << QString() /* cancel button text */
+                      << QApplication::translate("UIMessageCenter", "Delete", "hard disk storage") /* ok button text */
+                      << QApplication::translate("UIMessageCenter", "Keep", "hard disk storage") /* yes button text */,
         false /* ok button by default? */,
         QString() /* internal name */,
         QString() /* help keyword */,
