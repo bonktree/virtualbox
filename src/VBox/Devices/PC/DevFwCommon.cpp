@@ -510,7 +510,7 @@ int FwCommonPlantDMITable(PPDMDEVINS pDevIns, uint8_t *pTable, unsigned cbMax, P
             if (fHideErrors) \
             { \
                 LogRel(("One of the DMI strings is too long -- using default DMI data!\n")); \
-                continue; \
+                goto next_pass; \
             } \
             return PDMDevHlpVMSetError(pDevIns, VERR_TOO_MUCH_DATA, RT_SRC_POS, \
                                        N_("One of the DMI strings is too long. Check all bios/Dmi* configuration entries. At least %zu bytes are needed but there is no space for more than %d bytes"), cbNeed, cbMax); \
@@ -529,7 +529,7 @@ int FwCommonPlantDMITable(PPDMDEVINS pDevIns, uint8_t *pTable, unsigned cbMax, P
                 if (fHideErrors) \
                 { \
                     LogRel(("Configuration error: Querying \"" name "\" as a string failed -- using default DMI data!\n")); \
-                    continue; \
+                    goto next_pass; \
                 } \
                 return PDMDevHlpVMSetError(pDevIns, rc, RT_SRC_POS, \
                                            N_("Configuration error: Querying \"" name "\" as a string failed")); \
@@ -576,7 +576,7 @@ int FwCommonPlantDMITable(PPDMDEVINS pDevIns, uint8_t *pTable, unsigned cbMax, P
                 if (fHideErrors) \
                 { \
                     LogRel(("Configuration error: Querying \"" # name "\" as an int failed -- using default DMI data!\n")); \
-                    continue; \
+                    goto next_pass; \
                 } \
                 return PDMDevHlpVMSetError(pDevIns, rc, RT_SRC_POS, \
                                            N_("Configuration error: Querying \"" # name "\" as an int failed")); \
@@ -1026,6 +1026,10 @@ int FwCommonPlantDMITable(PPDMDEVINS pDevIns, uint8_t *pTable, unsigned cbMax, P
 
         /* Success! */
         break;
+
+        /* Try a second pass with default data. */
+next_pass:
+        continue;
     }
 
 #undef DMI_READ_CFG_STR
