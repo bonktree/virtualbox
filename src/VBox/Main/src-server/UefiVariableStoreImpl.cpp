@@ -1,4 +1,4 @@
-/* $Id: UefiVariableStoreImpl.cpp 112403 2026-01-11 19:29:08Z knut.osmundsen@oracle.com $ */
+/* $Id: UefiVariableStoreImpl.cpp 113214 2026-03-03 08:40:28Z alexander.eichner@oracle.com $ */
 /** @file
  * VirtualBox COM NVRAM store class implementation
  */
@@ -550,8 +550,13 @@ HRESULT UefiVariableStore::enrollDefaultMsSignatures(void)
                     hrc = i_uefiVarStoreAddSignatureToDb(&EfiGuidSecurityDb, "db", g_abUefiMicrosoftWinCa, g_cbUefiMicrosoftWinCa,
                                                          GuidMs, SignatureType_X509);
                     if (SUCCEEDED(hrc))
+                    {
                         hrc = i_uefiVarStoreAddSignatureToDb(&EfiGuidSecurityDb, "db", g_abUefiMicrosoftWinCa2023, g_cbUefiMicrosoftWinCa2023,
                                                              GuidMs, SignatureType_X509);
+                        if (SUCCEEDED(hrc))
+                            hrc = i_uefiVarStoreAddSignatureToDb(&EfiGuidSecurityDb, "db", g_abUefiMicrosoftOpRomUefiCa2023, g_cbUefiMicrosoftOpRomUefiCa2023,
+                                                                 GuidMs, SignatureType_X509);
+                    }
                 }
             }
         }

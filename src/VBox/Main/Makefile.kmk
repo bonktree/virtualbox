@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 112403 2026-01-11 19:29:08Z knut.osmundsen@oracle.com $
+# $Id: Makefile.kmk 113214 2026-03-03 08:40:28Z alexander.eichner@oracle.com $
 ## @file
 # Makefile for the VBox Main module.
 #
@@ -448,6 +448,7 @@ if !defined(VBOX_ONLY_SDK) && !defined(VBOX_ONLY_EXTPACKS) # Note this goes on f
  	UefiMicrosoft3rdCa2023=microsoft_uefi_ca_2023.crt \
  	UefiMicrosoftWinCa=MicWinProPCA2011_2011-10-19.crt \
  	UefiMicrosoftWinCa2023=windows_uefi_ca_2023.crt \
+ 	UefiMicrosoftOpRomUefiCa2023=microsoft_option_rom_uefi_ca_2023.crt \
  	UefiOracleDefPk=OrclUefiDefPk2021_2021-09-29.crt
 
  VBOX_SVC_CERT_NAMES := $(foreach cert,$(VBOX_SVC_CERTS),$(firstword $(subst =,$(SP),$(cert))))
