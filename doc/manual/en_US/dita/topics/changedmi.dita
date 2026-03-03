@@ -85,7 +85,15 @@ $ VBoxManage setextradata <varname>VM-name</varname> \
         <pre xml:space="preserve">$ VBoxManage setextradata <varname>VM-name</varname> \
 "VBoxInternal/Devices/pcbios/0/Config/DmiOEMVBoxVer"        "vboxVer_1.2.3"
 $ VBoxManage setextradata <varname>VM-name</varname> \
-"VBoxInternal/Devices/pcbios/0/Config/DmiOEMVBoxRev"        "vboxRev_12345"</pre>
+"VBoxInternal/Devices/pcbios/0/Config/DmiOEMVBoxRev"        "vboxRev_12345"
+$ VBoxManage setextradata <varname>VM-name</varname> \
+"VBoxInternal/Devices/pcbios/0/Config/DmiOEMCustom0"        "string:init:system.hostname=box.example.org"
+$ VBoxManage setextradata <varname>VM-name</varname> \
+"VBoxInternal/Devices/pcbios/0/Config/DmiOEMCustom1"        "string:anaconda:method=http://example.org/oracle/linux/os"
+$ VBoxManage setextradata <varname>VM-name</varname> \
+"VBoxInternal/Devices/pcbios/0/Config/DmiOEMCustom2"        "string:myapp:some extra data"
+$ VBoxManage setextradata <varname>VM-name</varname> \
+"VBoxInternal/Devices/pcbios/0/Config/DmiOEMCustomStrings"        3</pre>
       </li>
     </ul>
     <p>If a DMI string is not set, the default value of <ph conkeyref="vbox-conkeyref-phrases/product-name"/> is used.
@@ -102,6 +110,10 @@ $ VBoxManage setextradata <varname>VM-name</varname> \
     <pre xml:space="preserve">$ dmidecode -t0</pre>
     <p>The DMI system information can be obtained as follows: </p>
     <pre xml:space="preserve">$ dmidecode -t1</pre>
+    <p>DMI OEM strings are also commonly used to pass administrator-defined data, like SSH authorized keys,
+      hostnames or hashed passwords, from the VMM to Linux guests to be applied in a newly created VM clone.
+      On Linux guests, the DMI OEM strings can be obtained with the following command: </p>
+    <pre xml:space="preserve">$ dmidecode -t11</pre>
   </body>
   
 </topic>
