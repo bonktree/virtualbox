@@ -90,14 +90,11 @@ local gzFile gz_open(const void *path, int fd, const char *mode) {
 #ifndef IPRT_NO_CRT                                                                                     /* VBox */
     int oflag = 0;
 #else                                                                                                   /* VBox */
-    uint64_t fOpen;                                                                                     /* VBox */
+    uint64_t fOpen = 0;                                                                                 /* VBox */
     int rc;                                                                                             /* VBox */
 # define O_CLOEXEC                                                                                      /* VBox */
 # define O_EXCL                                                                                         /* VBox */
 #endif                                                                                                  /* VBox */
-#ifdef O_CLOEXEC
-    int cloexec = 0;
-#endif
 #ifdef O_EXCL
     int exclusive = 0;
 #endif
@@ -143,7 +140,11 @@ local gzFile gz_open(const void *path, int fd, const char *mode) {
                 break;
 #ifdef O_CLOEXEC
             case 'e':
+#ifndef IPRT_NO_CRT                                                                                     /* VBox */
                 oflag |= O_CLOEXEC;
+#else                                                                                                   /* VBox */
+                fOpen |= RTFILE_O_INHERIT;                                                              /* VBox */
+#endif                                                                                                  /* VBox */
                 break;
 #endif
 #ifdef O_EXCL
@@ -254,9 +255,8 @@ local gzFile gz_open(const void *path, int fd, const char *mode) {
            O_TRUNC :
            O_APPEND)));
 #else  /* IPRT_NO_CRT */                                                                                /* VBox */
-    fOpen = RTFILE_O_DENY_NONE                                                                          /* VBox */
+    fOpen |= RTFILE_O_DENY_NONE                                                                         /* VBox */
           | (0666 << RTFILE_O_CREATE_MODE_SHIFT)                                                        /* VBox */
-          | (cloexec ? 0 : RTFILE_O_INHERIT)                                                            /* VBox */
           | (state->mode == GZ_READ                                                                     /* VBox */
              ? RTFILE_O_READ | RTFILE_O_OPEN                                                            /* VBox */
              : RTFILE_O_WRITE                                                                           /* VBox */

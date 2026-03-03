@@ -21,7 +21,9 @@ local int gz_load(gz_statep state, unsigned char *buf, unsigned len,
     unsigned get, max = ((unsigned)-1 >> 2) + 1;
 
     state->again = 0;
+#ifndef IPRT_NO_CRT                                                                                     /* VBox */
     errno = 0;
+#endif                                                                                                  /* VBox */
     *have = 0;
     do {
         get = len - *have;
@@ -445,7 +447,11 @@ int ZEXPORT gzread(gzFile file, voidp buf, unsigned len) {
             /* non-blocking input stalled after some input was read, but no
                uncompressed bytes were produced -- let the application know
                this isn't EOF */
+#ifndef IPRT_NO_CRT                                                                                     /* VBox */
             gz_error(state, Z_ERRNO, zstrerror());
+#else                                                                                                   /* VBox */
+            gz_error(state, Z_ERRNO, NULL);                                                             /* VBox */
+#endif                                                                                                  /* VBox */
             return -1;
         }
     }

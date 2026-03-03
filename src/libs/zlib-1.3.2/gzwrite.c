@@ -91,7 +91,9 @@ local int gz_comp(gz_statep state, int flush) {
     /* write directly if requested */
     if (state->direct) {
         while (strm->avail_in) {
+#ifndef IPRT_NO_CRT                                                                                     /* VBox */
             errno = 0;
+#endif                                                                                                  /* VBox */
             state->again = 0;
             put = strm->avail_in > max ? max : strm->avail_in;
 #ifndef IPRT_NO_CRT                                                                                     /* VBox */
@@ -131,7 +133,9 @@ local int gz_comp(gz_statep state, int flush) {
         if (strm->avail_out == 0 || (flush != Z_NO_FLUSH &&
             (flush != Z_FINISH || ret == Z_STREAM_END))) {
             while (strm->next_out > state->x.next) {
+#ifndef IPRT_NO_CRT                                                                                     /* VBox */
                 errno = 0;
+#endif                                                                                                  /* VBox */
                 state->again = 0;
                 put = strm->next_out - state->x.next > (int)max ? max :
                       (unsigned)(strm->next_out - state->x.next);
