@@ -1,4 +1,4 @@
-/* $Id: UefiVariableStoreImpl.cpp 113215 2026-03-03 11:23:33Z alexander.eichner@oracle.com $ */
+/* $Id: UefiVariableStoreImpl.cpp 113239 2026-03-04 08:25:00Z alexander.eichner@oracle.com $ */
 /** @file
  * VirtualBox COM NVRAM store class implementation
  */
@@ -52,6 +52,106 @@
 
 // globals
 ////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * UEFI security database signature entry.
+ */
+typedef struct UEFIVARSECDBENTRY
+{
+    /** The signature type. */
+    SignatureType_T enmSignatureType;
+    /** The owner UUID for the entry. */
+    EFI_GUID        EfiGuidOwner;
+    /** Pointer to the signature data. */
+    const void      *pvSignature;
+    /** Pointer to the size of the signature data. */
+    const unsigned  *pcbSignature;
+} UEFIVARSECDBENTRY;
+/** Pointer to a constant security database entry. */
+typedef const UEFIVARSECDBENTRY *PCUEFIVARSECDBENTRY;
+
+
+/**
+ * UEFI security database.
+ */
+typedef struct UEFIVARSECDB
+{
+    /** The name of the database. */
+    const char          *pszName;
+    /** The database UUID. */
+    EFI_GUID            EfiGuidDb;
+    /** Flag whether the variables are authenticated. */
+    bool                fAuthenticated;
+    /** Number of entries in the database. */
+    uint32_t            cEntries;
+    /** Pointer to the database entries. */
+    PCUEFIVARSECDBENTRY paEntries;
+} UEFIVARSECDB;
+/** Pointer to a constant security database. */
+typedef const UEFIVARSECDB *PCUEFIVARSECDB;
+
+
+/**
+ * Entries for the db/dbDefault databases.
+ */
+static const UEFIVARSECDBENTRY g_aSecDbEntries[]=
+{
+    { SignatureType_X509, EFI_SIGNATURE_OWNER_GUID_MICROSOFT, g_abUefiMicrosoft3rdCa,           &g_cbUefiMicrosoft3rdCa           },
+    { SignatureType_X509, EFI_SIGNATURE_OWNER_GUID_MICROSOFT, g_abUefiMicrosoft3rdCa2023,       &g_cbUefiMicrosoft3rdCa2023       },
+    { SignatureType_X509, EFI_SIGNATURE_OWNER_GUID_MICROSOFT, g_abUefiMicrosoftWinCa,           &g_cbUefiMicrosoftWinCa           },
+    { SignatureType_X509, EFI_SIGNATURE_OWNER_GUID_MICROSOFT, g_abUefiMicrosoftWinCa2023,       &g_cbUefiMicrosoftWinCa2023       },
+    { SignatureType_X509, EFI_SIGNATURE_OWNER_GUID_MICROSOFT, g_abUefiMicrosoftOpRomUefiCa2023, &g_cbUefiMicrosoftOpRomUefiCa2023 },
+};
+
+
+/*
+ * Create a simple dbx database because Windows doesn't seem to create it if it doesn't exist.
+ * There will be only a single entry by default because a variable can't be empty but we also don't
+ * want to automatically reject things which the user might want to run in a VM. The guest or the user
+ * can update the revocation database with the latest updates if required.
+ *
+ * The default value comes from the first LenovoBT.EFI entry from:
+ *     https://github.com/microsoft/secureboot_objects/blob/main/PreSignedObjects/DBX/dbx_info_msft_latest.json
+ *
+ * This will be applied to the arm64 and x86 32-bit NVRAM images as well to keep it simple, even though that is technically
+ * not correct. But it also doesn't hurt.
+ */
+static const uint8_t s_abDbxDefault[] = { 0xf5, 0x2f, 0x83, 0xa3, 0xfa, 0x9c, 0xfb, 0xd6, 0x92, 0x0f, 0x72, 0x28, 0x24, 0xdb, 0xe4, 0x03,
+                                          0x45, 0x34, 0xd2, 0x5b, 0x85, 0x07, 0x24, 0x6b, 0x3b, 0x95, 0x7d, 0xac, 0x6e, 0x1b, 0xce, 0x7a};
+static const unsigned s_cbDbxDefault = sizeof(s_abDbxDefault);
+
+/**
+ * Entries for the dbx/dbxDefault databases.
+ */
+static const UEFIVARSECDBENTRY g_aSecDbxEntries[]=
+{
+    { SignatureType_Sha256, EFI_SIGNATURE_OWNER_GUID_MICROSOFT, s_abDbxDefault, &s_cbDbxDefault },
+};
+
+
+/**
+ * Entries for the KEK/KEKDefault databases.
+ */
+static const UEFIVARSECDBENTRY g_aSecKekEntries[]=
+{
+    { SignatureType_X509, EFI_SIGNATURE_OWNER_GUID_MICROSOFT, g_abUefiMicrosoftKek,     &g_cbUefiMicrosoftKek },
+    { SignatureType_X509, EFI_SIGNATURE_OWNER_GUID_MICROSOFT, g_abUefiMicrosoftKek2023, &g_cbUefiMicrosoftKek2023 },
+};
+
+
+/**
+ * The security databases.
+ */
+static const UEFIVARSECDB g_aSecDbs[] =
+{
+    { "KEK",        EFI_GLOBAL_VARIABLE_GUID,         true,  RT_ELEMENTS(g_aSecKekEntries), &g_aSecKekEntries[0] },
+    { "KEKDefault", EFI_GLOBAL_VARIABLE_GUID,         false, RT_ELEMENTS(g_aSecKekEntries), &g_aSecKekEntries[0] },
+    { "db",         EFI_IMAGE_SECURITY_DATABASE_GUID, true,  RT_ELEMENTS(g_aSecDbEntries),  &g_aSecDbEntries[0]  },
+    { "dbDefault",  EFI_GLOBAL_VARIABLE_GUID,         false, RT_ELEMENTS(g_aSecDbEntries),  &g_aSecDbEntries[0]  },
+    { "dbx",        EFI_IMAGE_SECURITY_DATABASE_GUID, true,  RT_ELEMENTS(g_aSecDbxEntries), &g_aSecDbxEntries[0] },
+    { "dbxDefault", EFI_GLOBAL_VARIABLE_GUID,         false, RT_ELEMENTS(g_aSecDbxEntries), &g_aSecDbxEntries[0] }
+};
+
 
 /////////////////////////////////////////////////////////////////////////////
 // UefiVariableStore::Data structure
@@ -428,6 +528,9 @@ HRESULT UefiVariableStore::enrollOraclePlatformKey(void)
 
     hrc = i_uefiVarStoreAddSignatureToDb(&GuidGlobalVar, "PK", g_abUefiOracleDefPk, g_cbUefiOracleDefPk,
                                          GuidVBox, SignatureType_X509);
+    if (SUCCEEDED(hrc))
+        hrc = i_uefiVarStoreAddSignatureToDb(&GuidGlobalVar, "PKDefault", g_abUefiOracleDefPk, g_cbUefiOracleDefPk,
+                                             GuidVBox, SignatureType_X509);
 
     i_releaseUefiVariableStore();
     return hrc;
@@ -521,65 +624,20 @@ HRESULT UefiVariableStore::enrollDefaultMsSignatures(void)
 
     AutoWriteLock wlock(this COMMA_LOCKVAL_SRC_POS);
 
-    EFI_GUID EfiGuidSecurityDb = EFI_IMAGE_SECURITY_DATABASE_GUID;
-    EFI_GUID EfiGuidGlobalVar  = EFI_GLOBAL_VARIABLE_GUID;
-
-    /** @todo This conversion from EFI GUID -> IPRT UUID -> Com GUID is nuts... */
-    EFI_GUID EfiGuidMs      = EFI_SIGNATURE_OWNER_GUID_MICROSOFT;
-    RTUUID   UuidMs;
-    RTEfiGuidToUuid(&UuidMs, &EfiGuidMs);
-
-    const com::Guid GuidMs(UuidMs);
-
-    hrc = i_uefiVarStoreAddSignatureToDb(&EfiGuidGlobalVar, "KEK", g_abUefiMicrosoftKek, g_cbUefiMicrosoftKek,
-                                         GuidMs, SignatureType_X509);
-    if (SUCCEEDED(hrc))
+    for (uint32_t iDb = 0; iDb < RT_ELEMENTS(g_aSecDbs) && SUCCEEDED(hrc); iDb++)
     {
-        hrc = i_uefiVarStoreAddSignatureToDb(&EfiGuidGlobalVar, "KEK", g_abUefiMicrosoftKek2023, g_cbUefiMicrosoftKek2023,
-                                             GuidMs, SignatureType_X509);
-        if (SUCCEEDED(hrc))
+        PCUEFIVARSECDB pSecDb = &g_aSecDbs[iDb];
+
+        for (uint32_t i = 0; i < pSecDb->cEntries && SUCCEEDED(hrc); i++)
         {
-            hrc = i_uefiVarStoreAddSignatureToDb(&EfiGuidSecurityDb, "db", g_abUefiMicrosoft3rdCa, g_cbUefiMicrosoft3rdCa,
-                                                 GuidMs, SignatureType_X509);
-            if (SUCCEEDED(hrc))
-            {
-                hrc = i_uefiVarStoreAddSignatureToDb(&EfiGuidSecurityDb, "db", g_abUefiMicrosoft3rdCa2023, g_cbUefiMicrosoft3rdCa2023,
-                                                     GuidMs, SignatureType_X509);
-                if (SUCCEEDED(hrc))
-                {
-                    hrc = i_uefiVarStoreAddSignatureToDb(&EfiGuidSecurityDb, "db", g_abUefiMicrosoftWinCa, g_cbUefiMicrosoftWinCa,
-                                                         GuidMs, SignatureType_X509);
-                    if (SUCCEEDED(hrc))
-                    {
-                        hrc = i_uefiVarStoreAddSignatureToDb(&EfiGuidSecurityDb, "db", g_abUefiMicrosoftWinCa2023, g_cbUefiMicrosoftWinCa2023,
-                                                             GuidMs, SignatureType_X509);
-                        if (SUCCEEDED(hrc))
-                        {
-                            hrc = i_uefiVarStoreAddSignatureToDb(&EfiGuidSecurityDb, "db", g_abUefiMicrosoftOpRomUefiCa2023, g_cbUefiMicrosoftOpRomUefiCa2023,
-                                                                 GuidMs, SignatureType_X509);
-                            if (SUCCEEDED(hrc))
-                            {
-                                /*
-                                 * Create a simple dbx database because Windows doesn't seem to create it if it doesn't exist.
-                                 * There will be only a single entry by default because a variable can't be empty but we also don't
-                                 * want to automatically reject things which the user might want to run in a VM. The guest or the user
-                                 * can update the revocation database with the latest updates if required.
-                                 *
-                                 * The default value comes from the first LenovoBT.EFI entry from:
-                                 *     https://github.com/microsoft/secureboot_objects/blob/main/PreSignedObjects/DBX/dbx_info_msft_latest.json
-                                 *
-                                 * This will be applied to the arm64 and x86 32-bit NVRAM images as well to keep it simple, even though that is technically
-                                 * not correct. But it also doesn't hurt.
-                                 */
-                                static const uint8_t s_abDbxDefault[] = { 0xf5, 0x2f, 0x83, 0xa3, 0xfa, 0x9c, 0xfb, 0xd6, 0x92, 0x0f, 0x72, 0x28, 0x24, 0xdb, 0xe4, 0x03,
-                                                                          0x45, 0x34, 0xd2, 0x5b, 0x85, 0x07, 0x24, 0x6b, 0x3b, 0x95, 0x7d, 0xac, 0x6e, 0x1b, 0xce, 0x7a};
-                                hrc = i_uefiVarStoreAddSignatureToDb(&EfiGuidSecurityDb, "dbx", s_abDbxDefault, sizeof(s_abDbxDefault),
-                                                                     GuidMs, SignatureType_Sha256);
-                            }
-                        }
-                    }
-                }
-            }
+            PCUEFIVARSECDBENTRY pEntry = &pSecDb->paEntries[i];
+
+            /** @todo This conversion from EFI GUID -> IPRT UUID -> Com GUID is nuts... */
+            RTUUID UuidOwner;
+            RTEfiGuidToUuid(&UuidOwner, &pEntry->EfiGuidOwner);
+            const com::Guid GuidOwner(UuidOwner);
+            hrc = i_uefiVarStoreAddSignatureToDb(&pSecDb->EfiGuidDb, pSecDb->pszName, pEntry->pvSignature, *pEntry->pcbSignature,
+                                                 GuidOwner, pEntry->enmSignatureType, true /*fRuntime*/, pSecDb->fAuthenticated);
         }
     }
 
@@ -958,7 +1016,8 @@ HRESULT UefiVariableStore::i_uefiSigDbAddSig(RTEFISIGDB hEfiSigDb, const void *p
 
 
 HRESULT UefiVariableStore::i_uefiVarStoreAddSignatureToDb(PCEFI_GUID pGuid, const char *pszDb, const void *pvData, size_t cbData,
-                                                          const com::Guid &aOwnerUuid, SignatureType_T enmSignatureType, bool fRuntime)
+                                                          const com::Guid &aOwnerUuid, SignatureType_T enmSignatureType,
+                                                          bool fRuntime, bool fAuthenticated)
 {
     RTVFSFILE hVfsFileSigDb = NIL_RTVFSFILE;
 
@@ -966,7 +1025,7 @@ HRESULT UefiVariableStore::i_uefiVarStoreAddSignatureToDb(PCEFI_GUID pGuid, cons
                                          EFI_VAR_HEADER_ATTR_NON_VOLATILE
                                        | EFI_VAR_HEADER_ATTR_BOOTSERVICE_ACCESS
                                        | (fRuntime ? EFI_VAR_HEADER_ATTR_RUNTIME_ACCESS : 0)
-                                       | EFI_AUTH_VAR_HEADER_ATTR_TIME_BASED_AUTH_WRITE_ACCESS,
+                                       | (fAuthenticated ? EFI_AUTH_VAR_HEADER_ATTR_TIME_BASED_AUTH_WRITE_ACCESS : 0),
                                        &hVfsFileSigDb);
     if (SUCCEEDED(hrc))
     {
