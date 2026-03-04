@@ -1,4 +1,4 @@
-/* $Id: efivarstorevfs.cpp 112403 2026-01-11 19:29:08Z knut.osmundsen@oracle.com $ */
+/* $Id: efivarstorevfs.cpp 113238 2026-03-04 08:22:33Z alexander.eichner@oracle.com $ */
 /** @file
  * IPRT - Expose a EFI variable store as a Virtual Filesystem.
  */
@@ -826,6 +826,22 @@ static int rtEfiVarStore_Flush(PRTEFIVARSTORE pThis)
     int rc = VINF_SUCCESS;
     uint64_t offCur = pThis->offStoreData;
 
+    /*
+     * First step: Read in all missing data for variables before writing out data again,
+     *             or else data might get overwritten if variable sizes have changed.
+     */
+    for (uint32_t i = 0; i < pThis->cVars && RT_SUCCESS(rc); i++)
+    {
+        PRTEFIVAR pVar = &pThis->paVars[i];
+        if (!pVar->fDeleted)
+            rc = rtEfiVarStore_VarReadData(pVar);
+    }
+    if (RT_FAILURE(rc))
+        return rc;
+
+    /*
+     * Second step: Write all the data out.
+     */
     for (uint32_t i = 0; i < pThis->cVars && RT_SUCCESS(rc); i++)
     {
         PRTUTF16 pwszName = NULL;
@@ -839,44 +855,39 @@ static int rtEfiVarStore_Flush(PRTEFIVARSTORE pThis)
             {
                 cwcLen++; /* Include the terminator. */
 
-                /* Read in the data of the variable if it exists. */
-                rc = rtEfiVarStore_VarReadData(pVar);
+                /* Write out the variable. */
+                EFI_AUTH_VAR_HEADER VarHdr;
+                size_t cbName = cwcLen * sizeof(RTUTF16);
+
+                VarHdr.u16StartId = RT_H2LE_U16(EFI_AUTH_VAR_HEADER_START);
+                VarHdr.bState     = EFI_AUTH_VAR_HEADER_STATE_ADDED;
+                VarHdr.bRsvd      = 0;
+                VarHdr.fAttr      = RT_H2LE_U32(pVar->fAttr);
+                VarHdr.cMonotonic = RT_H2LE_U64(pVar->cMonotonic);
+                VarHdr.idPubKey   = RT_H2LE_U32(pVar->idPubKey);
+                VarHdr.cbName     = RT_H2LE_U32((uint32_t)cbName);
+                VarHdr.cbData     = RT_H2LE_U32(pVar->cbData);
+                RTEfiGuidFromUuid(&VarHdr.GuidVendor, &pVar->Uuid);
+                memcpy(&VarHdr.Timestamp, &pVar->EfiTimestamp, sizeof(pVar->EfiTimestamp));
+
+                rc = RTVfsFileWriteAt(pThis->hVfsBacking, offCur, &VarHdr, sizeof(VarHdr), NULL);
+                if (RT_SUCCESS(rc))
+                    rc = RTVfsFileWriteAt(pThis->hVfsBacking, offCur + sizeof(VarHdr), pwszName, cbName, NULL);
+                if (RT_SUCCESS(rc))
+                    rc = RTVfsFileWriteAt(pThis->hVfsBacking, offCur + sizeof(VarHdr) + cbName, pVar->pvData, pVar->cbData, NULL);
                 if (RT_SUCCESS(rc))
                 {
-                    /* Write out the variable. */
-                    EFI_AUTH_VAR_HEADER VarHdr;
-                    size_t cbName = cwcLen * sizeof(RTUTF16);
-
-                    VarHdr.u16StartId = RT_H2LE_U16(EFI_AUTH_VAR_HEADER_START);
-                    VarHdr.bState     = EFI_AUTH_VAR_HEADER_STATE_ADDED;
-                    VarHdr.bRsvd      = 0;
-                    VarHdr.fAttr      = RT_H2LE_U32(pVar->fAttr);
-                    VarHdr.cMonotonic = RT_H2LE_U64(pVar->cMonotonic);
-                    VarHdr.idPubKey   = RT_H2LE_U32(pVar->idPubKey);
-                    VarHdr.cbName     = RT_H2LE_U32((uint32_t)cbName);
-                    VarHdr.cbData     = RT_H2LE_U32(pVar->cbData);
-                    RTEfiGuidFromUuid(&VarHdr.GuidVendor, &pVar->Uuid);
-                    memcpy(&VarHdr.Timestamp, &pVar->EfiTimestamp, sizeof(pVar->EfiTimestamp));
-
-                    rc = RTVfsFileWriteAt(pThis->hVfsBacking, offCur, &VarHdr, sizeof(VarHdr), NULL);
-                    if (RT_SUCCESS(rc))
-                        rc = RTVfsFileWriteAt(pThis->hVfsBacking, offCur + sizeof(VarHdr), pwszName, cbName, NULL);
-                    if (RT_SUCCESS(rc))
-                        rc = RTVfsFileWriteAt(pThis->hVfsBacking, offCur + sizeof(VarHdr) + cbName, pVar->pvData, pVar->cbData, NULL);
-                    if (RT_SUCCESS(rc))
+                    offCur += sizeof(VarHdr) + cbName + pVar->cbData;
+                    uint64_t offCurAligned = RT_ALIGN_64(offCur, sizeof(uint32_t));
+                    if (offCurAligned > offCur)
                     {
-                        offCur += sizeof(VarHdr) + cbName + pVar->cbData;
-                        uint64_t offCurAligned = RT_ALIGN_64(offCur, sizeof(uint32_t));
-                        if (offCurAligned > offCur)
-                        {
-                            /* Should be at most 3 bytes to align the next variable to a 32bit boundary. */
-                            Assert(offCurAligned - offCur <= 3);
-                            uint8_t abFill[3] = { 0xff };
-                            rc = RTVfsFileWriteAt(pThis->hVfsBacking, offCur, &abFill[0], offCurAligned - offCur, NULL);
-                        }
-
-                        offCur = offCurAligned;
+                        /* Should be at most 3 bytes to align the next variable to a 32bit boundary. */
+                        Assert(offCurAligned - offCur <= 3);
+                        uint8_t abFill[3] = { 0xff };
+                        rc = RTVfsFileWriteAt(pThis->hVfsBacking, offCur, &abFill[0], offCurAligned - offCur, NULL);
                     }
+
+                    offCur = offCurAligned;
                 }
 
                 RTUtf16Free(pwszName);
