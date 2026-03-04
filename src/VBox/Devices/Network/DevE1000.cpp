@@ -1,4 +1,4 @@
-/* $Id: DevE1000.cpp 113249 2026-03-04 12:55:54Z aleksey.ilyushin@oracle.com $ */
+/* $Id: DevE1000.cpp 113250 2026-03-04 13:51:24Z aleksey.ilyushin@oracle.com $ */
 /** @file
  * DevE1000 - Intel 82540EM Ethernet Controller Emulation.
  *
@@ -7721,6 +7721,7 @@ static DECLCALLBACK(void) e1kR3Info(PPDMDEVINS pDevIns, PCDBGFINFOHLP pHlp, cons
     e1kCsLeave(pThis);
 }
 
+#ifdef LOG_ENABLED
 static DECLCALLBACK(void) e1kLog_Printf(PCDBGFINFOHLP pHlp, const char *pszFormat, ...)
 {
     RT_NOREF(pHlp);
@@ -7735,6 +7736,7 @@ static DECLCALLBACK(void) e1kLog_PrintfV(PCDBGFINFOHLP pHlp, const char *pszForm
     RT_NOREF(pHlp);
     RTLogPrintfV(pszFormat, args);
 }
+#endif /* LOG_ENABLED */
 
 /**
  * Dump complete device state to log.
