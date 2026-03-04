@@ -730,7 +730,7 @@ typedef RTCVSYMV3PROC const *PCRTCVSYMV3PROC;
  */
 typedef struct RTCV8SYMBOLSBLOCK
 {
-    /** BLock type (RTCV8SYMBLOCK_TYPE_XXX). */
+    /** Block type (RTCV8SYMBLOCK_TYPE_XXX). */
     uint32_t    uType;
     /** The block length, including this header? */
     uint32_t    cb;

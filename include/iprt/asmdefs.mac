@@ -295,6 +295,24 @@ RT_CONCAT(.seh64_op_label_,seh64_idxOps):
 %endmacro
 
 ;;
+; Sets %1 as frame pointer that's pointing to a stack position %2 relative to %1.
+%macro SEH64_SET_FRAME 2
+ %ifdef RT_ASM_WITH_SEH64
+  [setframe %1, %2]
+
+ %elifdef RT_ASM_WITH_SEH64_ALT
+RT_CONCAT(.seh64_op_label_,seh64_idxOps):
+  %ifdef ASM_FORMAT_PE64
+   SEH64_APPEND_SLOT_PAIR   RT_CONCAT(.seh64_op_label_,seh64_idxOps) - .start_of_prologue, \
+                            SEH64_PE_SET_FPREG | 0 ; vs2019 seems to put the offset in the info field
+   %assign seh64_FrameReg   RT_CONCAT(SEH64_PE_GREG_,%1)
+   %assign seh64_offFrame   %2
+  %endif
+  %assign seh64_idxOps      seh64_idxOps + 1
+ %endif
+%endmacro
+
+;;
 ; Sets xBP as frame pointer that's pointing to a stack position %1 relative to xBP.
 %macro SEH64_SET_FRAME_xBP 1
  %ifdef RT_ASM_WITH_SEH64
@@ -359,7 +377,7 @@ RT_CONCAT(.seh64_op_label_,seh64_idxOps):
    %endif
    %if (%2) <= (65535*8)
     SEH64_APPEND_SLOT_BYTES RT_CONCAT(.seh64_op_label_,seh64_idxOps) - .start_of_prologue, \
-                            SEH64_PE_SAVE_NONVOL | (RT_CONCAT(SEH64_PE_GREG_,%1) << 4),
+                            SEH64_PE_SAVE_NONVOL | (RT_CONCAT(SEH64_PE_GREG_,%1) << 4), \
                             ((%2) / 8) & 0xff, \
                             ((%2) / 8) >> 8
    %else

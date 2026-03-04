@@ -1,4 +1,4 @@
-/* $Id: udf.h 112403 2026-01-11 19:29:08Z knut.osmundsen@oracle.com $ */
+/* $Id: udf.h 113242 2026-03-04 10:49:12Z knut.osmundsen@oracle.com $ */
 /** @file
  * IPRT, Universal Disk Format (UDF).
  */
@@ -1051,7 +1051,7 @@ typedef UDFLOGICALVOLINTEGRITYDESC *PUDFLOGICALVOLINTEGRITYDESC;
 /** Pointer to a const UDF logical volume integrity descriptor.   */
 typedef UDFLOGICALVOLINTEGRITYDESC const *PCUDFLOGICALVOLINTEGRITYDESC;
 
-/** @name UDF_LVID_TYPE_XXX - Integirty types.
+/** @name UDF_LVID_TYPE_XXX - Integrity types.
  * @{ */
 #define UDF_LVID_TYPE_OPEN          UINT32_C(0x00000000)
 #define UDF_LVID_TYPE_CLOSE         UINT32_C(0x00000001)
@@ -2063,7 +2063,7 @@ typedef struct UDFPARTITIONINTEGRITYDESC
     UDFICBTAG       IcbTag;
     /** 0x024: Recording timestamp. */
     UDFTIMESTAMP    RecordingTimestamp;
-    /** 0x030: Interity type (UDF_PARTITION_INTEGRITY_TYPE_XXX). */
+    /** 0x030: Integrity type (UDF_PARTITION_INTEGRITY_TYPE_XXX). */
     uint8_t         bType;
     /** 0x031: Reserved. */
     uint8_t         abReserved[175];

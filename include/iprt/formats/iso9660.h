@@ -1,4 +1,4 @@
-/* $Id: iso9660.h 112403 2026-01-11 19:29:08Z knut.osmundsen@oracle.com $ */
+/* $Id: iso9660.h 113242 2026-03-04 10:49:12Z knut.osmundsen@oracle.com $ */
 /** @file
  * IPRT, ISO 9660 File System
  */
@@ -111,7 +111,7 @@ typedef uint32_t        ISO9660U32BE;
  */
 typedef struct ISO9660TIMESTAMP
 {
-    /** 0x00: For digit year (0001-9999). */
+    /** 0x00: Year (0001-9999). */
     char                achYear[4];
     /** 0x04: Month of the year (01-12). */
     char                achMonth[2];
@@ -1227,7 +1227,7 @@ typedef ISO9660RRIPTF const *PCISO9660RRIPTF;
 #define ISO9660RRIPTF_SIG2     'F'             /**< RRIP child link entry signature byte 2. */
 #define ISO9660RRIPTF_VER       1              /**< RRIP child link entry version number. */
 
-/** @name ISO9660RRIPTF_F_XXX - Timestmap flags.
+/** @name ISO9660RRIPTF_F_XXX - Timestamp flags.
  * @{ */
 #define ISO9660RRIPTF_F_BIRTH           UINT8_C(0x01) /**< Birth (creation) timestamp is recorded. */
 #define ISO9660RRIPTF_F_MODIFY          UINT8_C(0x02) /**< Modification timestamp is recorded. */
