@@ -1,4 +1,4 @@
-/* $Id: DevVGA-SVGA3d-dx-dx11.cpp 112586 2026-01-14 23:38:37Z vitali.pelenjow@oracle.com $ */
+/* $Id: DevVGA-SVGA3d-dx-dx11.cpp 113247 2026-03-04 12:12:24Z vitali.pelenjow@oracle.com $ */
 /** @file
  * DevVMWare - VMWare SVGA device
  */
@@ -208,24 +208,15 @@ typedef struct VMSVGA3DBACKENDSURFACE
     /* Render target views, depth stencil views and shader resource views created for this texture or buffer. */
     RTLISTANCHOR listView;                        /* DXVIEW */
 
-#ifdef DX_NEW_HWSCREEN
     /* Screen targets are blitted to the screen. */
     ID3D11ShaderResourceView *pScreenTargetSRV;        /* Shader resource view with same same format as the texture. */
     bool                      fScreenTargetSRGB;       /* Whether the surface format is one of *_SRGB formats. */
-#endif
 
 } VMSVGA3DBACKENDSURFACE;
 
 
 typedef struct VMSVGAHWSCREEN
 {
-#ifndef DX_NEW_HWSCREEN
-    ID3D11Texture2D            *pTexture;         /* Shared texture for the screen content. Only used as CopyResource target. */
-    IDXGIResource              *pDxgiResource;    /* Interface of the texture. */
-    IDXGIKeyedMutex            *pDXGIKeyedMutex;  /* Synchronization interface for the render device. */
-    HANDLE                      SharedHandle;     /* The shared handle of this structure. */
-    uint32_t                    sidScreenTarget;  /* The source surface for this screen. */
-#else
     uint32_t                    cHwScreenWidth;        /* Width of pScreenTexture. */
     uint32_t                    cHwScreenHeight;       /* Height of pScreenTexture. */
 
@@ -260,7 +251,6 @@ typedef struct VMSVGAHWSCREEN
         SVGASignedRect          rect;                  /* Rectangle to be updated. */
         uint64_t                u64ReadbackFence;      /* Rectangle must be updated if a readback with a greater fence has been completed. */
     } aUpdates[8];                                     /* Usually there is a small number (up to 4) of pending updates. */
-#endif
 } VMSVGAHWSCREEN;
 
 
@@ -2682,10 +2672,8 @@ static UINT dxBindFlags(SVGA3dSurfaceAllFlags surfaceFlags)
     if (surfaceFlags & SVGA3D_SURFACE_BIND_UAVIEW)          BindFlags |= D3D11_BIND_UNORDERED_ACCESS;
     if (surfaceFlags & SVGA3D_SURFACE_RESERVED1)            BindFlags |= D3D11_BIND_DECODER;
 
-#ifdef DX_NEW_HWSCREEN
     /* Screen target texture is used as a shader resource for blitting to the screen. */
     if (surfaceFlags & SVGA3D_SURFACE_SCREENTARGET)         BindFlags |= D3D11_BIND_SHADER_RESOURCE;
-#endif
 
     return BindFlags;
 }
@@ -3219,7 +3207,6 @@ static int vmsvga3dBackSurfaceCreateResource(PVGASTATECC pThisCC, PVMSVGA3DSURFA
                              dxgiFormat, Usage, BindFlags, CPUAccessFlags, MiscFlags,
                              &pBackendSurface->u.pResource, &pBackendSurface->enmResType);
         Assert(SUCCEEDED(hr));
-#ifdef DX_NEW_HWSCREEN
         if (SUCCEEDED(hr))
         {
             /* Screen target texture is used as a shader resource for blitting to the screen. */
@@ -3241,7 +3228,7 @@ static int vmsvga3dBackSurfaceCreateResource(PVGASTATECC pThisCC, PVMSVGA3DSURFA
                 }
             }
         }
-#endif
+
         if (SUCCEEDED(hr))
         {
             LogFunc(("sid = %u\n", pSurface->id));
@@ -3409,95 +3396,6 @@ static DECLCALLBACK(int) vmsvga3dBackTerminate(PVGASTATECC pThisCC)
 }
 
 
-#ifndef DX_NEW_HWSCREEN
-/** @todo Such structures must be in VBoxVideo3D.h */
-typedef struct VBOX3DNOTIFYDEFINESCREEN
-{
-    VBOX3DNOTIFY Core;
-    uint32_t cWidth;
-    uint32_t cHeight;
-    int32_t  xRoot;
-    int32_t  yRoot;
-    uint32_t fPrimary;
-    uint32_t cDpi;
-} VBOX3DNOTIFYDEFINESCREEN;
-
-
-static int vmsvga3dDrvNotifyDefineScreen(PVGASTATECC pThisCC, VMSVGASCREENOBJECT *pScreen)
-{
-    VBOX3DNOTIFYDEFINESCREEN n;
-    n.Core.enmNotification = VBOX3D_NOTIFY_TYPE_HW_SCREEN_CREATED;
-    n.Core.iDisplay        = pScreen->idScreen;
-    n.Core.u32Reserved     = 0;
-    n.Core.cbData          = sizeof(n) - RT_UOFFSETOF(VBOX3DNOTIFY, au8Data);
-    RT_ZERO(n.Core.au8Data);
-    n.cWidth               = pScreen->cWidth;
-    n.cHeight              = pScreen->cHeight;
-    n.xRoot                = pScreen->xOrigin;
-    n.yRoot                = pScreen->yOrigin;
-    n.fPrimary             = RT_BOOL(pScreen->fuScreen & SVGA_SCREEN_IS_PRIMARY);
-    n.cDpi                 = pScreen->cDpi;
-
-    return pThisCC->pDrv->pfn3DNotifyProcess(pThisCC->pDrv, &n.Core);
-}
-
-
-static int vmsvga3dDrvNotifyDestroyScreen(PVGASTATECC pThisCC, VMSVGASCREENOBJECT *pScreen)
-{
-    VBOX3DNOTIFY n;
-    n.enmNotification = VBOX3D_NOTIFY_TYPE_HW_SCREEN_DESTROYED;
-    n.iDisplay        = pScreen->idScreen;
-    n.u32Reserved     = 0;
-    n.cbData          = sizeof(n) - RT_UOFFSETOF(VBOX3DNOTIFY, au8Data);
-    RT_ZERO(n.au8Data);
-
-    return pThisCC->pDrv->pfn3DNotifyProcess(pThisCC->pDrv, &n);
-}
-
-
-static int vmsvga3dDrvNotifyBindSurface(PVGASTATECC pThisCC, VMSVGASCREENOBJECT *pScreen, HANDLE hSharedSurface)
-{
-    VBOX3DNOTIFY n;
-    n.enmNotification = VBOX3D_NOTIFY_TYPE_HW_SCREEN_BIND_SURFACE;
-    n.iDisplay        = pScreen->idScreen;
-    n.u32Reserved     = 0;
-    n.cbData          = sizeof(n) - RT_UOFFSETOF(VBOX3DNOTIFY, au8Data);
-    *(uint64_t *)&n.au8Data[0] = (uint64_t)hSharedSurface;
-
-    return pThisCC->pDrv->pfn3DNotifyProcess(pThisCC->pDrv, &n);
-}
-
-
-typedef struct VBOX3DNOTIFYUPDATE
-{
-    VBOX3DNOTIFY Core;
-    uint32_t x;
-    uint32_t y;
-    uint32_t w;
-    uint32_t h;
-} VBOX3DNOTIFYUPDATE;
-
-
-static int vmsvga3dDrvNotifyUpdate(PVGASTATECC pThisCC, VMSVGASCREENOBJECT *pScreen,
-                                   uint32_t x, uint32_t y, uint32_t w, uint32_t h)
-{
-    VBOX3DNOTIFYUPDATE n;
-    n.Core.enmNotification = VBOX3D_NOTIFY_TYPE_HW_SCREEN_UPDATE_END;
-    n.Core.iDisplay        = pScreen->idScreen;
-    n.Core.u32Reserved     = 0;
-    n.Core.cbData          = sizeof(n) - RT_UOFFSETOF(VBOX3DNOTIFY, au8Data);
-    RT_ZERO(n.Core.au8Data);
-    n.x = x;
-    n.y = y;
-    n.w = w;
-    n.h = h;
-
-    return pThisCC->pDrv->pfn3DNotifyProcess(pThisCC->pDrv, &n.Core);
-}
-#endif /* !DX_NEW_HWSCREEN */
-
-
-#ifdef DX_NEW_HWSCREEN
 #include "shaders/d3d11screen.hlsl.vs.h"
 #include "shaders/d3d11screen.hlsl.ps.h"
 #include "shaders/d3d11screen.hlsl.ps_SRGB.h"
@@ -3526,53 +3424,14 @@ struct HwScreenUpdateVSConstants
     float dstCoordOffsetX;
     float dstCoordOffsetY;
 };
-#endif
 
-#ifndef DX_NEW_HWSCREEN
-static int vmsvga3dHwScreenCreate(PVMSVGA3DSTATE pState, uint32_t cWidth, uint32_t cHeight, VMSVGAHWSCREEN *p)
-#else
 static int vmsvga3dHwScreenCreate(PVMSVGA3DSTATE pState, uint32_t cWidth, uint32_t cHeight, bool fScreenTarget, VMSVGAHWSCREEN *p)
-#endif
 {
     PVMSVGA3DBACKEND pBackend = pState->pBackend;
 
     DXDEVICE *pDXDevice = &pBackend->dxDevice;
     AssertReturn(pDXDevice->pDevice, VERR_INVALID_STATE);
 
-#ifndef DX_NEW_HWSCREEN
-    D3D11_TEXTURE2D_DESC td;
-    RT_ZERO(td);
-    td.Width              = cWidth;
-    td.Height             = cHeight;
-    td.MipLevels          = 1;
-    td.ArraySize          = 1;
-    td.Format             = DXGI_FORMAT_B8G8R8A8_UNORM;
-    td.SampleDesc.Count   = 1;
-    td.SampleDesc.Quality = 0;
-    td.Usage              = D3D11_USAGE_DEFAULT;
-    td.BindFlags          = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
-    td.CPUAccessFlags     = 0;
-    td.MiscFlags          = D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX;
-
-    HRESULT hr = pDXDevice->pDevice->CreateTexture2D(&td, 0, &p->pTexture);
-    if (SUCCEEDED(hr))
-    {
-        /* Get the shared handle. */
-        hr = p->pTexture->QueryInterface(__uuidof(IDXGIResource), (void**)&p->pDxgiResource);
-        if (SUCCEEDED(hr))
-        {
-            hr = p->pDxgiResource->GetSharedHandle(&p->SharedHandle);
-            if (SUCCEEDED(hr))
-                hr = p->pTexture->QueryInterface(__uuidof(IDXGIKeyedMutex), (void**)&p->pDXGIKeyedMutex);
-        }
-    }
-
-    if (SUCCEEDED(hr))
-        return VINF_SUCCESS;
-
-    AssertFailed();
-    return VERR_NOT_SUPPORTED;
-#else /* DX_NEW_HWSCREEN */
     /* Dimensions of the final screen output, optionally with scaling. */
     /** @todo Apply scaling factor: HwWidth = (Width * a) / b. */
     p->cHwScreenWidth = cWidth;
@@ -3762,20 +3621,12 @@ static int vmsvga3dHwScreenCreate(PVMSVGA3DSTATE pState, uint32_t cWidth, uint32
     RT_ZERO(p->aUpdates);
 
     return VINF_SUCCESS;
-#endif /* DX_NEW_HWSCREEN */
 }
 
 
 static void vmsvga3dHwScreenDestroy(PVMSVGA3DSTATE pState, VMSVGAHWSCREEN *p)
 {
     RT_NOREF(pState);
-#ifndef DX_NEW_HWSCREEN
-    D3D_RELEASE(p->pDXGIKeyedMutex);
-    D3D_RELEASE(p->pDxgiResource);
-    D3D_RELEASE(p->pTexture);
-    p->SharedHandle = 0;
-    p->sidScreenTarget = SVGA_ID_INVALID;
-#else /* DX_NEW_HWSCREEN */
     D3D_RELEASE(p->pBlendState);
     D3D_RELEASE(p->pRasterizerState);
     D3D_RELEASE(p->pSamplerState);
@@ -3791,7 +3642,6 @@ static void vmsvga3dHwScreenDestroy(PVMSVGA3DSTATE pState, VMSVGAHWSCREEN *p)
     D3D_RELEASE(p->pStagingTexture);
     D3D_RELEASE(p->pScreenTexture);
     D3D_RELEASE(p->pScreenReadbackQuery);
-#endif /* DX_NEW_HWSCREEN */
 }
 
 
@@ -3812,22 +3662,8 @@ static DECLCALLBACK(int) vmsvga3dBackDefineScreen(PVGASTATE pThis, PVGASTATECC p
     VMSVGAHWSCREEN *p = (VMSVGAHWSCREEN *)RTMemAllocZ(sizeof(VMSVGAHWSCREEN));
     AssertPtrReturn(p, VERR_NO_MEMORY);
 
-#ifndef DX_NEW_HWSCREEN
-    p->sidScreenTarget = SVGA_ID_INVALID;
-
-    int rc = vmsvga3dDrvNotifyDefineScreen(pThisCC, pScreen);
-    if (RT_SUCCESS(rc))
-    {
-        /* The frontend supports the screen. Create the actual resource. */
-        rc = vmsvga3dHwScreenCreate(pState, pScreen->cWidth, pScreen->cHeight, p);
-        if (RT_SUCCESS(rc))
-            LogRel4(("VMSVGA: vmsvga3dBackDefineScreen: created\n"));
-    }
-#else /* DX_NEW_HWSCREEN */
     int rc = vmsvga3dHwScreenCreate(pState, pScreen->cWidth, pScreen->cHeight,
                                     pScreen->offVRAM == VMSVGA_VRAM_OFFSET_SCREEN_TARGET, p);
-#endif /* DX_NEW_HWSCREEN */
-
     if (RT_SUCCESS(rc))
     {
         LogRel(("VMSVGA: Using HW accelerated screen %u\n", pScreen->idScreen));
@@ -3848,10 +3684,6 @@ static DECLCALLBACK(int) vmsvga3dBackDestroyScreen(PVGASTATECC pThisCC, VMSVGASC
 {
     PVMSVGA3DSTATE pState = pThisCC->svga.p3dState;
     AssertReturn(pState, VERR_INVALID_STATE);
-
-#ifndef DX_NEW_HWSCREEN
-    vmsvga3dDrvNotifyDestroyScreen(pThisCC, pScreen);
-#endif
 
     if (pScreen->pHwScreen)
     {
@@ -3941,7 +3773,6 @@ static void dxRestorePipelineState(ID3D11DeviceContext1 *pImmediateContext, DXPI
 }
 
 
-#ifdef DX_NEW_HWSCREEN
 static void dxUpdateScreenBegin(DXDEVICE *pDXDevice, VMSVGAHWSCREEN *pHwScreen,
                                 ID3D11ShaderResourceView *pScreenTargetSrv, bool fScreenTargetSRGB, DXPIPELINESTATE *pSavedState)
 {
@@ -4217,7 +4048,6 @@ static void dxStoreScreenUpdate(PVGASTATECC pThisCC, VMSVGASCREENOBJECT *pScreen
     p->aUpdates[idxUpdate].rect = updateRect;
     ++p->cUpdates;
 }
-#endif /* DX_NEW_HWSCREEN */
 
 
 static DECLCALLBACK(int) vmsvga3dBackSurfaceBlitToScreen(PVGASTATECC pThisCC, VMSVGASCREENOBJECT *pScreen,
@@ -4248,12 +4078,6 @@ static DECLCALLBACK(int) vmsvga3dBackSurfaceBlitToScreen(PVGASTATECC pThisCC, VM
     PVMSVGA3DMIPMAPLEVEL pMipLevel;
     rc = vmsvga3dMipmapLevel(pSurface, srcImage.face, srcImage.mipmap, &pMipLevel);
     ASSERT_GUEST_RETURN(RT_SUCCESS(rc), rc);
-
-#ifndef DX_NEW_HWSCREEN
-    /** @todo Implement. */
-    AssertFailed();
-    return VERR_NOT_IMPLEMENTED;
-#else /* DX_NEW_HWSCREEN */
 
     ID3D11ShaderResourceView *pScreenTargetSrv;
     bool fScreenTargetSRGB;
@@ -4370,11 +4194,9 @@ static DECLCALLBACK(int) vmsvga3dBackSurfaceBlitToScreen(PVGASTATECC pThisCC, VM
     }
 
     return VINF_SUCCESS;
-#endif /* DX_NEW_HWSCREEN */
 }
 
 
-#ifdef DX_NEW_HWSCREEN
 static DECLCALLBACK(void) vmsvga3dBackProcessPendingTasks(PVGASTATE pThis, PVGASTATECC pThisCC)
 {
     PVMSVGA3DSTATE pState = pThisCC->svga.p3dState;
@@ -4403,7 +4225,6 @@ static DECLCALLBACK(void) vmsvga3dBackProcessPendingTasks(PVGASTATE pThis, PVGAS
         pDXQuery->u32QueryFlags &= ~DX_QUERY_F_PENDING;
     }
 }
-#endif /* DX_NEW_HWSCREEN */
 
 
 static DECLCALLBACK(int) vmsvga3dBackSurfaceMap(PVGASTATECC pThisCC, SVGA3dSurfaceImageId const *pImage, SVGA3dBox const *pBox,
@@ -4832,31 +4653,6 @@ static DECLCALLBACK(int) vmsvga3dScreenTargetBind(PVGASTATECC pThisCC, VMSVGASCR
     else
         pSurface = NULL;
 
-#ifndef DX_NEW_HWSCREEN
-    /* Notify the HW accelerated screen if it is used. */
-    VMSVGAHWSCREEN *pHwScreen = pScreen->pHwScreen;
-    if (!pHwScreen)
-        return VINF_SUCCESS;
-
-    /* Same surface -> do nothing. */
-    if (pHwScreen->sidScreenTarget == sid)
-        return VINF_SUCCESS;
-
-    if (sid != SVGA_ID_INVALID)
-    {
-        AssertReturn(   pSurface->pBackendSurface
-                     && pSurface->pBackendSurface->enmResType == VMSVGA3D_RESTYPE_TEXTURE_2D
-                     && RT_BOOL(pSurface->f.surfaceFlags & SVGA3D_SURFACE_SCREENTARGET), VERR_INVALID_PARAMETER);
-
-        HANDLE const hSharedSurface = pHwScreen->SharedHandle;
-        rc = vmsvga3dDrvNotifyBindSurface(pThisCC, pScreen, hSharedSurface);
-    }
-
-    if (RT_SUCCESS(rc))
-    {
-        pHwScreen->sidScreenTarget = sid;
-    }
-#else
     VMSVGAHWSCREEN *pHwScreen = pScreen->pHwScreen;
     if (!pHwScreen)
         return VINF_SUCCESS;
@@ -4871,7 +4667,6 @@ static DECLCALLBACK(int) vmsvga3dScreenTargetBind(PVGASTATECC pThisCC, VMSVGASCR
                      && RT_BOOL(pSurface->f.surfaceFlags & SVGA3D_SURFACE_SCREENTARGET), VERR_INVALID_PARAMETER);
 
     pHwScreen->sidScreenTarget = sid;
-#endif
 
     return rc;
 }
@@ -4910,23 +4705,6 @@ static DECLCALLBACK(int) vmsvga3dScreenTargetUpdate(PVGASTATECC pThisCC, VMSVGAS
     vmsvgaR3Clip3dRect(&boundRect, &clipRect);
     ASSERT_GUEST_RETURN(clipRect.w && clipRect.h, VERR_INVALID_PARAMETER);
 
-#ifndef DX_NEW_HWSCREEN
-    /* Copy the screen texture to the shared surface. */
-    DWORD result = pHwScreen->pDXGIKeyedMutex->AcquireSync(0, 10000);
-    if (result == S_OK)
-    {
-        pBackend->dxDevice.pImmediateContext->CopyResource(pHwScreen->pTexture, pBackendSurface->u.pTexture2D);
-
-        dxDeviceFlush(&pBackend->dxDevice);
-
-        result = pHwScreen->pDXGIKeyedMutex->ReleaseSync(1);
-    }
-    else
-        AssertFailed();
-
-    rc = vmsvga3dDrvNotifyUpdate(pThisCC, pScreen, pRect->x, pRect->y, pRect->w, pRect->h);
-    return rc;
-#else
     DXDEVICE *pDXDevice = dxDeviceGet(pState);
     AssertReturn(pDXDevice->pDevice, VERR_INVALID_STATE);
 
@@ -4959,7 +4737,6 @@ static DECLCALLBACK(int) vmsvga3dScreenTargetUpdate(PVGASTATECC pThisCC, VMSVGAS
     }
 
     return VINF_SUCCESS;
-#endif
 }
 
 
@@ -6118,9 +5895,7 @@ static DECLCALLBACK(void) vmsvga3dBackSurfaceDestroy(PVGASTATECC pThisCC, bool f
         || pBackendSurface->enmResType == VMSVGA3D_RESTYPE_TEXTURE_CUBE
         || pBackendSurface->enmResType == VMSVGA3D_RESTYPE_TEXTURE_3D)
     {
-#ifdef DX_NEW_HWSCREEN
         D3D_RELEASE(pBackendSurface->pScreenTargetSRV);
-#endif
         D3D_RELEASE(pBackendSurface->staging.pResource);
         D3D_RELEASE(pBackendSurface->dynamic.pResource);
         D3D_RELEASE(pBackendSurface->u.pResource);
@@ -13029,11 +12804,7 @@ static DECLCALLBACK(int) vmsvga3dBackQueryInterface(PVGASTATECC pThisCC, char co
                 p->pfnDXDefineQuery               = vmsvga3dBackDXDefineQuery;
                 p->pfnDXDestroyQuery              = vmsvga3dBackDXDestroyQuery;
                 p->pfnDXBeginQuery                = vmsvga3dBackDXBeginQuery;
-#ifdef DX_NEW_HWSCREEN
                 p->pfnDXEndQuery                  = vmsvga3dBackDXEndQuery;
-#else
-                p->pfnDXEndQuery                  = NULL;
-#endif
                 p->pfnDXEndQuerySync              = vmsvga3dBackDXEndQuerySync;
                 p->pfnDXSetPredication            = vmsvga3dBackDXSetPredication;
                 p->pfnDXSetSOTargets              = vmsvga3dBackDXSetSOTargets;
@@ -13227,9 +12998,7 @@ static DECLCALLBACK(int) vmsvga3dBackQueryInterface(PVGASTATECC pThisCC, char co
                 p->pfnSurfaceBlitToScreen      = vmsvga3dBackSurfaceBlitToScreen;
                 p->pfnSurfaceUpdateHeapBuffers = vmsvga3dBackSurfaceUpdateHeapBuffers;
                 p->pfnFlush                    = vmsvga3dBackFlush;
-#ifdef DX_NEW_HWSCREEN
                 p->pfnProcessPendingTasks      = vmsvga3dBackProcessPendingTasks;
-#endif
             }
         }
         else

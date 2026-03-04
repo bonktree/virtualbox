@@ -1,4 +1,4 @@
-/* $Id: DevVGA-SVGA.h 112694 2026-01-26 12:00:56Z knut.osmundsen@oracle.com $ */
+/* $Id: DevVGA-SVGA.h 113247 2026-03-04 12:12:24Z vitali.pelenjow@oracle.com $ */
 /** @file
  * VMware SVGA device
  */
@@ -274,8 +274,6 @@ typedef struct VMSVGAVIEWPORT
 } VMSVGAVIEWPORT;
 
 #ifdef VBOX_WITH_VMSVGA3D
-/// @todo Development define. Remove.
-# define DX_NEW_HWSCREEN
 typedef struct VMSVGAHWSCREEN *PVMSVGAHWSCREEN;
 #endif
 
@@ -300,11 +298,7 @@ typedef struct VMSVGASCREENOBJECT
     int32_t     yOrigin;
     uint32_t    cWidth;
     uint32_t    cHeight;
-#ifndef DX_NEW_HWSCREEN
-    /** Offset of the screen buffer in the guest VRAM. */
-#else
     /** Offset of the screen buffer in the guest VRAM or VMSVGA_VRAM_OFFSET_SCREEN_TARGET. */
-#endif
     uint32_t    offVRAM;
     /** Scanline pitch. */
     uint32_t    cbPitch;

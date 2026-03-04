@@ -1,4 +1,4 @@
-/* $Id: DevVGA-SVGA.cpp 112848 2026-02-05 17:32:11Z vitali.pelenjow@oracle.com $ */
+/* $Id: DevVGA-SVGA.cpp 113247 2026-03-04 12:12:24Z vitali.pelenjow@oracle.com $ */
 /** @file
  * VMware SVGA device.
  *
@@ -933,9 +933,6 @@ static void vmsvgaR3VBVAResize(PVGASTATE pThis, PVGASTATECC pThisCC)
 
             screen.i32OriginX      = pScreen->xOrigin;
             screen.i32OriginY      = pScreen->yOrigin;
-#ifndef DX_NEW_HWSCREEN
-            screen.u32StartOffset  = pScreen->offVRAM;
-#else
             if (pScreen->offVRAM == VMSVGA_VRAM_OFFSET_SCREEN_TARGET)
             {
                 Assert(pScreen->pvScreenBitmap);
@@ -943,7 +940,6 @@ static void vmsvgaR3VBVAResize(PVGASTATE pThis, PVGASTATECC pThisCC)
             }
             else
                 screen.u32StartOffset  = pScreen->offVRAM;
-#endif
             screen.u32LineSize     = pScreen->cbPitch;
             screen.u32Width        = pScreen->cWidth;
             screen.u32Height       = pScreen->cHeight;
@@ -4576,9 +4572,7 @@ static void vmsvgaR3CmdBufProcessBuffers(PPDMDEVINS pDevIns, PVGASTATE pThis, PV
             break;
 
 #ifdef VBOX_WITH_VMSVGA3D
-# ifdef DX_NEW_HWSCREEN
         vmsvga3dProcessPendingTasks(pThis, pThisCC);
-# endif
 #endif
 
         /* See if there is a submitted buffer. */
@@ -5186,18 +5180,13 @@ void vmsvgaR3FifoWatchdogTimer(PPDMDEVINS pDevIns, PVGASTATE pThis, PVGASTATECC 
 {
     /* Caller already checked pThis->svga.fFIFOThreadSleeping, so we only have
        to recheck it before doing the signalling. */
-#ifndef DX_NEW_HWSCREEN
-    if (   (pThis->fVmSvga3 || vmsvgaR3FifoHasWork(pThisCC, ASMAtomicReadU32(&pThis->svga.uLastCursorUpdateCount)))
-        && pThis->svga.fFIFOThreadSleeping
-        && !ASMAtomicReadBool(&pThis->svga.fBadGuest))
-#else
+
     /* Wake up the FIFO/CMD thread on refresh because of periodic tasks:
      * screen update, read a result of a 3D query.
      */
     /// @todo vmsvgaR3FifoThreadHasWork: cmd buffers, FIFO, 3D backend tasks (running queries, screen readback), etc.
     if (   pThis->svga.fFIFOThreadSleeping
         && !ASMAtomicReadBool(&pThis->svga.fBadGuest))
-#endif
     {
         int rc = PDMDevHlpSUPSemEventSignal(pDevIns, pThis->svga.hFIFORequestSem);
         AssertRC(rc);
@@ -6610,14 +6599,13 @@ static int vmsvgaR3LoadExecFifo(PCPDMDEVHLPR3 pHlp, PVGASTATE pThis, PVGASTATECC
                         AssertPtrReturn(pScreen->pvScreenBitmap, VERR_NO_MEMORY);
 
                         pHlp->pfnSSMGetMem(pSSM, pScreen->pvScreenBitmap, u32);
-#ifdef DX_NEW_HWSCREEN
+
                         /* Older versions did not use VMSVGA_VRAM_OFFSET_SCREEN_TARGET to mark screen target
                          * backed screens and offVRAM was 0 for such screens. However these versions always
                          * stored pvScreenBitmap for them. Adjust the value.
                          */
                         if (pScreen->offVRAM == 0)
                             pScreen->offVRAM = VMSVGA_VRAM_OFFSET_SCREEN_TARGET;
-#endif
                     }
                 }
             }

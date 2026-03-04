@@ -1,4 +1,4 @@
-/* $Id: DevVGA-SVGA3d.h 112403 2026-01-11 19:29:08Z knut.osmundsen@oracle.com $ */
+/* $Id: DevVGA-SVGA3d.h 113247 2026-03-04 12:12:24Z vitali.pelenjow@oracle.com $ */
 /** @file
  * DevVMWare - VMWare SVGA device - 3D part.
  */
@@ -140,18 +140,12 @@ int vmsvga3dChangeMode(PVGASTATECC pThisCC);
 int vmsvga3dDefineScreen(PVGASTATE pThis, PVGASTATECC pThisCC, VMSVGASCREENOBJECT *pScreen);
 int vmsvga3dDestroyScreen(PVGASTATECC pThisCC, VMSVGASCREENOBJECT *pScreen);
 
-#ifndef DX_NEW_HWSCREEN
-int vmsvga3dScreenUpdate(PVGASTATECC pThisCC, uint32_t idDstScreen, SVGASignedRect const &dstRect,
-                         SVGA3dSurfaceImageId const &srcImage, SVGASignedRect const &srcRect,
-                         uint32_t cDstClipRects, SVGASignedRect *paDstClipRect);
-#else
 int vmsvga3dScreenUpdateFromSurface(PVGASTATECC pThisCC, VMSVGASCREENOBJECT *pDstScreen, SVGASignedRect const &dstRect,
                                     SVGA3dSurfaceImageId const &srcImage, SVGASignedRect const &srcRect,
                                     uint32_t cDstClipRects, SVGASignedRect *paDstClipRect);
 int vmsvga3dScreenUpdateFromScreenTarget(PVGASTATECC pThisCC, VMSVGASCREENOBJECT *pDstScreen, SVGA3dRect const &rect,
                                          SVGA3dSurfaceImageId const &srcImage);
 void vmsvga3dProcessPendingTasks(PVGASTATE pThis, PVGASTATECC pThisCC);
-#endif
 
 int vmsvga3dSetTransform(PVGASTATECC pThisCC, uint32_t cid, SVGA3dTransformType type, float matrix[16]);
 int vmsvga3dSetZRange(PVGASTATECC pThisCC, uint32_t cid, SVGA3dZRange zRange);
@@ -425,10 +419,8 @@ typedef struct
 
     /* Optional flush method that is called before a screen update. */
     DECLCALLBACKMEMBER(void, pfnFlush,                    (PVGASTATECC pThisCC));
-#ifdef DX_NEW_HWSCREEN
     /* Optional method that is called on refresh timer and processes any pending tasks the backend might have. */
     DECLCALLBACKMEMBER(void, pfnProcessPendingTasks,      (PVGASTATE pThis, PVGASTATECC pThisCC));
-#endif
 } VMSVGA3DBACKENDFUNCS3D;
 
 /* VGPU9 3D */
