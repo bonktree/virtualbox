@@ -1,4 +1,4 @@
-/* $Id: UIMessageCenter.cpp 113268 2026-03-05 13:37:28Z sergey.dubov@oracle.com $ */
+/* $Id: UIMessageCenter.cpp 113269 2026-03-05 13:44:15Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - UIMessageCenter class implementation.
  */
@@ -863,38 +863,6 @@ bool UIMessageCenter::confirmExportMachinesInSaveState(const QStringList &machin
                              .arg(machineNames.join(", ")),
                           0 /* auto-confirm id */,
                           tr("Continue", "agree to export VMs without saved-state"));
-}
-
-bool UIMessageCenter::confirmOverridingFile(const QString &strPath, QWidget *pParent /* = 0*/) const
-{
-    return questionBinary(pParent, MessageType_Question,
-                          tr("A file named <b>%1</b> already exists. "
-                             "Are you sure you want to replace it?<br /><br />"
-                             "Replacing it will overwrite its contents.")
-                             .arg(strPath),
-                          0 /* auto-confirm id */,
-                          QString() /* ok button text */,
-                          QString() /* cancel button text */,
-                          false /* ok button by default? */);
-}
-
-bool UIMessageCenter::confirmOverridingFiles(const QVector<QString> &strPaths, QWidget *pParent /* = 0*/) const
-{
-    /* If it is only one file use the single question versions above: */
-    if (strPaths.size() == 1)
-        return confirmOverridingFile(strPaths.at(0), pParent);
-    else if (strPaths.size() > 1)
-        return questionBinary(pParent, MessageType_Question,
-                              tr("The following files already exist:<br /><br />%1<br /><br />"
-                                 "Are you sure you want to replace them? "
-                                 "Replacing them will overwrite their contents.")
-                                 .arg(QStringList(strPaths.toList()).join("<br />")),
-                              0 /* auto-confirm id */,
-                              QString() /* ok button text */,
-                              QString() /* cancel button text */,
-                              false /* ok button by default? */);
-    else
-        return true;
 }
 
 void UIMessageCenter::cannotCreateMediumStorage(const CVirtualBox &comVBox, const QString &strLocation, QWidget *pParent /* = 0 */) const

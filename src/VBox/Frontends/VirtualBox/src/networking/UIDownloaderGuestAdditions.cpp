@@ -1,4 +1,4 @@
-/* $Id: UIDownloaderGuestAdditions.cpp 113222 2026-03-03 12:39:40Z sergey.dubov@oracle.com $ */
+/* $Id: UIDownloaderGuestAdditions.cpp 113269 2026-03-05 13:44:15Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - UIDownloaderGuestAdditions class implementation.
  */
@@ -36,7 +36,6 @@
 #include "UIDefs.h"
 #include "UIDownloaderGuestAdditions.h"
 #include "UIGlobalSession.h"
-#include "UIMessageCenter.h"
 #include "UIModalWindowManager.h"
 #include "UINetworkReply.h"
 #include "UINotificationMessage.h"
@@ -161,7 +160,7 @@ void UIDownloaderGuestAdditions::handleVerifiedObject(UINetworkReply *pReply)
         if (fTargetFileExists)
         {
             /* We should ask user about file rewriting (or exit otherwise): */
-            if (!msgCenter().confirmOverridingFile(QDir::toNativeSeparators(target())))
+            if (!UINotificationQuestion::confirmOverridingFile(QDir::toNativeSeparators(target())))
                 break;
             /* And remove file if rewriting confirmed: */
             if (QFile::remove(target()))

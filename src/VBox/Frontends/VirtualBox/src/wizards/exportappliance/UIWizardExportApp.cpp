@@ -1,4 +1,4 @@
-/* $Id: UIWizardExportApp.cpp 113267 2026-03-05 10:14:03Z sergey.dubov@oracle.com $ */
+/* $Id: UIWizardExportApp.cpp 113269 2026-03-05 13:44:15Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - UIWizardExportApp class implementation.
  */
@@ -33,7 +33,6 @@
 /* GUI includes: */
 #include "UIAddDiskEncryptionPasswordDialog.h"
 #include "UICloudMachineManager.h"
-#include "UIMessageCenter.h"
 #include "UIModalWindowManager.h"
 #include "UINotificationCenter.h"
 #include "UIWizardExportApp.h"
@@ -163,7 +162,7 @@ bool UIWizardExportApp::exportAppliance()
 
         /* Confirm overwriting for existing files: */
         QVector<QString> exists = comExplorer.Exists(files);
-        if (!msgCenter().confirmOverridingFiles(exists, this))
+        if (!UINotificationQuestion::confirmOverridingFiles(exists, this))
             return false;
 
         /* DELETE all the files which exists after everything is confirmed: */

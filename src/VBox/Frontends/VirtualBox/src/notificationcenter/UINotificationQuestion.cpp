@@ -1,4 +1,4 @@
-/* $Id: UINotificationQuestion.cpp 113265 2026-03-05 08:50:41Z sergey.dubov@oracle.com $ */
+/* $Id: UINotificationQuestion.cpp 113269 2026-03-05 13:44:15Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - Various UINotificationQuestion implementations.
  */
@@ -794,6 +794,41 @@ bool UINotificationQuestion::confirmDeletingOldExtentionPackFiles(const QStringL
                       << QApplication::translate("UIMessageCenter", "Delete", "extension pack") /* ok button text */);
 }
 #endif /* VBOX_GUI_WITH_NETWORK_MANAGER */
+
+/* static */
+bool UINotificationQuestion::confirmOverridingFile(const QString &strPath, QWidget *pParent /* = 0 */)
+{
+    return createBlockingQuestion(
+        QApplication::translate("UIMessageCenter", "Override file?"),
+        QApplication::translate("UIMessageCenter", "A file named <b>%1</b> already exists. Are you sure you want to replace "
+                                                   "it?<br /><br />Replacing it will overwrite its contents.").arg(strPath),
+        QStringList(),
+        false /* ok button by default? */,
+        QString() /* internal name */,
+        QString() /* help keyword */,
+        pParent);
+}
+
+/* static */
+bool UINotificationQuestion::confirmOverridingFiles(const QVector<QString> &strPaths, QWidget *pParent)
+{
+    /* If it is only one file use the single question versions above: */
+    if (strPaths.size() == 1)
+        return confirmOverridingFile(strPaths.at(0), pParent);
+    else if (strPaths.size() > 1)
+        return createBlockingQuestion(
+            QApplication::translate("UIMessageCenter", "Override files?"),
+            QApplication::translate("UIMessageCenter", "The following files already exist:<br /><br />%1<br /><br />Are you sure "
+                                                       "you want to replace them? Replacing them will overwrite their contents.")
+                                                       .arg(QStringList(strPaths.toList()).join("<br />")),
+            QStringList(),
+            false /* ok button by default? */,
+            QString() /* internal name */,
+            QString() /* help keyword */,
+            pParent);
+    else
+        return true;
+}
 
 /* static */
 bool UINotificationQuestion::warnAboutNetworkInterfaceNotFound(const QString &strMachineName, const QString &strIfNames)

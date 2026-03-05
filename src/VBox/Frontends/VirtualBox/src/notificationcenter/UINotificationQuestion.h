@@ -1,4 +1,4 @@
-/* $Id: UINotificationQuestion.h 113265 2026-03-05 08:50:41Z sergey.dubov@oracle.com $ */
+/* $Id: UINotificationQuestion.h 113269 2026-03-05 13:44:15Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - Various UINotificationQuestion declarations.
  */
@@ -220,6 +220,14 @@ public:
         static bool confirmDeletingOldExtentionPackFiles(const QStringList &strFiles);
     /** @} */
 #endif /* VBOX_GUI_WITH_NETWORK_MANAGER */
+
+    /** @name Wizard warnings.
+      * @{ */
+        /** Confirms overriding file. */
+        static bool confirmOverridingFile(const QString &strPath, QWidget *pParent = 0);
+        /** Confirms overriding files. */
+        static bool confirmOverridingFiles(const QVector<QString> &strPaths, QWidget *pParent);
+    /** @} */
 
     /** @name Runtime UI warnings.
       * @{ */
