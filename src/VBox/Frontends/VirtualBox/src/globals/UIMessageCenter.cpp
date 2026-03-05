@@ -1,4 +1,4 @@
-/* $Id: UIMessageCenter.cpp 113227 2026-03-03 14:01:28Z sergey.dubov@oracle.com $ */
+/* $Id: UIMessageCenter.cpp 113265 2026-03-05 08:50:41Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - UIMessageCenter class implementation.
  */
@@ -849,87 +849,6 @@ bool UIMessageCenter::warnAboutGuruMeditation(const QString &strLogFolder)
                           0 /* auto-confirm id */,
                           QIMessageBox::tr("OK"),
                           tr("Ignore"));
-}
-
-bool UIMessageCenter::confirmGoingFullscreen(const QString &strHotKey) const
-{
-    return questionBinary(0, MessageType_Info,
-                          tr("<p>The virtual machine window will be now switched to <b>full-screen</b> mode. "
-                             "You can go back to windowed mode at any time by pressing <b>%1</b>.</p>"
-                             "<p>Note that the <i>Host</i> key is currently defined as <b>%2</b>.</p>"
-                             "<p>Note that the main menu bar is hidden in full-screen mode. "
-                             "You can access it by pressing <b>Host+Home</b>.</p>")
-                             .arg(strHotKey, UIHostCombo::toReadableString(gEDataManager->hostKeyCombination())),
-                          "confirmGoingFullscreen",
-                          tr("Switch"));
-}
-
-bool UIMessageCenter::confirmGoingSeamless(const QString &strHotKey) const
-{
-    return questionBinary(0, MessageType_Info,
-                          tr("<p>The virtual machine window will be now switched to <b>Seamless</b> mode. "
-                             "You can go back to windowed mode at any time by pressing <b>%1</b>.</p>"
-                             "<p>Note that the <i>Host</i> key is currently defined as <b>%2</b>.</p>"
-                             "<p>Note that the main menu bar is hidden in seamless mode. "
-                             "You can access it by pressing <b>Host+Home</b>.</p>")
-                             .arg(strHotKey, UIHostCombo::toReadableString(gEDataManager->hostKeyCombination())),
-                          "confirmGoingSeamless",
-                          tr("Switch"));
-}
-
-bool UIMessageCenter::confirmGoingScale(const QString &strHotKey) const
-{
-    return questionBinary(0, MessageType_Info,
-                          tr("<p>The virtual machine window will be now switched to <b>Scale</b> mode. "
-                             "You can go back to windowed mode at any time by pressing <b>%1</b>.</p>"
-                             "<p>Note that the <i>Host</i> key is currently defined as <b>%2</b>.</p>"
-                             "<p>Note that the main menu bar is hidden in scaled mode. "
-                             "You can access it by pressing <b>Host+Home</b>.</p>")
-                             .arg(strHotKey, UIHostCombo::toReadableString(gEDataManager->hostKeyCombination())),
-                          "confirmGoingScale",
-                          tr("Switch"));
-}
-
-bool UIMessageCenter::cannotEnterFullscreenMode(ULONG /* uWidth */, ULONG /* uHeight */, ULONG /* uBpp */, ULONG64 uMinVRAM) const
-{
-    return questionBinary(0, MessageType_Warning,
-                          tr("<p>Could not switch the guest display to full-screen mode due to insufficient guest video memory.</p>"
-                             "<p>You should configure the virtual machine to have at least <b>%1</b> of video memory.</p>"
-                             "<p>Press <b>Ignore</b> to switch to full-screen mode anyway or press <b>Cancel</b> to cancel the operation.</p>")
-                             .arg(UITranslator::formatSize(uMinVRAM)),
-                          0 /* auto-confirm id */,
-                          tr("Ignore"));
-}
-
-void UIMessageCenter::cannotEnterSeamlessMode(ULONG /* uWidth */, ULONG /* uHeight */, ULONG /* uBpp */, ULONG64 uMinVRAM) const
-{
-    alert(0, MessageType_Error,
-          tr("<p>Could not enter seamless mode due to insufficient guest "
-             "video memory.</p>"
-             "<p>You should configure the virtual machine to have at "
-             "least <b>%1</b> of video memory.</p>")
-             .arg(UITranslator::formatSize(uMinVRAM)));
-}
-
-bool UIMessageCenter::cannotSwitchScreenInFullscreen(quint64 uMinVRAM) const
-{
-    return questionBinary(0, MessageType_Warning,
-                          tr("<p>Could not change the guest screen to this host screen due to insufficient guest video memory.</p>"
-                             "<p>You should configure the virtual machine to have at least <b>%1</b> of video memory.</p>"
-                             "<p>Press <b>Ignore</b> to switch the screen anyway or press <b>Cancel</b> to cancel the operation.</p>")
-                             .arg(UITranslator::formatSize(uMinVRAM)),
-                          0 /* auto-confirm id */,
-                          tr("Ignore"));
-}
-
-void UIMessageCenter::cannotSwitchScreenInSeamless(quint64 uMinVRAM) const
-{
-    alert(0, MessageType_Error,
-          tr("<p>Could not change the guest screen to this host screen "
-             "due to insufficient guest video memory.</p>"
-             "<p>You should configure the virtual machine to have at "
-             "least <b>%1</b> of video memory.</p>")
-             .arg(UITranslator::formatSize(uMinVRAM)));
 }
 
 bool UIMessageCenter::confirmHardDisklessMachine(QWidget *pParent /* = 0*/) const

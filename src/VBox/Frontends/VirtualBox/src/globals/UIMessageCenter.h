@@ -1,4 +1,4 @@
-/* $Id: UIMessageCenter.h 113262 2026-03-04 20:12:57Z sergey.dubov@oracle.com $ */
+/* $Id: UIMessageCenter.h 113265 2026-03-05 08:50:41Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - UIMessageCenter class declaration.
  */
@@ -308,15 +308,6 @@ public:
     /** @name Runtime UI warnings.
       * @{ */
         bool warnAboutGuruMeditation(const QString &strLogFolder);
-
-        bool confirmGoingFullscreen(const QString &strHotKey) const;
-        bool confirmGoingSeamless(const QString &strHotKey) const;
-        bool confirmGoingScale(const QString &strHotKey) const;
-
-        bool cannotEnterFullscreenMode(ULONG uWidth, ULONG uHeight, ULONG uBpp, ULONG64 uMinVRAM) const;
-        void cannotEnterSeamlessMode(ULONG uWidth, ULONG uHeight, ULONG uBpp, ULONG64 uMinVRAM) const;
-        bool cannotSwitchScreenInFullscreen(quint64 uMinVRAM) const;
-        void cannotSwitchScreenInSeamless(quint64 uMinVRAM) const;
     /** @} */
 
     /** @name VirtualBox Manager / Wizard warnings.

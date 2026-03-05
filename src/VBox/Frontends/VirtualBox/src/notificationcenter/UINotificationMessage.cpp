@@ -1,4 +1,4 @@
-/* $Id: UINotificationMessage.cpp 113213 2026-03-03 07:36:58Z sergey.dubov@oracle.com $ */
+/* $Id: UINotificationMessage.cpp 113265 2026-03-05 08:50:41Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - Various UINotificationMessage implementations.
  */
@@ -661,6 +661,28 @@ void UINotificationMessage::showRuntimeError(NotificationType emnNotificationTyp
         default:
             break;
     }
+}
+
+/* static */
+void UINotificationMessage::cannotEnterSeamlessMode(quint64 uMinVRAM)
+{
+    createMessage(
+        QApplication::translate("UIMessageCenter", "Can't enter seamless mode ..."),
+        QApplication::translate("UIMessageCenter", "<p>Could not enter seamless mode due to insufficient guest video memory.</p>"
+                                                   "<p>You should configure the virtual machine to have at least <b>%1</b> of "
+                                                   "video memory.</p>")
+                                                   .arg(UITranslator::formatSize(uMinVRAM)));
+}
+
+/* static */
+void UINotificationMessage::cannotSwitchScreenInSeamless(quint64 uMinVRAM)
+{
+    createMessage(
+        QApplication::translate("UIMessageCenter", "Can't switch to another screen ..."),
+        QApplication::translate("UIMessageCenter", "<p>Could not change the guest screen to this host screen due to insufficient "
+                                                   "guest video memory.</p><p>You should configure the virtual machine to have "
+                                                   "at least <b>%1</b> of video memory.</p>")
+                                                   .arg(UITranslator::formatSize(uMinVRAM)));
 }
 
 /* static */

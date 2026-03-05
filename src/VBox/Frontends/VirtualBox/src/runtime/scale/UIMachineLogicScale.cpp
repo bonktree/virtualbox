@@ -1,4 +1,4 @@
-/* $Id: UIMachineLogicScale.cpp 112954 2026-02-11 14:42:55Z sergey.dubov@oracle.com $ */
+/* $Id: UIMachineLogicScale.cpp 113265 2026-03-05 08:50:41Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - UIMachineLogicScale class implementation.
  */
@@ -36,7 +36,7 @@
 #include "UIMachine.h"
 #include "UIMachineLogicScale.h"
 #include "UIMachineWindow.h"
-#include "UIMessageCenter.h"
+#include "UINotificationQuestion.h"
 #include "UIShortcutPool.h"
 #ifndef VBOX_WS_MAC
 # include "QIMenu.h"
@@ -61,7 +61,7 @@ bool UIMachineLogicScale::checkAvailability()
             gShortcutPool->shortcut(actionPool()->shortcutsExtraDataID(),
                                     actionPool()->action(UIActionIndexRT_M_View_T_Scale)->shortcutExtraDataID());
     const QString strHotKey = QString("Host+%1").arg(shortcut.primaryToPortableText());
-    if (!msgCenter().confirmGoingScale(strHotKey))
+    if (!UINotificationQuestion::confirmGoingScale(strHotKey))
         return false;
 
     return true;

@@ -1,4 +1,4 @@
-/* $Id: UIMultiScreenLayout.cpp 112403 2026-01-11 19:29:08Z knut.osmundsen@oracle.com $ */
+/* $Id: UIMultiScreenLayout.cpp 113265 2026-03-05 08:50:41Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - UIMultiScreenLayout class implementation.
  */
@@ -33,8 +33,9 @@
 #include "UILoggingDefs.h"
 #include "UIMachine.h"
 #include "UIMachineLogic.h"
-#include "UIMessageCenter.h"
 #include "UIMultiScreenLayout.h"
+#include "UINotificationMessage.h"
+#include "UINotificationQuestion.h"
 
 
 UIMultiScreenLayout::UIMultiScreenLayout(UIMachineLogic *pMachineLogic)
@@ -229,9 +230,9 @@ void UIMultiScreenLayout::sltHandleScreenLayoutChange(int iRequestedGuestScreen,
         {
             /* We have too little video memory for the new layout, so say it to the user and revert all the changes: */
             if (machineLogic()->visualStateType() == UIVisualStateType_Seamless)
-                msgCenter().cannotSwitchScreenInSeamless((((uUsedBits + 7) / 8 + _1M - 1) / _1M) * _1M);
+                UINotificationMessage::cannotSwitchScreenInSeamless((((uUsedBits + 7) / 8 + _1M - 1) / _1M) * _1M);
             else
-                fSuccess = msgCenter().cannotSwitchScreenInFullscreen((((uUsedBits + 7) / 8 + _1M - 1) / _1M) * _1M);
+                fSuccess = UINotificationQuestion::confirmSwitchingScreenInFullscreen((((uUsedBits + 7) / 8 + _1M - 1) / _1M) * _1M);
         }
     }
     /* Make sure memory requirements matched: */

@@ -1,4 +1,4 @@
-/* $Id: UINotificationQuestion.cpp 113227 2026-03-03 14:01:28Z sergey.dubov@oracle.com $ */
+/* $Id: UINotificationQuestion.cpp 113265 2026-03-05 08:50:41Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - Various UINotificationQuestion implementations.
  */
@@ -836,6 +836,88 @@ bool UINotificationQuestion::confirmInputCapture(bool &fAutoConfirmed)
                       << QApplication::translate("UIMessageCenter", "Capture", "do input capture") /* ok button text */,
         false /* ok button by default? */,
         "confirmInputCapture" /* internal name */);
+}
+
+/* static */
+bool UINotificationQuestion::confirmGoingFullscreen(const QString &strHotKey)
+{
+    return createBlockingQuestion(
+        QApplication::translate("UIMessageCenter", "Switch to full-screen mode?"),
+        QApplication::translate("UIMessageCenter", "<p>The virtual machine window will be now switched to <b>full-screen</b> "
+                                                   "mode. You can go back to windowed mode at any time by pressing <b>%1</b>.</p>"
+                                                   "<p>Note that the <i>Host</i> key is currently defined as <b>%2</b>.</p>"
+                                                   "<p>Note that the main menu bar is hidden in full-screen mode. You can access "
+                                                   "it by pressing <b>Host+Home</b>.</p>")
+                                                   .arg(strHotKey,
+                                                        UIHostCombo::toReadableString(gEDataManager->hostKeyCombination())),
+        QStringList() << QString() /* cancel button text */
+                      << QApplication::translate("UIMessageCenter", "Switch") /* ok button text */,
+        true /* ok button by default? */,
+        "confirmGoingFullscreen");
+}
+
+/* static */
+bool UINotificationQuestion::confirmGoingSeamless(const QString &strHotKey)
+{
+    return createBlockingQuestion(
+        QApplication::translate("UIMessageCenter", "Switch to seamless mode?"),
+        QApplication::translate("UIMessageCenter", "<p>The virtual machine window will be now switched to <b>Seamless</b> mode. "
+                                                   "You can go back to windowed mode at any time by pressing <b>%1</b>.</p>"
+                                                   "<p>Note that the <i>Host</i> key is currently defined as <b>%2</b>.</p>"
+                                                   "<p>Note that the main menu bar is hidden in seamless mode. You can access it "
+                                                   "by pressing <b>Host+Home</b>.</p>")
+                                                   .arg(strHotKey,
+                                                        UIHostCombo::toReadableString(gEDataManager->hostKeyCombination())),
+        QStringList() << QString() /* cancel button text */
+                      << QApplication::translate("UIMessageCenter", "Switch") /* ok button text */,
+        true /* ok button by default? */,
+        "confirmGoingSeamless");
+}
+
+/* static */
+bool UINotificationQuestion::confirmGoingScale(const QString &strHotKey)
+{
+    return createBlockingQuestion(
+        QApplication::translate("UIMessageCenter", "Switch to scale mode?"),
+        QApplication::translate("UIMessageCenter", "<p>The virtual machine window will be now switched to <b>Scale</b> mode. "
+                                                   "You can go back to windowed mode at any time by pressing <b>%1</b>.</p>"
+                                                   "<p>Note that the <i>Host</i> key is currently defined as <b>%2</b>.</p>"
+                                                   "<p>Note that the main menu bar is hidden in scaled mode. You can access it "
+                                                   "by pressing <b>Host+Home</b>.</p>")
+                                                   .arg(strHotKey,
+                                                        UIHostCombo::toReadableString(gEDataManager->hostKeyCombination())),
+        QStringList() << QString() /* cancel button text */
+                      << QApplication::translate("UIMessageCenter", "Switch") /* ok button text */,
+        true /* ok button by default? */,
+        "confirmGoingScale");
+}
+
+/* static */
+bool UINotificationQuestion::confirmGoingFullscreenAnyway(quint64 uMinVRAM)
+{
+    return createBlockingQuestion(
+        QApplication::translate("UIMessageCenter", "Still switch to full-screen mode?"),
+        QApplication::translate("UIMessageCenter", "<p>Could not switch the guest display to full-screen mode due to "
+                                                   "insufficient guest video memory.</p><p>You should configure the virtual "
+                                                   "machine to have at least <b>%1</b> of video memory.</p><p>Press "
+                                                   "<b>Ignore</b> to switch to full-screen mode anyway or press <b>Cancel</b> to "
+                                                   "cancel the operation.</p>").arg(UITranslator::formatSize(uMinVRAM)),
+        QStringList() << QString() /* cancel button text */
+                      << QApplication::translate("UIMessageCenter", "Ignore") /* ok button text */);
+}
+
+/* static */
+bool UINotificationQuestion::confirmSwitchingScreenInFullscreen(quint64 uMinVRAM)
+{
+    return createBlockingQuestion(
+        QApplication::translate("UIMessageCenter", "Still switch to another screen?"),
+        QApplication::translate("UIMessageCenter", "<p>Could not change the guest screen to this host screen due to insufficient "
+                                                   "guest video memory.</p><p>You should configure the virtual machine to have "
+                                                   "at least <b>%1</b> of video memory.</p><p>Press <b>Ignore</b> to switch the "
+                                                   "screen anyway or press <b>Cancel</b> to cancel the operation.</p>")
+                                                   .arg(UITranslator::formatSize(uMinVRAM)),
+        QStringList() << QString() /* cancel button text */
+                      << QApplication::translate("UIMessageCenter", "Ignore") /* ok button text */);
 }
 
 UINotificationQuestion::UINotificationQuestion(const QString &strName,

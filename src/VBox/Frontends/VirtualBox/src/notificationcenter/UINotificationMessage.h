@@ -1,4 +1,4 @@
-/* $Id: UINotificationMessage.h 113213 2026-03-03 07:36:58Z sergey.dubov@oracle.com $ */
+/* $Id: UINotificationMessage.h 113265 2026-03-05 08:50:41Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - Various UINotificationMessage declarations.
  */
@@ -291,6 +291,13 @@ public:
         static void showRuntimeError(NotificationType enmType,
                                      const QString &strErrorId,
                                      const QString &strErrorMsg);
+
+        /** Notifies about inability to enter seamless mode.
+          * @param  uMinVRAM  Brings the minimum VRAM amount required. */
+        static void cannotEnterSeamlessMode(quint64 uMinVRAM);
+        /** Notifies about inability to switch screen in seamless mode.
+          * @param  uMinVRAM  Brings the minimum VRAM amount required. */
+        static void cannotSwitchScreenInSeamless(quint64 uMinVRAM);
 
         /** Notifies about inability to mount image.
           * @param  strMachineName  Brings the machine name.

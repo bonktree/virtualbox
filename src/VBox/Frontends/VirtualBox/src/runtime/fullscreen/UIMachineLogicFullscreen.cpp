@@ -1,4 +1,4 @@
-/* $Id: UIMachineLogicFullscreen.cpp 112954 2026-02-11 14:42:55Z sergey.dubov@oracle.com $ */
+/* $Id: UIMachineLogicFullscreen.cpp 113265 2026-03-05 08:50:41Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - UIMachineLogicFullscreen class implementation.
  */
@@ -38,8 +38,8 @@
 #include "UIMachineLogicFullscreen.h"
 #include "UIMachineView.h"
 #include "UIMachineWindowFullscreen.h"
-#include "UIMessageCenter.h"
 #include "UIMultiScreenLayout.h"
+#include "UINotificationQuestion.h"
 #include "UIShortcutPool.h"
 #ifdef VBOX_WS_MAC
 # include "UICocoaApplication.h"
@@ -89,7 +89,7 @@ bool UIMachineLogicFullscreen::checkAvailability()
         quint64 uUsedBits = m_pScreenLayout->memoryRequirements();
         if (uAvailBits < uUsedBits)
         {
-            if (!msgCenter().cannotEnterFullscreenMode(0, 0, 0, (((uUsedBits + 7) / 8 + _1M - 1) / _1M) * _1M))
+            if (!UINotificationQuestion::confirmGoingFullscreenAnyway((((uUsedBits + 7) / 8 + _1M - 1) / _1M) * _1M))
                 return false;
         }
     }
@@ -99,7 +99,7 @@ bool UIMachineLogicFullscreen::checkAvailability()
             gShortcutPool->shortcut(actionPool()->shortcutsExtraDataID(),
                                     actionPool()->action(UIActionIndexRT_M_View_T_Fullscreen)->shortcutExtraDataID());
     const QString strHotKey = QString("Host+%1").arg(shortcut.primaryToPortableText());
-    if (!msgCenter().confirmGoingFullscreen(strHotKey))
+    if (!UINotificationQuestion::confirmGoingFullscreen(strHotKey))
         return false;
 
     return true;

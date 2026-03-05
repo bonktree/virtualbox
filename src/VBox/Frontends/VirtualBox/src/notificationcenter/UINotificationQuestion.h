@@ -1,4 +1,4 @@
-/* $Id: UINotificationQuestion.h 113227 2026-03-03 14:01:28Z sergey.dubov@oracle.com $ */
+/* $Id: UINotificationQuestion.h 113265 2026-03-05 08:50:41Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - Various UINotificationQuestion declarations.
  */
@@ -228,6 +228,20 @@ public:
 
         /** Confirms capturing keyboard/mouse input. */
         static bool confirmInputCapture(bool &fAutoConfirmed);
+
+        /** Confirms going full-screen mode. */
+        static bool confirmGoingFullscreen(const QString &strHotKey);
+        /** Confirms going seamless mode. */
+        static bool confirmGoingSeamless(const QString &strHotKey);
+        /** Confirms going scale mode. */
+        static bool confirmGoingScale(const QString &strHotKey);
+
+        /** Confirms going full-screen mode anyway.
+          * @param  uMinVRAM  Brings the minimum VRAM amount required. */
+        static bool confirmGoingFullscreenAnyway(quint64 uMinVRAM);
+        /** Confirms switching full-screen mode.
+          * @param  uMinVRAM  Brings the minimum VRAM amount required. */
+        static bool confirmSwitchingScreenInFullscreen(quint64 uMinVRAM);
     /** @} */
 
 protected:
