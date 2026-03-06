@@ -1,4 +1,4 @@
-/* $Id: UIMessageCenter.h 113272 2026-03-05 16:06:54Z sergey.dubov@oracle.com $ */
+/* $Id: UIMessageCenter.h 113274 2026-03-06 15:28:08Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - UIMessageCenter class declaration.
  */
@@ -307,11 +307,6 @@ public:
     /** @name Runtime UI warnings.
       * @{ */
         bool warnAboutGuruMeditation(const QString &strLogFolder);
-    /** @} */
-
-    /** @name VirtualBox Manager / FD Creation Dialog warnings.
-      * @{ */
-        void cannotCreateMediumStorage(const CVirtualBox &comVBox, const QString &strLocation, QWidget *pParent = 0) const;
     /** @} */
 
 public slots:

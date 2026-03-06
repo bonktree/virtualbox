@@ -1,4 +1,4 @@
-/* $Id: UIMessageCenter.cpp 113272 2026-03-05 16:06:54Z sergey.dubov@oracle.com $ */
+/* $Id: UIMessageCenter.cpp 113274 2026-03-06 15:28:08Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - UIMessageCenter class implementation.
  */
@@ -836,14 +836,6 @@ bool UIMessageCenter::warnAboutGuruMeditation(const QString &strLogFolder)
                           0 /* auto-confirm id */,
                           QIMessageBox::tr("OK"),
                           tr("Ignore"));
-}
-
-void UIMessageCenter::cannotCreateMediumStorage(const CVirtualBox &comVBox, const QString &strLocation, QWidget *pParent /* = 0 */) const
-{
-    error(pParent, MessageType_Error,
-          tr("Failed to create the virtual disk image storage <nobr><b>%1</b>.</nobr>")
-             .arg(strLocation),
-          UIErrorString::formatErrorInfo(comVBox));
 }
 
 void UIMessageCenter::sltShowHelpWebDialog()
