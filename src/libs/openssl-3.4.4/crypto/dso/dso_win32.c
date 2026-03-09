@@ -123,7 +123,11 @@ static int win32_load(DSO *dso)
         ERR_raise(ERR_LIB_DSO, DSO_R_NO_FILENAME);
         goto err;
     }
+#ifdef VBOX
     h = loadSystemDll(filename);
+#else
+    h = LoadLibraryA(filename);
+#endif
     if (h == NULL) {
         ERR_raise_data(ERR_LIB_DSO, DSO_R_LOAD_FAILED,
             "filename(%s)", filename);
@@ -620,7 +624,11 @@ static void *win32_globallookup(const char *name)
         FARPROC f;
     } ret = { NULL };
 
+#ifdef VBOX
     dll = loadSystemDll(TEXT(DLLNAME));
+#else
+    dll = LoadLibrary(TEXT(DLLNAME));
+#endif
     if (dll == NULL) {
         ERR_raise(ERR_LIB_DSO, DSO_R_UNSUPPORTED);
         return NULL;
