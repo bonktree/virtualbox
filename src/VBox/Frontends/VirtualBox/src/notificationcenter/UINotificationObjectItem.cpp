@@ -1,4 +1,4 @@
-/* $Id: UINotificationObjectItem.cpp 113228 2026-03-03 14:46:16Z sergey.dubov@oracle.com $ */
+/* $Id: UINotificationObjectItem.cpp 113287 2026-03-09 09:15:00Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - UINotificationObjectItem class implementation.
  */
@@ -42,6 +42,7 @@
 #include "QIToolButton.h"
 #include "UIHelpBrowserDialog.h"
 #include "UIIconPool.h"
+#include "UINotificationMessage.h"
 #include "UINotificationObject.h"
 #include "UINotificationObjectItem.h"
 #include "UINotificationQuestion.h"
@@ -124,6 +125,14 @@ int UINotificationObjectItem::detailsWidthHint() const
 
     /* Otherwise return actual details width hint adjusted for margins: */
     return m_pLabelDetails->minimumTextWidth() + iL + iR;
+}
+
+void UINotificationObjectItem::sltRetranslateUI()
+{
+    if (m_pButtonClose)
+        m_pButtonClose->setToolTip(QApplication::translate("UIMessageCenter", "Close"));
+    if (m_pButtonForget)
+        m_pButtonForget->setText(QApplication::translate("UIMessageCenter", "Don't show again"));
 }
 
 void UINotificationObjectItem::prepareWidgets()
@@ -314,17 +323,25 @@ void UINotificationObjectItem::paintEvent(QPaintEvent *pPaintEvent)
     }
 }
 
-void UINotificationObjectItem::sltRetranslateUI()
-{
-    if (m_pButtonClose)
-        m_pButtonClose->setToolTip(QApplication::translate("UIMessageCenter", "Close"));
-    if (m_pButtonForget)
-        m_pButtonForget->setText(QApplication::translate("UIMessageCenter", "Don't show again"));
-}
-
 void UINotificationObjectItem::sltHandleHelpRequest()
 {
     UIHelpBrowserDialog::findManualFileAndShow("helpkeyword");
+}
+
+
+/*********************************************************************************************************************************
+*   Class UINotificationMessageItem implementation.                                                                              *
+*********************************************************************************************************************************/
+
+UINotificationMessageItem::UINotificationMessageItem(QWidget *pParent,
+                                                     UINotificationObject *pObject)
+    : UINotificationObjectItem(pParent, pObject)
+{
+}
+
+UINotificationMessage *UINotificationMessageItem::message() const
+{
+    return qobject_cast<UINotificationMessage*>(m_pObject);
 }
 
 
@@ -733,7 +750,9 @@ UINotificationObjectItem *UINotificationItem::create(QWidget *pParent,
     UINotificationObjectItem *pItem = 0;
 
     /* Handle known types: */
-    if (pObject->inherits("UINotificationQuestion"))
+    if (pObject->inherits("UINotificationMessage"))
+        pItem = new UINotificationMessageItem(pParent, pObject);
+    else if (pObject->inherits("UINotificationQuestion"))
         pItem = new UINotificationQuestionItem(pParent, pObject);
     else if (pObject->inherits("UINotificationProgress"))
         pItem = new UINotificationProgressItem(pParent, pObject);

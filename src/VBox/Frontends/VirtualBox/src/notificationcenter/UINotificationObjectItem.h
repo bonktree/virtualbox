@@ -1,4 +1,4 @@
-/* $Id: UINotificationObjectItem.h 113228 2026-03-03 14:46:16Z sergey.dubov@oracle.com $ */
+/* $Id: UINotificationObjectItem.h 113287 2026-03-09 09:15:00Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - UINotificationObjectItem class declaration.
  */
@@ -47,6 +47,7 @@ class QVBoxLayout;
 class QIDialogButtonBox;
 class QIRichTextLabel;
 class QIToolButton;
+class UINotificationMessage;
 class UINotificationObject;
 class UINotificationProgress;
 class UINotificationQuestion;
@@ -78,6 +79,11 @@ public:
     void setDetailsWidthHint(int iHint);
     /** Returns details label width hint. */
     int detailsWidthHint() const;
+
+protected slots:
+
+    /** Handles translation event. */
+    virtual void sltRetranslateUI();
 
 protected:
 
@@ -122,11 +128,26 @@ protected:
 
 private slots:
 
-    /** Handles translation event. */
-    void sltRetranslateUI();
-
     /** Handles help request. */
     void sltHandleHelpRequest();
+};
+
+/** UINotificationObjectItem extension for notification-message. */
+class UINotificationMessageItem : public UINotificationObjectItem
+{
+    Q_OBJECT;
+
+public:
+
+    /** Constructs notification-message item, passing @a pParent to the base-class.
+      * @param  pObject  Brings the notification-object this item created for. */
+    UINotificationMessageItem(QWidget *pParent,
+                              UINotificationObject *pObject);
+
+private:
+
+    /** Holds the notification-message this item created for. */
+    UINotificationMessage *message() const;
 };
 
 /** UINotificationObjectItem extension for notification-question. */
