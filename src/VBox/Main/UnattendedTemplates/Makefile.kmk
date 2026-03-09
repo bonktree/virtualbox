@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 112403 2026-01-11 19:29:08Z knut.osmundsen@oracle.com $
+# $Id: Makefile.kmk 113286 2026-03-09 09:10:58Z serkan.bayraktar@oracle.com $
 ## @file
 # Top-level makefile for src/VBox/Main/UnattendedTemplates.
 #
@@ -54,6 +54,7 @@ ifdef VBOX_WITH_UNATTENDED
  	win_nt6_unattended.xml \
  	\
  	debian_postinstall.sh \
+ 	ubuntu_postinstall.sh \
  	redhat_postinstall.sh \
  	ol_postinstall.sh \
  	os2_cid_install.cmd \

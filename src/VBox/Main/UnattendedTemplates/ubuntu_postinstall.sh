@@ -1,6 +1,6 @@
 #!/bin/bash
 ## @file
-# Post installation script template for debian-like distros.
+# Post installation script template for Ubuntus.
 #
 # Note! This script expects to be running w/o chroot.
 # Note! When using ubiquity, this is run after installation logs have
@@ -8,7 +8,7 @@
 #
 
 #
-# Copyright (C) 2017-2026 Oracle and/or its affiliates.
+# Copyright (C) 2017-2025 Oracle and/or its affiliates.
 #
 # This file is part of VirtualBox base platform packages, as
 # available from https://www.virtualbox.org.
@@ -209,89 +209,19 @@ if [ "${MY_DEBUG}" = "yes" ]; then
     MY_EXITCODE=0
 fi
 
+
 #
 # GAs
 #
 @@VBOX_COND_IS_INSTALLING_ADDITIONS@@
-@@VBOX_COND_AVOID_UPDATES_OVER_NETWORK@@
 #
-# Offline APT setup (Debian-only) with diagnostics.
+# Packages needed for GAs.
 #
-echo "--------------------------------------------------" >> "${MY_LOGFILE}"
-echo '** Configuring offline APT repo from /cdrom (Debian) ...' | tee -a "${MY_LOGFILE}"
-log_command_in_target /bin/sh -c '
-set -u
-
-echo "=== DIAG: /etc/os-release (target) ==="
-if [ -r /etc/os-release ]; then
-  sed -n "1,200p" /etc/os-release
-else
-  echo "ERROR: /etc/os-release not readable"
-  exit 1
-fi
-
-# Load os-release variables (ID, VERSION_CODENAME, etc.)
-. /etc/os-release
-
-echo "=== DIAG: parsed os-release variables ==="
-echo "ID=${ID-}"
-echo "VERSION_ID=${VERSION_ID-}"
-echo "VERSION_CODENAME=${VERSION_CODENAME-}"
-
-# Debian-only guard (optional but useful to fail loudly if misused)
-if [ "${ID-}" != "debian" ]; then
-  echo "ERROR: This offline APT setup is Debian-only. ID=${ID-}"
-  exit 1
-fi
-
-suite="${VERSION_CODENAME:-}"
-echo "=== DIAG: chosen suite/codename ==="
-echo "suite=${suite}"
-
-if [ -z "$suite" ]; then
-  echo "ERROR: VERSION_CODENAME is empty; cannot determine Debian suite."
-  exit 1
-fi
-
-echo "=== DIAG: /cdrom mount + basic layout ==="
-mount | grep -E " /cdrom " || echo "WARNING: /cdrom not shown in mount output"
-ls -ld /cdrom || true
-ls -ld "/cdrom/dists" || true
-ls -ld "/cdrom/dists/$suite" || true
-ls -l "/cdrom/dists/$suite/Release" 2>&1 || true
-ls -l "/cdrom/dists/$suite/InRelease" 2>&1 || true
-
-# Hard fail if the expected distro directory is missing (prevents silent misconfig)
-if [ ! -d "/cdrom/dists/$suite" ]; then
-  echo "ERROR: /cdrom/dists/$suite does not exist. Cannot use file:/cdrom for suite=$suite"
-  echo "ERROR: Available under /cdrom/dists:"
-  ls -l /cdrom/dists 2>&1 || true
-  exit 1
-fi
-
-echo "=== DIAG: reset APT state ==="
-rm -rf /var/lib/apt/lists/* 2>&1 || true
-apt-get clean 2>&1 || true
-
-echo "=== DIAG: writing /etc/apt/sources.list ==="
-cat > /etc/apt/sources.list <<EOF
-deb [trusted=yes] file:/cdrom ${suite} main contrib non-free non-free-firmware
-EOF
-
-echo "=== DIAG: resulting /etc/apt/sources.list ==="
-cat /etc/apt/sources.list
-
-echo "=== DIAG: apt-get update (offline file:/cdrom) ==="
-apt-get -o Acquire::Languages=none update 2>&1
-
-echo "=== DIAG: apt-cache policy (sanity) ==="
-apt-cache policy linux-headers-amd64 2>&1 || true
-apt-cache policy build-essential 2>&1 || true
-'
 echo "--------------------------------------------------" >> "${MY_LOGFILE}"
 echo '** Installing packages for building kernel modules...' | tee -a "${MY_LOGFILE}"
-log_command_in_target apt-get -y install build-essential linux-headers-amd64
-@@VBOX_COND_END@@
+log_command_in_target apt-get -y install build-essential
+log_command_in_target apt-get -y install linux-headers-$(uname -r)
+
 echo "--------------------------------------------------" >> "${MY_LOGFILE}"
 echo '** Installing VirtualBox Guest Additions...' | tee -a "${MY_LOGFILE}"
 MY_IGNORE_EXITCODE=2  # returned if modules already loaded and reboot required.
@@ -299,7 +229,6 @@ log_command_in_target /bin/bash "${MY_CHROOT_CDROM}/vboxadditions/@@VBOX_INSERT_
 log_command_in_target /bin/bash -c "udevadm control --reload-rules" # GAs doesn't yet do this.
 log_command_in_target /bin/bash -c "udevadm trigger"                 # (ditto)
 MY_IGNORE_EXITCODE=
-log_command_in_target groupadd --force --system vboxsf
 log_command_in_target usermod -a -G vboxsf "@@VBOX_INSERT_USER_LOGIN@@"
 @@VBOX_COND_END@@
 
@@ -404,3 +333,4 @@ echo "** Final exit code: ${MY_EXITCODE}" >> "${MY_LOGFILE}"
 echo "******************************************************************************" >> "${MY_LOGFILE}"
 
 exit ${MY_EXITCODE}
+
