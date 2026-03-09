@@ -2,15 +2,261 @@ default	rel
 %define XMMWORD
 %define YMMWORD
 %define ZMMWORD
+;; For concatenation.
+%define SEH64_CONCAT(a,b) a %+ b
+
+%ifndef __YASM_MAJOR__
+ ;; @name Register numbers.
+ ;; @{
+ %define SEH64_PE_GREG_rax     0
+ %define SEH64_PE_GREG_rcx     1
+ %define SEH64_PE_GREG_rdx     2
+ %define SEH64_PE_GREG_rbx     3
+ %define SEH64_PE_GREG_rsp     4
+ %define SEH64_PE_GREG_rbp     5
+ %define SEH64_PE_GREG_rsi     6
+ %define SEH64_PE_GREG_rdi     7
+ %define SEH64_PE_GREG_r8      8
+ %define SEH64_PE_GREG_r9      9
+ %define SEH64_PE_GREG_r10     10
+ %define SEH64_PE_GREG_r11     11
+ %define SEH64_PE_GREG_r12     12
+ %define SEH64_PE_GREG_r13     13
+ %define SEH64_PE_GREG_r14     14
+ %define SEH64_PE_GREG_r15     15
+
+ %define SEH64_PE_XREG_xmm0     0
+ %define SEH64_PE_XREG_xmm1     1
+ %define SEH64_PE_XREG_xmm2     2
+ %define SEH64_PE_XREG_xmm3     3
+ %define SEH64_PE_XREG_xmm4     4
+ %define SEH64_PE_XREG_xmm5     5
+ %define SEH64_PE_XREG_xmm6     6
+ %define SEH64_PE_XREG_xmm7     7
+ %define SEH64_PE_XREG_xmm8     8
+ %define SEH64_PE_XREG_xmm9     9
+ %define SEH64_PE_XREG_xmm10    10
+ %define SEH64_PE_XREG_xmm11    11
+ %define SEH64_PE_XREG_xmm12    12
+ %define SEH64_PE_XREG_xmm13    13
+ %define SEH64_PE_XREG_xmm14    14
+ %define SEH64_PE_XREG_xmm15    15
+ ;; @}
+
+ ;; @name PE unwind operations.
+ ;; @{
+ %define SEH64_PE_PUSH_NONVOL      0
+ %define SEH64_PE_ALLOC_LARGE      1
+ %define SEH64_PE_ALLOC_SMALL      2
+ %define SEH64_PE_SET_FPREG        3
+ %define SEH64_PE_SAVE_NONVOL      4
+ %define SEH64_PE_SAVE_NONVOL_FAR  5
+ %define SEH64_PE_SAVE_XMM128      8
+ %define SEH64_PE_SAVE_XMM128_FAR  9
+ ;; @}
+
+ ;; We keep the unwind bytes in the seh64_slot_bytes (x)define, in reverse order as per spec.
+ %macro SEH64_APPEND_SLOT_PAIR 2
+  %ifdef seh64_slot_bytes
+   %xdefine seh64_slot_bytes %1, %2, seh64_slot_bytes
+  %else
+   %xdefine seh64_slot_bytes %1, %2
+  %endif
+ %endmacro
+
+ ;; For multi-slot unwind info.
+ %macro SEH64_APPEND_SLOT_BYTES 2+
+  %rep %0
+   %rotate -1
+   %ifdef seh64_slot_bytes
+    %xdefine seh64_slot_bytes %1, seh64_slot_bytes
+   %else
+    %xdefine seh64_slot_bytes %1
+   %endif
+  %endrep
+ %endmacro
+
+ ;; For generating labels.
+ %define SEH64_OP_LABEL(a_idx) asm_seh64_proc %+ .seh64_op_label %+ a_idx
+%endif ; !__YASM__
+
+;; For producing proper .labels despite .Lxxxx labels messing up the prefixing.
+%define SEH64_DOT_LABEL(a_DotLabel) SEH64_CONCAT(asm_seh64_proc,a_DotLabel)
+
+%macro SEH64_PROC_FRAME 2
+ %define asm_seh64_proc %1
+ %ifdef __YASM_MAJOR__
+        proc_frame %1
+ %else
+  %assign seh64_idxOps   0
+  ;%assign seh64_FrameReg SEH64_PE_GREG_rsp
+  %assign seh64_FrameReg 0
+  %assign seh64_offFrame 0
+  %undef  seh64_slot_bytes
+%1:
+.start_of_prologue:
+ %endif
+%endmacro
+
+%macro SEH64_ENDPROC_FRAME 1
+SEH64_DOT_LABEL(.end_proc):
+ %ifdef __YASM_MAJOR__
+	[endproc_frame]
+ %else
+        ; Emit the RUNTIME_FUNCTION entry.  The linker is picky here, no label.
+  %ifndef ASM_DEFINED_PDATA_SECTION
+   %define ASM_DEFINED_PDATA_SECTION
+        section .pdata rdata align=4
+  %else
+        section .pdata
+  %endif
+        dd      %1                              wrt ..imagebase
+        dd      SEH64_DOT_LABEL(.end_proc)      wrt ..imagebase
+        dd      SEH64_DOT_LABEL(.unwind_info)   wrt ..imagebase
+
+        ; Restore code section.
+        section .text
+ %endif
+%endmacro
+
+%macro SEH64_ENDPROLOG 0
+SEH64_DOT_LABEL(.end_of_prologue):
+ %ifdef __YASM_MAJOR__
+        [endprolog]
+ %else
+        ; Emit the unwind info now.
+  %ifndef ASM_DEFINED_XDATA_SECTION
+   %define ASM_DEFINED_XDATA_SECTION
+        section .xdata rdata align=4
+  %else
+        section .xdata
+        align   4, db 0
+  %endif
+SEH64_DOT_LABEL(.unwind_info):
+        db      1                       ; version 1 (3 bit), no flags (5 bits)
+        db      SEH64_DOT_LABEL(.end_of_prologue) - SEH64_DOT_LABEL(.start_of_prologue)
+
+        db      (SEH64_DOT_LABEL(.unwind_info_array_end) - SEH64_DOT_LABEL(.unwind_info_array)) / 2
+        db      seh64_FrameReg | (seh64_offFrame & 0xf0) ; framereg and offset/16.
+SEH64_DOT_LABEL(.unwind_info_array):
+   %ifdef seh64_slot_bytes
+        db      seh64_slot_bytes
+    %undef seh64_slot_bytes
+   %endif
+SEH64_DOT_LABEL(.unwind_info_array_end):
+
+        ; Reset the segment
+        section .text
+ %endif
+%endmacro
+
+%macro SEH64_ALLOCSTACK 1
+ %ifdef __YASM_MAJOR__
+        [allocstack %1]
+ %else
+SEH64_OP_LABEL(seh64_idxOps):
+  %if (%1) & 7
+   %error "SEH64_ALLOCSTACK must be a multiple of 8"
+  %endif
+  %if (%1) < 8
+   %error "SEH64_ALLOCSTACK must have an argument that's 8 or higher."
+  %elif (%1) <= 128
+   SEH64_APPEND_SLOT_PAIR \
+	SEH64_OP_LABEL(seh64_idxOps) - SEH64_DOT_LABEL(.start_of_prologue), \
+        SEH64_PE_ALLOC_SMALL | ((((%1) / 8) - 1) << 4)
+  %elif (%1) < 512
+   SEH64_APPEND_SLOT_BYTES \
+	SEH64_OP_LABEL(seh64_idxOps) - SEH64_DOT_LABEL(.start_of_prologue), \
+	SEH64_PE_ALLOC_LARGE | 0, \
+	((%1) / 8) & 0xff, ((%1) / 8) >> 8
+  %else
+   SEH64_APPEND_SLOT_BYTES \
+	SEH64_OP_LABEL(seh64_idxOps) - SEH64_DOT_LABEL(.start_of_prologue), \
+	SEH64_PE_ALLOC_LARGE | 1, \
+	(%1) & 0xff, ((%1) >> 8) & 0xff, ((%1) >> 16) & 0xff, ((%1) >> 24) & 0xff
+  %endif
+  %assign seh64_idxOps seh64_idxOps + 1
+ %endif
+%endmacro
+
+%macro SEH64_PUSHREG 1
+ %ifdef __YASM_MAJOR__
+        [pushreg %1]
+ %else
+SEH64_OP_LABEL(seh64_idxOps):
+  SEH64_APPEND_SLOT_PAIR \
+	SEH64_OP_LABEL(seh64_idxOps) - SEH64_DOT_LABEL(.start_of_prologue), \
+	SEH64_PE_PUSH_NONVOL | (SEH64_PE_GREG_ %+ %1 << 4)
+  %assign seh64_idxOps seh64_idxOps + 1
+ %endif
+%endmacro
+
+%macro SEH64_SAVEREG 2
+ %ifdef __YASM_MAJOR__
+        [savereg %1, %2]
+ %else
+  %if (%2) & 7
+   %error "SEH64_SAVEREG offset must be a multiple of 8"
+  %endif
+  %if (%2) <= (65535*8)
+SEH64_OP_LABEL(seh64_idxOps):
+   SEH64_APPEND_SLOT_BYTES \
+	SEH64_OP_LABEL(seh64_idxOps) - SEH64_DOT_LABEL(.start_of_prologue), \
+	SEH64_PE_SAVE_NONVOL | (SEH64_PE_GREG_ %+ %1 << 4), \
+	((%2) / 8) & 0xff, \
+	((%2) / 8) >> 8
+  %else
+   %error "SEH64_SAVEREG implement far offsets"
+  %endif
+  %assign seh64_idxOps seh64_idxOps + 1
+ %endif
+%endmacro
+
+%macro SEH64_SAVEXMM128 2
+ %ifdef __YASM_MAJOR__
+        [savexmm128 %1, %2]
+ %else
+SEH64_OP_LABEL(seh64_idxOps):
+  %if (%2) & 15
+   %error "SEH64_SAVE_XMM128 offset must be a multiple of 16"
+  %endif
+  %if (%2) <= (65535*16)
+   SEH64_APPEND_SLOT_BYTES \
+	SEH64_OP_LABEL(seh64_idxOps) - SEH64_DOT_LABEL(.start_of_prologue), \
+        SEH64_PE_SAVE_XMM128 | (SEH64_PE_XREG_ %+ %1 << 4), \
+        ((%2) / 16) & 0xff, \
+        ((%2) / 16) >> 8
+  %else
+   %error "SEH64_SAVE_XMM128 implement far offsets"
+  %endif
+  %assign seh64_idxOps seh64_idxOps + 1
+ %endif
+%endmacro
+
+%macro SEH64_SETFRAME 2
+ %ifdef __YASM_MAJOR__
+        [setframe %1, %2]
+ %else
+SEH64_OP_LABEL(seh64_idxOps):
+  SEH64_APPEND_SLOT_PAIR \
+	SEH64_OP_LABEL(seh64_idxOps) - SEH64_DOT_LABEL(.start_of_prologue), \
+        SEH64_PE_SET_FPREG | 0
+  %assign seh64_FrameReg SEH64_PE_GREG_ %+ %1
+  %assign seh64_offFrame %2
+  %assign seh64_idxOps seh64_idxOps + 1
+ %endif
+%endmacro
 section	.text code align=64
 
 EXTERN	OPENSSL_ia32cap_P
 global	aesni_encrypt
 
 ALIGN	16
-aesni_encrypt:
+SEH64_PROC_FRAME aesni_encrypt,PUBLIC
 
 DB	243,15,30,250
+	; cfa_rsp=-8
+SEH64_ENDPROLOG	; cfa_reg=%rsp cfa_reg_offset=8 cfa_rsp=-8
 	movups	xmm2,XMMWORD[rcx]
 	mov	eax,DWORD[240+r8]
 	movups	xmm0,XMMWORD[r8]
@@ -29,15 +275,17 @@ DB	102,15,56,221,209
 	movups	XMMWORD[rdx],xmm2
 	pxor	xmm2,xmm2
 	DB	0F3h,0C3h		;repret
-
+SEH64_ENDPROC_FRAME	aesni_encrypt
 
 
 global	aesni_decrypt
 
 ALIGN	16
-aesni_decrypt:
+SEH64_PROC_FRAME aesni_decrypt,PUBLIC
 
 DB	243,15,30,250
+	; cfa_rsp=-8
+SEH64_ENDPROLOG	; cfa_reg=%rsp cfa_reg_offset=8 cfa_rsp=-8
 	movups	xmm2,XMMWORD[rcx]
 	mov	eax,DWORD[240+r8]
 	movups	xmm0,XMMWORD[r8]
@@ -56,12 +304,14 @@ DB	102,15,56,223,209
 	movups	XMMWORD[rdx],xmm2
 	pxor	xmm2,xmm2
 	DB	0F3h,0C3h		;repret
-
+SEH64_ENDPROC_FRAME	aesni_decrypt
 
 
 ALIGN	16
-_aesni_encrypt2:
+SEH64_PROC_FRAME _aesni_encrypt2,PRIVATE
 
+	; cfa_rsp=-8
+SEH64_ENDPROLOG	; cfa_reg=%rsp cfa_reg_offset=8 cfa_rsp=-8
 	movups	xmm0,XMMWORD[rcx]
 	shl	eax,4
 	movups	xmm1,XMMWORD[16+rcx]
@@ -87,12 +337,14 @@ DB	102,15,56,220,217
 DB	102,15,56,221,208
 DB	102,15,56,221,216
 	DB	0F3h,0C3h		;repret
-
+SEH64_ENDPROC_FRAME	_aesni_encrypt2
 
 
 ALIGN	16
-_aesni_decrypt2:
+SEH64_PROC_FRAME _aesni_decrypt2,PRIVATE
 
+	; cfa_rsp=-8
+SEH64_ENDPROLOG	; cfa_reg=%rsp cfa_reg_offset=8 cfa_rsp=-8
 	movups	xmm0,XMMWORD[rcx]
 	shl	eax,4
 	movups	xmm1,XMMWORD[16+rcx]
@@ -118,12 +370,14 @@ DB	102,15,56,222,217
 DB	102,15,56,223,208
 DB	102,15,56,223,216
 	DB	0F3h,0C3h		;repret
-
+SEH64_ENDPROC_FRAME	_aesni_decrypt2
 
 
 ALIGN	16
-_aesni_encrypt3:
+SEH64_PROC_FRAME _aesni_encrypt3,PRIVATE
 
+	; cfa_rsp=-8
+SEH64_ENDPROLOG	; cfa_reg=%rsp cfa_reg_offset=8 cfa_rsp=-8
 	movups	xmm0,XMMWORD[rcx]
 	shl	eax,4
 	movups	xmm1,XMMWORD[16+rcx]
@@ -154,12 +408,14 @@ DB	102,15,56,221,208
 DB	102,15,56,221,216
 DB	102,15,56,221,224
 	DB	0F3h,0C3h		;repret
-
+SEH64_ENDPROC_FRAME	_aesni_encrypt3
 
 
 ALIGN	16
-_aesni_decrypt3:
+SEH64_PROC_FRAME _aesni_decrypt3,PRIVATE
 
+	; cfa_rsp=-8
+SEH64_ENDPROLOG	; cfa_reg=%rsp cfa_reg_offset=8 cfa_rsp=-8
 	movups	xmm0,XMMWORD[rcx]
 	shl	eax,4
 	movups	xmm1,XMMWORD[16+rcx]
@@ -190,12 +446,14 @@ DB	102,15,56,223,208
 DB	102,15,56,223,216
 DB	102,15,56,223,224
 	DB	0F3h,0C3h		;repret
-
+SEH64_ENDPROC_FRAME	_aesni_decrypt3
 
 
 ALIGN	16
-_aesni_encrypt4:
+SEH64_PROC_FRAME _aesni_encrypt4,PRIVATE
 
+	; cfa_rsp=-8
+SEH64_ENDPROLOG	; cfa_reg=%rsp cfa_reg_offset=8 cfa_rsp=-8
 	movups	xmm0,XMMWORD[rcx]
 	shl	eax,4
 	movups	xmm1,XMMWORD[16+rcx]
@@ -232,12 +490,14 @@ DB	102,15,56,221,216
 DB	102,15,56,221,224
 DB	102,15,56,221,232
 	DB	0F3h,0C3h		;repret
-
+SEH64_ENDPROC_FRAME	_aesni_encrypt4
 
 
 ALIGN	16
-_aesni_decrypt4:
+SEH64_PROC_FRAME _aesni_decrypt4,PRIVATE
 
+	; cfa_rsp=-8
+SEH64_ENDPROLOG	; cfa_reg=%rsp cfa_reg_offset=8 cfa_rsp=-8
 	movups	xmm0,XMMWORD[rcx]
 	shl	eax,4
 	movups	xmm1,XMMWORD[16+rcx]
@@ -274,12 +534,14 @@ DB	102,15,56,223,216
 DB	102,15,56,223,224
 DB	102,15,56,223,232
 	DB	0F3h,0C3h		;repret
-
+SEH64_ENDPROC_FRAME	_aesni_decrypt4
 
 
 ALIGN	16
-_aesni_encrypt6:
+SEH64_PROC_FRAME _aesni_encrypt6,PRIVATE
 
+	; cfa_rsp=-8
+SEH64_ENDPROLOG	; cfa_reg=%rsp cfa_reg_offset=8 cfa_rsp=-8
 	movups	xmm0,XMMWORD[rcx]
 	shl	eax,4
 	movups	xmm1,XMMWORD[16+rcx]
@@ -330,12 +592,14 @@ DB	102,15,56,221,232
 DB	102,15,56,221,240
 DB	102,15,56,221,248
 	DB	0F3h,0C3h		;repret
-
+SEH64_ENDPROC_FRAME	_aesni_encrypt6
 
 
 ALIGN	16
-_aesni_decrypt6:
+SEH64_PROC_FRAME _aesni_decrypt6,PRIVATE
 
+	; cfa_rsp=-8
+SEH64_ENDPROLOG	; cfa_reg=%rsp cfa_reg_offset=8 cfa_rsp=-8
 	movups	xmm0,XMMWORD[rcx]
 	shl	eax,4
 	movups	xmm1,XMMWORD[16+rcx]
@@ -386,12 +650,14 @@ DB	102,15,56,223,232
 DB	102,15,56,223,240
 DB	102,15,56,223,248
 	DB	0F3h,0C3h		;repret
-
+SEH64_ENDPROC_FRAME	_aesni_decrypt6
 
 
 ALIGN	16
-_aesni_encrypt8:
+SEH64_PROC_FRAME _aesni_encrypt8,PRIVATE
 
+	; cfa_rsp=-8
+SEH64_ENDPROLOG	; cfa_reg=%rsp cfa_reg_offset=8 cfa_rsp=-8
 	movups	xmm0,XMMWORD[rcx]
 	shl	eax,4
 	movups	xmm1,XMMWORD[16+rcx]
@@ -452,12 +718,14 @@ DB	102,15,56,221,248
 DB	102,68,15,56,221,192
 DB	102,68,15,56,221,200
 	DB	0F3h,0C3h		;repret
-
+SEH64_ENDPROC_FRAME	_aesni_encrypt8
 
 
 ALIGN	16
-_aesni_decrypt8:
+SEH64_PROC_FRAME _aesni_decrypt8,PRIVATE
 
+	; cfa_rsp=-8
+SEH64_ENDPROLOG	; cfa_reg=%rsp cfa_reg_offset=8 cfa_rsp=-8
 	movups	xmm0,XMMWORD[rcx]
 	shl	eax,4
 	movups	xmm1,XMMWORD[16+rcx]
@@ -518,16 +786,17 @@ DB	102,15,56,223,248
 DB	102,68,15,56,223,192
 DB	102,68,15,56,223,200
 	DB	0F3h,0C3h		;repret
-
+SEH64_ENDPROC_FRAME	_aesni_decrypt8
 
 global	aesni_ecb_encrypt
 
 ALIGN	16
-aesni_ecb_encrypt:
+SEH64_PROC_FRAME aesni_ecb_encrypt,PUBLIC
 	mov	QWORD[8+rsp],rdi	;WIN64 prologue
+SEH64_SAVEREG rdi, 8
 	mov	QWORD[16+rsp],rsi
+SEH64_SAVEREG rsi, 16
 	mov	rax,rsp
-$L$SEH_begin_aesni_ecb_encrypt:
 	mov	rdi,rcx
 	mov	rsi,rdx
 	mov	rdx,r8
@@ -538,11 +807,17 @@ $L$SEH_begin_aesni_ecb_encrypt:
 
 DB	243,15,30,250
 	lea	rsp,[((-88))+rsp]
+SEH64_ALLOCSTACK 88
 	movaps	XMMWORD[rsp],xmm6
+SEH64_SAVEXMM128 xmm6, 0	; .cfi_offset xmm6, -96 cfa_reg_offset=96 cfa_rsp=-96
 	movaps	XMMWORD[16+rsp],xmm7
+SEH64_SAVEXMM128 xmm7, 16	; .cfi_offset xmm7, -80 cfa_reg_offset=96 cfa_rsp=-96
 	movaps	XMMWORD[32+rsp],xmm8
+SEH64_SAVEXMM128 xmm8, 32	; .cfi_offset xmm8, -64 cfa_reg_offset=96 cfa_rsp=-96
 	movaps	XMMWORD[48+rsp],xmm9
-$L$ecb_enc_body:
+SEH64_SAVEXMM128 xmm9, 48	; .cfi_offset xmm9, -48 cfa_reg_offset=96 cfa_rsp=-96
+	; cfa_rsp=-96
+SEH64_ENDPROLOG	; cfa_reg=%rsp cfa_reg_offset=96 cfa_rsp=-96
 	and	rdx,-16
 	jz	NEAR $L$ecb_ret
 
@@ -892,16 +1167,17 @@ $L$ecb_enc_ret:
 	mov	rdi,QWORD[8+rsp]	;WIN64 epilogue
 	mov	rsi,QWORD[16+rsp]
 	DB	0F3h,0C3h		;repret
-
+SEH64_ENDPROC_FRAME	aesni_ecb_encrypt
 $L$SEH_end_aesni_ecb_encrypt:
 global	aesni_ccm64_encrypt_blocks
 
 ALIGN	16
-aesni_ccm64_encrypt_blocks:
+SEH64_PROC_FRAME aesni_ccm64_encrypt_blocks,PUBLIC
 	mov	QWORD[8+rsp],rdi	;WIN64 prologue
+SEH64_SAVEREG rdi, 8
 	mov	QWORD[16+rsp],rsi
+SEH64_SAVEREG rsi, 16
 	mov	rax,rsp
-$L$SEH_begin_aesni_ccm64_encrypt_blocks:
 	mov	rdi,rcx
 	mov	rsi,rdx
 	mov	rdx,r8
@@ -913,11 +1189,17 @@ $L$SEH_begin_aesni_ccm64_encrypt_blocks:
 
 DB	243,15,30,250
 	lea	rsp,[((-88))+rsp]
+SEH64_ALLOCSTACK 88
 	movaps	XMMWORD[rsp],xmm6
+SEH64_SAVEXMM128 xmm6, 0	; .cfi_offset xmm6, -96 cfa_reg_offset=96 cfa_rsp=-96
 	movaps	XMMWORD[16+rsp],xmm7
+SEH64_SAVEXMM128 xmm7, 16	; .cfi_offset xmm7, -80 cfa_reg_offset=96 cfa_rsp=-96
 	movaps	XMMWORD[32+rsp],xmm8
+SEH64_SAVEXMM128 xmm8, 32	; .cfi_offset xmm8, -64 cfa_reg_offset=96 cfa_rsp=-96
 	movaps	XMMWORD[48+rsp],xmm9
-$L$ccm64_enc_body:
+SEH64_SAVEXMM128 xmm9, 48	; .cfi_offset xmm9, -48 cfa_reg_offset=96 cfa_rsp=-96
+	; cfa_rsp=-96
+SEH64_ENDPROLOG	; cfa_reg=%rsp cfa_reg_offset=96 cfa_rsp=-96
 	mov	eax,DWORD[240+rcx]
 	movdqu	xmm6,XMMWORD[r8]
 	movdqa	xmm9,XMMWORD[$L$increment64]
@@ -988,16 +1270,17 @@ $L$ccm64_enc_ret:
 	mov	rdi,QWORD[8+rsp]	;WIN64 epilogue
 	mov	rsi,QWORD[16+rsp]
 	DB	0F3h,0C3h		;repret
-
+SEH64_ENDPROC_FRAME	aesni_ccm64_encrypt_blocks
 $L$SEH_end_aesni_ccm64_encrypt_blocks:
 global	aesni_ccm64_decrypt_blocks
 
 ALIGN	16
-aesni_ccm64_decrypt_blocks:
+SEH64_PROC_FRAME aesni_ccm64_decrypt_blocks,PUBLIC
 	mov	QWORD[8+rsp],rdi	;WIN64 prologue
+SEH64_SAVEREG rdi, 8
 	mov	QWORD[16+rsp],rsi
+SEH64_SAVEREG rsi, 16
 	mov	rax,rsp
-$L$SEH_begin_aesni_ccm64_decrypt_blocks:
 	mov	rdi,rcx
 	mov	rsi,rdx
 	mov	rdx,r8
@@ -1009,11 +1292,17 @@ $L$SEH_begin_aesni_ccm64_decrypt_blocks:
 
 DB	243,15,30,250
 	lea	rsp,[((-88))+rsp]
+SEH64_ALLOCSTACK 88
 	movaps	XMMWORD[rsp],xmm6
+SEH64_SAVEXMM128 xmm6, 0	; .cfi_offset xmm6, -96 cfa_reg_offset=96 cfa_rsp=-96
 	movaps	XMMWORD[16+rsp],xmm7
+SEH64_SAVEXMM128 xmm7, 16	; .cfi_offset xmm7, -80 cfa_reg_offset=96 cfa_rsp=-96
 	movaps	XMMWORD[32+rsp],xmm8
+SEH64_SAVEXMM128 xmm8, 32	; .cfi_offset xmm8, -64 cfa_reg_offset=96 cfa_rsp=-96
 	movaps	XMMWORD[48+rsp],xmm9
-$L$ccm64_dec_body:
+SEH64_SAVEXMM128 xmm9, 48	; .cfi_offset xmm9, -48 cfa_reg_offset=96 cfa_rsp=-96
+	; cfa_rsp=-96
+SEH64_ENDPROLOG	; cfa_reg=%rsp cfa_reg_offset=96 cfa_rsp=-96
 	mov	eax,DWORD[240+rcx]
 	movups	xmm6,XMMWORD[r8]
 	movdqu	xmm3,XMMWORD[r9]
@@ -1118,16 +1407,17 @@ $L$ccm64_dec_ret:
 	mov	rdi,QWORD[8+rsp]	;WIN64 epilogue
 	mov	rsi,QWORD[16+rsp]
 	DB	0F3h,0C3h		;repret
-
+SEH64_ENDPROC_FRAME	aesni_ccm64_decrypt_blocks
 $L$SEH_end_aesni_ccm64_decrypt_blocks:
 global	aesni_ctr32_encrypt_blocks
 
 ALIGN	16
-aesni_ctr32_encrypt_blocks:
+SEH64_PROC_FRAME aesni_ctr32_encrypt_blocks,PUBLIC
 	mov	QWORD[8+rsp],rdi	;WIN64 prologue
+SEH64_SAVEREG rdi, 8
 	mov	QWORD[16+rsp],rsi
+SEH64_SAVEREG rsi, 16
 	mov	rax,rsp
-$L$SEH_begin_aesni_ctr32_encrypt_blocks:
 	mov	rdi,rcx
 	mov	rsi,rdx
 	mov	rdx,r8
@@ -1137,6 +1427,8 @@ $L$SEH_begin_aesni_ctr32_encrypt_blocks:
 
 
 DB	243,15,30,250
+	; cfa_rsp=-8
+SEH64_ENDPROLOG	; cfa_reg=%rsp cfa_reg_offset=8 cfa_rsp=-8
 	cmp	rdx,1
 	jne	NEAR $L$ctr32_bulk
 
@@ -1162,27 +1454,61 @@ DB	102,15,56,221,209
 	pxor	xmm3,xmm3
 	movups	XMMWORD[rsi],xmm2
 	xorps	xmm2,xmm2
-	jmp	NEAR $L$ctr32_epilogue
+	mov	rdi,QWORD[8+rsp]	;WIN64 epilogue
+	mov	rsi,QWORD[16+rsp]
+	DB	0F3h,0C3h		;repret
+SEH64_ENDPROC_FRAME	aesni_ctr32_encrypt_blocks
+$L$SEH_end_aesni_ctr32_encrypt_blocks:
 
+
+ALIGN	16
+SEH64_PROC_FRAME _aesni_ctr32_encrypt_blocks_bulk,PRIVATE
+	mov	QWORD[8+rsp],rdi	;WIN64 prologue
+SEH64_SAVEREG rdi, 8
+	mov	QWORD[16+rsp],rsi
+SEH64_SAVEREG rsi, 16
+	mov	rax,rsp
+	mov	rdi,rcx
+	mov	rsi,rdx
+	mov	rdx,r8
+	mov	rcx,r9
+	mov	r8,QWORD[40+rsp]
+
+
+
+	ud2
 ALIGN	16
 $L$ctr32_bulk:
 	lea	r11,[rsp]
 
 	push	rbp
-
-	sub	rsp,288
-	and	rsp,-16
+SEH64_PUSHREG	rbp	; cfa_rsp,cfa_reg_offset => -16,8 cfa_reg=%r11
+	sub	rsp,0xa0
+SEH64_ALLOCSTACK 160
 	movaps	XMMWORD[(-168)+r11],xmm6
+SEH64_SAVEXMM128 xmm6, 0	; .cfi_offset xmm6, -0xa8-8 cfa_reg_offset=8 cfa_rsp=-176
 	movaps	XMMWORD[(-152)+r11],xmm7
+SEH64_SAVEXMM128 xmm7, 16	; .cfi_offset xmm7, -0x98-8 cfa_reg_offset=8 cfa_rsp=-176
 	movaps	XMMWORD[(-136)+r11],xmm8
+SEH64_SAVEXMM128 xmm8, 32	; .cfi_offset xmm8, -0x88-8 cfa_reg_offset=8 cfa_rsp=-176
 	movaps	XMMWORD[(-120)+r11],xmm9
+SEH64_SAVEXMM128 xmm9, 48	; .cfi_offset xmm9, -0x78-8 cfa_reg_offset=8 cfa_rsp=-176
 	movaps	XMMWORD[(-104)+r11],xmm10
+SEH64_SAVEXMM128 xmm10, 64	; .cfi_offset xmm10, -0x68-8 cfa_reg_offset=8 cfa_rsp=-176
 	movaps	XMMWORD[(-88)+r11],xmm11
+SEH64_SAVEXMM128 xmm11, 80	; .cfi_offset xmm11, -0x58-8 cfa_reg_offset=8 cfa_rsp=-176
 	movaps	XMMWORD[(-72)+r11],xmm12
+SEH64_SAVEXMM128 xmm12, 96	; .cfi_offset xmm12, -0x48-8 cfa_reg_offset=8 cfa_rsp=-176
 	movaps	XMMWORD[(-56)+r11],xmm13
+SEH64_SAVEXMM128 xmm13, 112	; .cfi_offset xmm13, -0x38-8 cfa_reg_offset=8 cfa_rsp=-176
 	movaps	XMMWORD[(-40)+r11],xmm14
+SEH64_SAVEXMM128 xmm14, 128	; .cfi_offset xmm14, -0x28-8 cfa_reg_offset=8 cfa_rsp=-176
 	movaps	XMMWORD[(-24)+r11],xmm15
-$L$ctr32_body:
+SEH64_SAVEXMM128 xmm15, 144	; .cfi_offset xmm15, -0x18-8 cfa_reg_offset=8 cfa_rsp=-176
+SEH64_ALLOCSTACK 8
+SEH64_SETFRAME r11, 176
+SEH64_ENDPROLOG	; cfa_reg=%r11 cfa_reg_offset=8 cfa_rsp=-176
+	sub	rsp,128
 
 
 
@@ -1727,20 +2053,20 @@ $L$ctr32_done:
 
 	lea	rsp,[r11]
 
-$L$ctr32_epilogue:
 	mov	rdi,QWORD[8+rsp]	;WIN64 epilogue
 	mov	rsi,QWORD[16+rsp]
 	DB	0F3h,0C3h		;repret
-
-$L$SEH_end_aesni_ctr32_encrypt_blocks:
+SEH64_ENDPROC_FRAME	_aesni_ctr32_encrypt_blocks_bulk
+$L$SEH_end__aesni_ctr32_encrypt_blocks_bulk:
 global	aesni_xts_encrypt
 
 ALIGN	16
-aesni_xts_encrypt:
+SEH64_PROC_FRAME aesni_xts_encrypt,PUBLIC
 	mov	QWORD[8+rsp],rdi	;WIN64 prologue
+SEH64_SAVEREG rdi, 8
 	mov	QWORD[16+rsp],rsi
+SEH64_SAVEREG rsi, 16
 	mov	rax,rsp
-$L$SEH_begin_aesni_xts_encrypt:
 	mov	rdi,rcx
 	mov	rsi,rdx
 	mov	rdx,r8
@@ -1754,20 +2080,35 @@ DB	243,15,30,250
 	lea	r11,[rsp]
 
 	push	rbp
-
+SEH64_PUSHREG	rbp	; cfa_rsp,cfa_reg_offset => -16,8 cfa_reg=%r11
 	sub	rsp,272
 	and	rsp,-16
+
+
+SEH64_ALLOCSTACK 160
 	movaps	XMMWORD[(-168)+r11],xmm6
+SEH64_SAVEXMM128 xmm6, 0	; .cfi_offset xmm6, -0xa8-8 cfa_reg_offset=8 cfa_rsp=-176
 	movaps	XMMWORD[(-152)+r11],xmm7
+SEH64_SAVEXMM128 xmm7, 16	; .cfi_offset xmm7, -0x98-8 cfa_reg_offset=8 cfa_rsp=-176
 	movaps	XMMWORD[(-136)+r11],xmm8
+SEH64_SAVEXMM128 xmm8, 32	; .cfi_offset xmm8, -0x88-8 cfa_reg_offset=8 cfa_rsp=-176
 	movaps	XMMWORD[(-120)+r11],xmm9
+SEH64_SAVEXMM128 xmm9, 48	; .cfi_offset xmm9, -0x78-8 cfa_reg_offset=8 cfa_rsp=-176
 	movaps	XMMWORD[(-104)+r11],xmm10
+SEH64_SAVEXMM128 xmm10, 64	; .cfi_offset xmm10, -0x68-8 cfa_reg_offset=8 cfa_rsp=-176
 	movaps	XMMWORD[(-88)+r11],xmm11
+SEH64_SAVEXMM128 xmm11, 80	; .cfi_offset xmm11, -0x58-8 cfa_reg_offset=8 cfa_rsp=-176
 	movaps	XMMWORD[(-72)+r11],xmm12
+SEH64_SAVEXMM128 xmm12, 96	; .cfi_offset xmm12, -0x48-8 cfa_reg_offset=8 cfa_rsp=-176
 	movaps	XMMWORD[(-56)+r11],xmm13
+SEH64_SAVEXMM128 xmm13, 112	; .cfi_offset xmm13, -0x38-8 cfa_reg_offset=8 cfa_rsp=-176
 	movaps	XMMWORD[(-40)+r11],xmm14
+SEH64_SAVEXMM128 xmm14, 128	; .cfi_offset xmm14, -0x28-8 cfa_reg_offset=8 cfa_rsp=-176
 	movaps	XMMWORD[(-24)+r11],xmm15
-$L$xts_enc_body:
+SEH64_SAVEXMM128 xmm15, 144	; .cfi_offset xmm15, -0x18-8 cfa_reg_offset=8 cfa_rsp=-176
+SEH64_ALLOCSTACK 8
+SEH64_SETFRAME r11, 176
+SEH64_ENDPROLOG	; cfa_reg=%r11 cfa_reg_offset=8 cfa_rsp=-176
 	movups	xmm2,XMMWORD[r9]
 	mov	eax,DWORD[240+r8]
 	mov	r10d,DWORD[240+rcx]
@@ -2233,20 +2574,20 @@ $L$xts_enc_ret:
 
 	lea	rsp,[r11]
 
-$L$xts_enc_epilogue:
 	mov	rdi,QWORD[8+rsp]	;WIN64 epilogue
 	mov	rsi,QWORD[16+rsp]
 	DB	0F3h,0C3h		;repret
-
+SEH64_ENDPROC_FRAME	aesni_xts_encrypt
 $L$SEH_end_aesni_xts_encrypt:
 global	aesni_xts_decrypt
 
 ALIGN	16
-aesni_xts_decrypt:
+SEH64_PROC_FRAME aesni_xts_decrypt,PUBLIC
 	mov	QWORD[8+rsp],rdi	;WIN64 prologue
+SEH64_SAVEREG rdi, 8
 	mov	QWORD[16+rsp],rsi
+SEH64_SAVEREG rsi, 16
 	mov	rax,rsp
-$L$SEH_begin_aesni_xts_decrypt:
 	mov	rdi,rcx
 	mov	rsi,rdx
 	mov	rdx,r8
@@ -2260,20 +2601,35 @@ DB	243,15,30,250
 	lea	r11,[rsp]
 
 	push	rbp
-
+SEH64_PUSHREG	rbp	; cfa_rsp,cfa_reg_offset => -16,8 cfa_reg=%r11
 	sub	rsp,272
 	and	rsp,-16
+
+
+SEH64_ALLOCSTACK 160
 	movaps	XMMWORD[(-168)+r11],xmm6
+SEH64_SAVEXMM128 xmm6, 0	; .cfi_offset xmm6, -0xa8-8 cfa_reg_offset=8 cfa_rsp=-176
 	movaps	XMMWORD[(-152)+r11],xmm7
+SEH64_SAVEXMM128 xmm7, 16	; .cfi_offset xmm7, -0x98-8 cfa_reg_offset=8 cfa_rsp=-176
 	movaps	XMMWORD[(-136)+r11],xmm8
+SEH64_SAVEXMM128 xmm8, 32	; .cfi_offset xmm8, -0x88-8 cfa_reg_offset=8 cfa_rsp=-176
 	movaps	XMMWORD[(-120)+r11],xmm9
+SEH64_SAVEXMM128 xmm9, 48	; .cfi_offset xmm9, -0x78-8 cfa_reg_offset=8 cfa_rsp=-176
 	movaps	XMMWORD[(-104)+r11],xmm10
+SEH64_SAVEXMM128 xmm10, 64	; .cfi_offset xmm10, -0x68-8 cfa_reg_offset=8 cfa_rsp=-176
 	movaps	XMMWORD[(-88)+r11],xmm11
+SEH64_SAVEXMM128 xmm11, 80	; .cfi_offset xmm11, -0x58-8 cfa_reg_offset=8 cfa_rsp=-176
 	movaps	XMMWORD[(-72)+r11],xmm12
+SEH64_SAVEXMM128 xmm12, 96	; .cfi_offset xmm12, -0x48-8 cfa_reg_offset=8 cfa_rsp=-176
 	movaps	XMMWORD[(-56)+r11],xmm13
+SEH64_SAVEXMM128 xmm13, 112	; .cfi_offset xmm13, -0x38-8 cfa_reg_offset=8 cfa_rsp=-176
 	movaps	XMMWORD[(-40)+r11],xmm14
+SEH64_SAVEXMM128 xmm14, 128	; .cfi_offset xmm14, -0x28-8 cfa_reg_offset=8 cfa_rsp=-176
 	movaps	XMMWORD[(-24)+r11],xmm15
-$L$xts_dec_body:
+SEH64_SAVEXMM128 xmm15, 144	; .cfi_offset xmm15, -0x18-8 cfa_reg_offset=8 cfa_rsp=-176
+SEH64_ALLOCSTACK 8
+SEH64_SETFRAME r11, 176
+SEH64_ENDPROLOG	; cfa_reg=%r11 cfa_reg_offset=8 cfa_rsp=-176
 	movups	xmm2,XMMWORD[r9]
 	mov	eax,DWORD[240+r8]
 	mov	r10d,DWORD[240+rcx]
@@ -2776,20 +3132,20 @@ $L$xts_dec_ret:
 
 	lea	rsp,[r11]
 
-$L$xts_dec_epilogue:
 	mov	rdi,QWORD[8+rsp]	;WIN64 epilogue
 	mov	rsi,QWORD[16+rsp]
 	DB	0F3h,0C3h		;repret
-
+SEH64_ENDPROC_FRAME	aesni_xts_decrypt
 $L$SEH_end_aesni_xts_decrypt:
 global	aesni_ocb_encrypt
 
 ALIGN	32
-aesni_ocb_encrypt:
+SEH64_PROC_FRAME aesni_ocb_encrypt,PUBLIC
 	mov	QWORD[8+rsp],rdi	;WIN64 prologue
+SEH64_SAVEREG rdi, 8
 	mov	QWORD[16+rsp],rsi
+SEH64_SAVEREG rsi, 16
 	mov	rax,rsp
-$L$SEH_begin_aesni_ocb_encrypt:
 	mov	rdi,rcx
 	mov	rsi,rdx
 	mov	rdx,r8
@@ -2802,27 +3158,39 @@ $L$SEH_begin_aesni_ocb_encrypt:
 DB	243,15,30,250
 	lea	rax,[rsp]
 	push	rbx
-
+SEH64_PUSHREG	rbx	; cfa_rsp,cfa_reg_offset => -16,16 cfa_reg=%rsp
 	push	rbp
-
+SEH64_PUSHREG	rbp	; cfa_rsp,cfa_reg_offset => -24,24 cfa_reg=%rsp
 	push	r12
-
+SEH64_PUSHREG	r12	; cfa_rsp,cfa_reg_offset => -32,32 cfa_reg=%rsp
 	push	r13
-
+SEH64_PUSHREG	r13	; cfa_rsp,cfa_reg_offset => -40,40 cfa_reg=%rsp
 	push	r14
-
+SEH64_PUSHREG	r14	; cfa_rsp,cfa_reg_offset => -48,48 cfa_reg=%rsp
 	lea	rsp,[((-160))+rsp]
+SEH64_ALLOCSTACK 160
 	movaps	XMMWORD[rsp],xmm6
+SEH64_SAVEXMM128 xmm6, 0	; .cfi_offset xmm6, -208 cfa_reg_offset=208 cfa_rsp=-208
 	movaps	XMMWORD[16+rsp],xmm7
+SEH64_SAVEXMM128 xmm7, 16	; .cfi_offset xmm7, -192 cfa_reg_offset=208 cfa_rsp=-208
 	movaps	XMMWORD[32+rsp],xmm8
+SEH64_SAVEXMM128 xmm8, 32	; .cfi_offset xmm8, -176 cfa_reg_offset=208 cfa_rsp=-208
 	movaps	XMMWORD[48+rsp],xmm9
+SEH64_SAVEXMM128 xmm9, 48	; .cfi_offset xmm9, -160 cfa_reg_offset=208 cfa_rsp=-208
 	movaps	XMMWORD[64+rsp],xmm10
+SEH64_SAVEXMM128 xmm10, 64	; .cfi_offset xmm10, -144 cfa_reg_offset=208 cfa_rsp=-208
 	movaps	XMMWORD[80+rsp],xmm11
+SEH64_SAVEXMM128 xmm11, 80	; .cfi_offset xmm11, -128 cfa_reg_offset=208 cfa_rsp=-208
 	movaps	XMMWORD[96+rsp],xmm12
+SEH64_SAVEXMM128 xmm12, 96	; .cfi_offset xmm12, -112 cfa_reg_offset=208 cfa_rsp=-208
 	movaps	XMMWORD[112+rsp],xmm13
+SEH64_SAVEXMM128 xmm13, 112	; .cfi_offset xmm13, -96 cfa_reg_offset=208 cfa_rsp=-208
 	movaps	XMMWORD[128+rsp],xmm14
+SEH64_SAVEXMM128 xmm14, 128	; .cfi_offset xmm14, -80 cfa_reg_offset=208 cfa_rsp=-208
 	movaps	XMMWORD[144+rsp],xmm15
-$L$ocb_enc_body:
+SEH64_SAVEXMM128 xmm15, 144	; .cfi_offset xmm15, -64 cfa_reg_offset=208 cfa_rsp=-208
+	; cfa_rsp=-208
+SEH64_ENDPROLOG	; cfa_reg=%rsp cfa_reg_offset=208 cfa_rsp=-208
 	mov	rbx,QWORD[56+rax]
 	mov	rbp,QWORD[((56+8))+rax]
 
@@ -3022,17 +3390,18 @@ $L$ocb_enc_pop:
 
 	lea	rsp,[rax]
 
-$L$ocb_enc_epilogue:
 	mov	rdi,QWORD[8+rsp]	;WIN64 epilogue
 	mov	rsi,QWORD[16+rsp]
 	DB	0F3h,0C3h		;repret
-
+SEH64_ENDPROC_FRAME	aesni_ocb_encrypt
 $L$SEH_end_aesni_ocb_encrypt:
 
 
 ALIGN	32
-__ocb_encrypt6:
+SEH64_PROC_FRAME __ocb_encrypt6,PRIVATE
 
+	; cfa_rsp=-8
+SEH64_ENDPROLOG	; cfa_reg=%rsp cfa_reg_offset=8 cfa_rsp=-8
 	pxor	xmm15,xmm9
 	movdqu	xmm11,XMMWORD[r12*1+rbx]
 	movdqa	xmm12,xmm10
@@ -3130,13 +3499,15 @@ DB	102,65,15,56,221,237
 DB	102,65,15,56,221,246
 DB	102,65,15,56,221,255
 	DB	0F3h,0C3h		;repret
-
+SEH64_ENDPROC_FRAME	__ocb_encrypt6
 
 
 
 ALIGN	32
-__ocb_encrypt4:
+SEH64_PROC_FRAME __ocb_encrypt4,PRIVATE
 
+	; cfa_rsp=-8
+SEH64_ENDPROLOG	; cfa_reg=%rsp cfa_reg_offset=8 cfa_rsp=-8
 	pxor	xmm15,xmm9
 	movdqu	xmm11,XMMWORD[r12*1+rbx]
 	movdqa	xmm12,xmm10
@@ -3201,13 +3572,15 @@ DB	102,65,15,56,221,219
 DB	102,65,15,56,221,228
 DB	102,65,15,56,221,237
 	DB	0F3h,0C3h		;repret
-
+SEH64_ENDPROC_FRAME	__ocb_encrypt4
 
 
 
 ALIGN	32
-__ocb_encrypt1:
+SEH64_PROC_FRAME __ocb_encrypt1,PRIVATE
 
+	; cfa_rsp=-8
+SEH64_ENDPROLOG	; cfa_reg=%rsp cfa_reg_offset=8 cfa_rsp=-8
 	pxor	xmm7,xmm15
 	pxor	xmm7,xmm9
 	pxor	xmm8,xmm2
@@ -3238,17 +3611,18 @@ DB	102,15,56,220,209
 
 DB	102,15,56,221,215
 	DB	0F3h,0C3h		;repret
-
+SEH64_ENDPROC_FRAME	__ocb_encrypt1
 
 
 global	aesni_ocb_decrypt
 
 ALIGN	32
-aesni_ocb_decrypt:
+SEH64_PROC_FRAME aesni_ocb_decrypt,PUBLIC
 	mov	QWORD[8+rsp],rdi	;WIN64 prologue
+SEH64_SAVEREG rdi, 8
 	mov	QWORD[16+rsp],rsi
+SEH64_SAVEREG rsi, 16
 	mov	rax,rsp
-$L$SEH_begin_aesni_ocb_decrypt:
 	mov	rdi,rcx
 	mov	rsi,rdx
 	mov	rdx,r8
@@ -3261,27 +3635,39 @@ $L$SEH_begin_aesni_ocb_decrypt:
 DB	243,15,30,250
 	lea	rax,[rsp]
 	push	rbx
-
+SEH64_PUSHREG	rbx	; cfa_rsp,cfa_reg_offset => -16,16 cfa_reg=%rsp
 	push	rbp
-
+SEH64_PUSHREG	rbp	; cfa_rsp,cfa_reg_offset => -24,24 cfa_reg=%rsp
 	push	r12
-
+SEH64_PUSHREG	r12	; cfa_rsp,cfa_reg_offset => -32,32 cfa_reg=%rsp
 	push	r13
-
+SEH64_PUSHREG	r13	; cfa_rsp,cfa_reg_offset => -40,40 cfa_reg=%rsp
 	push	r14
-
+SEH64_PUSHREG	r14	; cfa_rsp,cfa_reg_offset => -48,48 cfa_reg=%rsp
 	lea	rsp,[((-160))+rsp]
+SEH64_ALLOCSTACK 160
 	movaps	XMMWORD[rsp],xmm6
+SEH64_SAVEXMM128 xmm6, 0	; .cfi_offset xmm6, -208 cfa_reg_offset=208 cfa_rsp=-208
 	movaps	XMMWORD[16+rsp],xmm7
+SEH64_SAVEXMM128 xmm7, 16	; .cfi_offset xmm7, -192 cfa_reg_offset=208 cfa_rsp=-208
 	movaps	XMMWORD[32+rsp],xmm8
+SEH64_SAVEXMM128 xmm8, 32	; .cfi_offset xmm8, -176 cfa_reg_offset=208 cfa_rsp=-208
 	movaps	XMMWORD[48+rsp],xmm9
+SEH64_SAVEXMM128 xmm9, 48	; .cfi_offset xmm9, -160 cfa_reg_offset=208 cfa_rsp=-208
 	movaps	XMMWORD[64+rsp],xmm10
+SEH64_SAVEXMM128 xmm10, 64	; .cfi_offset xmm10, -144 cfa_reg_offset=208 cfa_rsp=-208
 	movaps	XMMWORD[80+rsp],xmm11
+SEH64_SAVEXMM128 xmm11, 80	; .cfi_offset xmm11, -128 cfa_reg_offset=208 cfa_rsp=-208
 	movaps	XMMWORD[96+rsp],xmm12
+SEH64_SAVEXMM128 xmm12, 96	; .cfi_offset xmm12, -112 cfa_reg_offset=208 cfa_rsp=-208
 	movaps	XMMWORD[112+rsp],xmm13
+SEH64_SAVEXMM128 xmm13, 112	; .cfi_offset xmm13, -96 cfa_reg_offset=208 cfa_rsp=-208
 	movaps	XMMWORD[128+rsp],xmm14
+SEH64_SAVEXMM128 xmm14, 128	; .cfi_offset xmm14, -80 cfa_reg_offset=208 cfa_rsp=-208
 	movaps	XMMWORD[144+rsp],xmm15
-$L$ocb_dec_body:
+SEH64_SAVEXMM128 xmm15, 144	; .cfi_offset xmm15, -64 cfa_reg_offset=208 cfa_rsp=-208
+	; cfa_rsp=-208
+SEH64_ENDPROLOG	; cfa_reg=%rsp cfa_reg_offset=208 cfa_rsp=-208
 	mov	rbx,QWORD[56+rax]
 	mov	rbp,QWORD[((56+8))+rax]
 
@@ -3503,17 +3889,18 @@ $L$ocb_dec_pop:
 
 	lea	rsp,[rax]
 
-$L$ocb_dec_epilogue:
 	mov	rdi,QWORD[8+rsp]	;WIN64 epilogue
 	mov	rsi,QWORD[16+rsp]
 	DB	0F3h,0C3h		;repret
-
+SEH64_ENDPROC_FRAME	aesni_ocb_decrypt
 $L$SEH_end_aesni_ocb_decrypt:
 
 
 ALIGN	32
-__ocb_decrypt6:
+SEH64_PROC_FRAME __ocb_decrypt6,PRIVATE
 
+	; cfa_rsp=-8
+SEH64_ENDPROLOG	; cfa_reg=%rsp cfa_reg_offset=8 cfa_rsp=-8
 	pxor	xmm15,xmm9
 	movdqu	xmm11,XMMWORD[r12*1+rbx]
 	movdqa	xmm12,xmm10
@@ -3605,13 +3992,15 @@ DB	102,65,15,56,223,237
 DB	102,65,15,56,223,246
 DB	102,65,15,56,223,255
 	DB	0F3h,0C3h		;repret
-
+SEH64_ENDPROC_FRAME	__ocb_decrypt6
 
 
 
 ALIGN	32
-__ocb_decrypt4:
+SEH64_PROC_FRAME __ocb_decrypt4,PRIVATE
 
+	; cfa_rsp=-8
+SEH64_ENDPROLOG	; cfa_reg=%rsp cfa_reg_offset=8 cfa_rsp=-8
 	pxor	xmm15,xmm9
 	movdqu	xmm11,XMMWORD[r12*1+rbx]
 	movdqa	xmm12,xmm10
@@ -3672,13 +4061,15 @@ DB	102,65,15,56,223,219
 DB	102,65,15,56,223,228
 DB	102,65,15,56,223,237
 	DB	0F3h,0C3h		;repret
-
+SEH64_ENDPROC_FRAME	__ocb_decrypt4
 
 
 
 ALIGN	32
-__ocb_decrypt1:
+SEH64_PROC_FRAME __ocb_decrypt1,PRIVATE
 
+	; cfa_rsp=-8
+SEH64_ENDPROLOG	; cfa_reg=%rsp cfa_reg_offset=8 cfa_rsp=-8
 	pxor	xmm7,xmm15
 	pxor	xmm7,xmm9
 	pxor	xmm2,xmm7
@@ -3708,16 +4099,17 @@ DB	102,15,56,222,209
 
 DB	102,15,56,223,215
 	DB	0F3h,0C3h		;repret
-
+SEH64_ENDPROC_FRAME	__ocb_decrypt1
 
 global	aesni_cbc_encrypt
 
 ALIGN	16
-aesni_cbc_encrypt:
+SEH64_PROC_FRAME aesni_cbc_encrypt,PUBLIC
 	mov	QWORD[8+rsp],rdi	;WIN64 prologue
+SEH64_SAVEREG rdi, 8
 	mov	QWORD[16+rsp],rsi
+SEH64_SAVEREG rsi, 16
 	mov	rax,rsp
-$L$SEH_begin_aesni_cbc_encrypt:
 	mov	rdi,rcx
 	mov	rsi,rdx
 	mov	rdx,r8
@@ -3728,6 +4120,8 @@ $L$SEH_begin_aesni_cbc_encrypt:
 
 
 DB	243,15,30,250
+	; cfa_rsp=-8
+SEH64_ENDPROLOG	; cfa_reg=%rsp cfa_reg_offset=8 cfa_rsp=-8
 	test	rdx,rdx
 	jz	NEAR $L$cbc_ret
 
@@ -3818,25 +4212,59 @@ DB	102,15,56,223,209
 	movups	XMMWORD[rsi],xmm2
 	pxor	xmm2,xmm2
 	jmp	NEAR $L$cbc_ret
+SEH64_ENDPROC_FRAME	aesni_cbc_encrypt
+$L$SEH_end_aesni_cbc_encrypt:
+
+
+
+ALIGN	16
+SEH64_PROC_FRAME aesni_cbc_encrypt_bulk,PRIVATE
+	mov	QWORD[8+rsp],rdi	;WIN64 prologue
+SEH64_SAVEREG rdi, 8
+	mov	QWORD[16+rsp],rsi
+SEH64_SAVEREG rsi, 16
+	mov	rax,rsp
+	mov	rdi,rcx
+	mov	rsi,rdx
+	mov	rdx,r8
+	mov	rcx,r9
+	mov	r8,QWORD[40+rsp]
+	mov	r9,QWORD[48+rsp]
+
+
+
+	ud2
 ALIGN	16
 $L$cbc_decrypt_bulk:
 	lea	r11,[rsp]
 
 	push	rbp
-
+SEH64_PUSHREG	rbp	; cfa_rsp,cfa_reg_offset => -16,8 cfa_reg=%r11
 	sub	rsp,176
-	and	rsp,-16
+SEH64_ALLOCSTACK 176
 	movaps	XMMWORD[16+rsp],xmm6
+SEH64_SAVEXMM128 xmm6, 16	; .cfi_offset xmm6, -176 cfa_reg_offset=8 cfa_rsp=-192
 	movaps	XMMWORD[32+rsp],xmm7
+SEH64_SAVEXMM128 xmm7, 32	; .cfi_offset xmm7, -160 cfa_reg_offset=8 cfa_rsp=-192
 	movaps	XMMWORD[48+rsp],xmm8
+SEH64_SAVEXMM128 xmm8, 48	; .cfi_offset xmm8, -144 cfa_reg_offset=8 cfa_rsp=-192
 	movaps	XMMWORD[64+rsp],xmm9
+SEH64_SAVEXMM128 xmm9, 64	; .cfi_offset xmm9, -128 cfa_reg_offset=8 cfa_rsp=-192
 	movaps	XMMWORD[80+rsp],xmm10
+SEH64_SAVEXMM128 xmm10, 80	; .cfi_offset xmm10, -112 cfa_reg_offset=8 cfa_rsp=-192
 	movaps	XMMWORD[96+rsp],xmm11
+SEH64_SAVEXMM128 xmm11, 96	; .cfi_offset xmm11, -96 cfa_reg_offset=8 cfa_rsp=-192
 	movaps	XMMWORD[112+rsp],xmm12
+SEH64_SAVEXMM128 xmm12, 112	; .cfi_offset xmm12, -80 cfa_reg_offset=8 cfa_rsp=-192
 	movaps	XMMWORD[128+rsp],xmm13
+SEH64_SAVEXMM128 xmm13, 128	; .cfi_offset xmm13, -64 cfa_reg_offset=8 cfa_rsp=-192
 	movaps	XMMWORD[144+rsp],xmm14
+SEH64_SAVEXMM128 xmm14, 144	; .cfi_offset xmm14, -48 cfa_reg_offset=8 cfa_rsp=-192
 	movaps	XMMWORD[160+rsp],xmm15
-$L$cbc_decrypt_body:
+SEH64_SAVEXMM128 xmm15, 160	; .cfi_offset xmm15, -32 cfa_reg_offset=8 cfa_rsp=-192
+SEH64_ALLOCSTACK 8
+SEH64_SETFRAME r11, 192
+SEH64_ENDPROLOG	; cfa_reg=%r11 cfa_reg_offset=8 cfa_rsp=-192
 	mov	rbp,rcx
 	movups	xmm10,XMMWORD[r8]
 	mov	eax,r10d
@@ -4341,15 +4769,17 @@ $L$cbc_ret:
 	mov	rdi,QWORD[8+rsp]	;WIN64 epilogue
 	mov	rsi,QWORD[16+rsp]
 	DB	0F3h,0C3h		;repret
-
-$L$SEH_end_aesni_cbc_encrypt:
+SEH64_ENDPROC_FRAME	aesni_cbc_encrypt_bulk
+$L$SEH_end_aesni_cbc_encrypt_bulk:
 global	aesni_set_decrypt_key
 
 ALIGN	16
-aesni_set_decrypt_key:
+SEH64_PROC_FRAME aesni_set_decrypt_key,PUBLIC
 
 DB	0x48,0x83,0xEC,0x08
-
+SEH64_ALLOCSTACK 8
+	; cfa_rsp=-16
+SEH64_ENDPROLOG	; cfa_reg=%rsp cfa_reg_offset=16 cfa_rsp=-16
 	call	__aesni_set_encrypt_key
 	shl	edx,4
 	test	eax,eax
@@ -4384,17 +4814,18 @@ $L$dec_key_ret:
 	add	rsp,8
 
 	DB	0F3h,0C3h		;repret
-
-$L$SEH_end_set_decrypt_key:
+SEH64_ENDPROC_FRAME	aesni_set_decrypt_key
 
 global	aesni_set_encrypt_key
 
 ALIGN	16
-aesni_set_encrypt_key:
+SEH64_PROC_FRAME aesni_set_encrypt_key,PUBLIC
 __aesni_set_encrypt_key:
 
 DB	0x48,0x83,0xEC,0x08
-
+SEH64_ALLOCSTACK 8
+	; cfa_rsp=-16
+SEH64_ENDPROLOG	; cfa_reg=%rsp cfa_reg_offset=16 cfa_rsp=-16
 	mov	rax,-1
 	test	rcx,rcx
 	jz	NEAR $L$enc_key_ret
@@ -4689,7 +5120,6 @@ $L$enc_key_ret:
 	add	rsp,8
 
 	DB	0F3h,0C3h		;repret
-$L$SEH_end_set_encrypt_key:
 
 ALIGN	16
 $L$key_expansion_128:
@@ -4759,7 +5189,7 @@ $L$key_expansion_256b:
 	shufps	xmm1,xmm1,170
 	xorps	xmm2,xmm1
 	DB	0F3h,0C3h		;repret
-
+SEH64_ENDPROC_FRAME	aesni_set_encrypt_key
 
 
 section	.rdata rdata align=64
@@ -4789,318 +5219,3 @@ DB	32,98,121,32,60,97,112,112,114,111,64,111,112,101,110,115
 DB	115,108,46,111,114,103,62,0
 ALIGN	64
 section .text
-EXTERN	__imp_RtlVirtualUnwind
-
-ALIGN	16
-ecb_ccm64_se_handler:
-	push	rsi
-	push	rdi
-	push	rbx
-	push	rbp
-	push	r12
-	push	r13
-	push	r14
-	push	r15
-	pushfq
-	sub	rsp,64
-
-	mov	rax,QWORD[120+r8]
-	mov	rbx,QWORD[248+r8]
-
-	mov	rsi,QWORD[8+r9]
-	mov	r11,QWORD[56+r9]
-
-	mov	r10d,DWORD[r11]
-	lea	r10,[r10*1+rsi]
-	cmp	rbx,r10
-	jb	NEAR $L$common_seh_tail
-
-	mov	rax,QWORD[152+r8]
-
-	mov	r10d,DWORD[4+r11]
-	lea	r10,[r10*1+rsi]
-	cmp	rbx,r10
-	jae	NEAR $L$common_seh_tail
-
-	lea	rsi,[rax]
-	lea	rdi,[512+r8]
-	mov	ecx,8
-	DD	0xa548f3fc
-	lea	rax,[88+rax]
-
-	jmp	NEAR $L$common_seh_tail
-
-
-
-ALIGN	16
-ctr_xts_se_handler:
-	push	rsi
-	push	rdi
-	push	rbx
-	push	rbp
-	push	r12
-	push	r13
-	push	r14
-	push	r15
-	pushfq
-	sub	rsp,64
-
-	mov	rax,QWORD[120+r8]
-	mov	rbx,QWORD[248+r8]
-
-	mov	rsi,QWORD[8+r9]
-	mov	r11,QWORD[56+r9]
-
-	mov	r10d,DWORD[r11]
-	lea	r10,[r10*1+rsi]
-	cmp	rbx,r10
-	jb	NEAR $L$common_seh_tail
-
-	mov	rax,QWORD[152+r8]
-
-	mov	r10d,DWORD[4+r11]
-	lea	r10,[r10*1+rsi]
-	cmp	rbx,r10
-	jae	NEAR $L$common_seh_tail
-
-	mov	rax,QWORD[208+r8]
-
-	lea	rsi,[((-168))+rax]
-	lea	rdi,[512+r8]
-	mov	ecx,20
-	DD	0xa548f3fc
-
-	mov	rbp,QWORD[((-8))+rax]
-	mov	QWORD[160+r8],rbp
-	jmp	NEAR $L$common_seh_tail
-
-
-
-ALIGN	16
-ocb_se_handler:
-	push	rsi
-	push	rdi
-	push	rbx
-	push	rbp
-	push	r12
-	push	r13
-	push	r14
-	push	r15
-	pushfq
-	sub	rsp,64
-
-	mov	rax,QWORD[120+r8]
-	mov	rbx,QWORD[248+r8]
-
-	mov	rsi,QWORD[8+r9]
-	mov	r11,QWORD[56+r9]
-
-	mov	r10d,DWORD[r11]
-	lea	r10,[r10*1+rsi]
-	cmp	rbx,r10
-	jb	NEAR $L$common_seh_tail
-
-	mov	r10d,DWORD[4+r11]
-	lea	r10,[r10*1+rsi]
-	cmp	rbx,r10
-	jae	NEAR $L$common_seh_tail
-
-	mov	r10d,DWORD[8+r11]
-	lea	r10,[r10*1+rsi]
-	cmp	rbx,r10
-	jae	NEAR $L$ocb_no_xmm
-
-	mov	rax,QWORD[152+r8]
-
-	lea	rsi,[rax]
-	lea	rdi,[512+r8]
-	mov	ecx,20
-	DD	0xa548f3fc
-	lea	rax,[((160+40))+rax]
-
-$L$ocb_no_xmm:
-	mov	rbx,QWORD[((-8))+rax]
-	mov	rbp,QWORD[((-16))+rax]
-	mov	r12,QWORD[((-24))+rax]
-	mov	r13,QWORD[((-32))+rax]
-	mov	r14,QWORD[((-40))+rax]
-
-	mov	QWORD[144+r8],rbx
-	mov	QWORD[160+r8],rbp
-	mov	QWORD[216+r8],r12
-	mov	QWORD[224+r8],r13
-	mov	QWORD[232+r8],r14
-
-	jmp	NEAR $L$common_seh_tail
-
-
-ALIGN	16
-cbc_se_handler:
-	push	rsi
-	push	rdi
-	push	rbx
-	push	rbp
-	push	r12
-	push	r13
-	push	r14
-	push	r15
-	pushfq
-	sub	rsp,64
-
-	mov	rax,QWORD[152+r8]
-	mov	rbx,QWORD[248+r8]
-
-	lea	r10,[$L$cbc_decrypt_bulk]
-	cmp	rbx,r10
-	jb	NEAR $L$common_seh_tail
-
-	mov	rax,QWORD[120+r8]
-
-	lea	r10,[$L$cbc_decrypt_body]
-	cmp	rbx,r10
-	jb	NEAR $L$common_seh_tail
-
-	mov	rax,QWORD[152+r8]
-
-	lea	r10,[$L$cbc_ret]
-	cmp	rbx,r10
-	jae	NEAR $L$common_seh_tail
-
-	lea	rsi,[16+rax]
-	lea	rdi,[512+r8]
-	mov	ecx,20
-	DD	0xa548f3fc
-
-	mov	rax,QWORD[208+r8]
-
-	mov	rbp,QWORD[((-8))+rax]
-	mov	QWORD[160+r8],rbp
-
-$L$common_seh_tail:
-	mov	rdi,QWORD[8+rax]
-	mov	rsi,QWORD[16+rax]
-	mov	QWORD[152+r8],rax
-	mov	QWORD[168+r8],rsi
-	mov	QWORD[176+r8],rdi
-
-	mov	rdi,QWORD[40+r9]
-	mov	rsi,r8
-	mov	ecx,154
-	DD	0xa548f3fc
-
-	mov	rsi,r9
-	xor	rcx,rcx
-	mov	rdx,QWORD[8+rsi]
-	mov	r8,QWORD[rsi]
-	mov	r9,QWORD[16+rsi]
-	mov	r10,QWORD[40+rsi]
-	lea	r11,[56+rsi]
-	lea	r12,[24+rsi]
-	mov	QWORD[32+rsp],r10
-	mov	QWORD[40+rsp],r11
-	mov	QWORD[48+rsp],r12
-	mov	QWORD[56+rsp],rcx
-	call	QWORD[__imp_RtlVirtualUnwind]
-
-	mov	eax,1
-	add	rsp,64
-	popfq
-	pop	r15
-	pop	r14
-	pop	r13
-	pop	r12
-	pop	rbp
-	pop	rbx
-	pop	rdi
-	pop	rsi
-	DB	0F3h,0C3h		;repret
-
-
-section	.pdata rdata align=4
-ALIGN	4
-	DD	$L$SEH_begin_aesni_ecb_encrypt wrt ..imagebase
-	DD	$L$SEH_end_aesni_ecb_encrypt wrt ..imagebase
-	DD	$L$SEH_info_ecb wrt ..imagebase
-
-	DD	$L$SEH_begin_aesni_ccm64_encrypt_blocks wrt ..imagebase
-	DD	$L$SEH_end_aesni_ccm64_encrypt_blocks wrt ..imagebase
-	DD	$L$SEH_info_ccm64_enc wrt ..imagebase
-
-	DD	$L$SEH_begin_aesni_ccm64_decrypt_blocks wrt ..imagebase
-	DD	$L$SEH_end_aesni_ccm64_decrypt_blocks wrt ..imagebase
-	DD	$L$SEH_info_ccm64_dec wrt ..imagebase
-
-	DD	$L$SEH_begin_aesni_ctr32_encrypt_blocks wrt ..imagebase
-	DD	$L$SEH_end_aesni_ctr32_encrypt_blocks wrt ..imagebase
-	DD	$L$SEH_info_ctr32 wrt ..imagebase
-
-	DD	$L$SEH_begin_aesni_xts_encrypt wrt ..imagebase
-	DD	$L$SEH_end_aesni_xts_encrypt wrt ..imagebase
-	DD	$L$SEH_info_xts_enc wrt ..imagebase
-
-	DD	$L$SEH_begin_aesni_xts_decrypt wrt ..imagebase
-	DD	$L$SEH_end_aesni_xts_decrypt wrt ..imagebase
-	DD	$L$SEH_info_xts_dec wrt ..imagebase
-
-	DD	$L$SEH_begin_aesni_ocb_encrypt wrt ..imagebase
-	DD	$L$SEH_end_aesni_ocb_encrypt wrt ..imagebase
-	DD	$L$SEH_info_ocb_enc wrt ..imagebase
-
-	DD	$L$SEH_begin_aesni_ocb_decrypt wrt ..imagebase
-	DD	$L$SEH_end_aesni_ocb_decrypt wrt ..imagebase
-	DD	$L$SEH_info_ocb_dec wrt ..imagebase
-	DD	$L$SEH_begin_aesni_cbc_encrypt wrt ..imagebase
-	DD	$L$SEH_end_aesni_cbc_encrypt wrt ..imagebase
-	DD	$L$SEH_info_cbc wrt ..imagebase
-
-	DD	aesni_set_decrypt_key wrt ..imagebase
-	DD	$L$SEH_end_set_decrypt_key wrt ..imagebase
-	DD	$L$SEH_info_key wrt ..imagebase
-
-	DD	aesni_set_encrypt_key wrt ..imagebase
-	DD	$L$SEH_end_set_encrypt_key wrt ..imagebase
-	DD	$L$SEH_info_key wrt ..imagebase
-section	.xdata rdata align=8
-ALIGN	8
-$L$SEH_info_ecb:
-DB	9,0,0,0
-	DD	ecb_ccm64_se_handler wrt ..imagebase
-	DD	$L$ecb_enc_body wrt ..imagebase,$L$ecb_enc_ret wrt ..imagebase
-$L$SEH_info_ccm64_enc:
-DB	9,0,0,0
-	DD	ecb_ccm64_se_handler wrt ..imagebase
-	DD	$L$ccm64_enc_body wrt ..imagebase,$L$ccm64_enc_ret wrt ..imagebase
-$L$SEH_info_ccm64_dec:
-DB	9,0,0,0
-	DD	ecb_ccm64_se_handler wrt ..imagebase
-	DD	$L$ccm64_dec_body wrt ..imagebase,$L$ccm64_dec_ret wrt ..imagebase
-$L$SEH_info_ctr32:
-DB	9,0,0,0
-	DD	ctr_xts_se_handler wrt ..imagebase
-	DD	$L$ctr32_body wrt ..imagebase,$L$ctr32_epilogue wrt ..imagebase
-$L$SEH_info_xts_enc:
-DB	9,0,0,0
-	DD	ctr_xts_se_handler wrt ..imagebase
-	DD	$L$xts_enc_body wrt ..imagebase,$L$xts_enc_epilogue wrt ..imagebase
-$L$SEH_info_xts_dec:
-DB	9,0,0,0
-	DD	ctr_xts_se_handler wrt ..imagebase
-	DD	$L$xts_dec_body wrt ..imagebase,$L$xts_dec_epilogue wrt ..imagebase
-$L$SEH_info_ocb_enc:
-DB	9,0,0,0
-	DD	ocb_se_handler wrt ..imagebase
-	DD	$L$ocb_enc_body wrt ..imagebase,$L$ocb_enc_epilogue wrt ..imagebase
-	DD	$L$ocb_enc_pop wrt ..imagebase
-	DD	0
-$L$SEH_info_ocb_dec:
-DB	9,0,0,0
-	DD	ocb_se_handler wrt ..imagebase
-	DD	$L$ocb_dec_body wrt ..imagebase,$L$ocb_dec_epilogue wrt ..imagebase
-	DD	$L$ocb_dec_pop wrt ..imagebase
-	DD	0
-$L$SEH_info_cbc:
-DB	9,0,0,0
-	DD	cbc_se_handler wrt ..imagebase
-$L$SEH_info_key:
-DB	0x01,0x04,0x01,0x00
-DB	0x04,0x02,0x00,0x00

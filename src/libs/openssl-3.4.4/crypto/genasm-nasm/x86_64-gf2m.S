@@ -2,15 +2,261 @@ default	rel
 %define XMMWORD
 %define YMMWORD
 %define ZMMWORD
+;; For concatenation.
+%define SEH64_CONCAT(a,b) a %+ b
+
+%ifndef __YASM_MAJOR__
+ ;; @name Register numbers.
+ ;; @{
+ %define SEH64_PE_GREG_rax     0
+ %define SEH64_PE_GREG_rcx     1
+ %define SEH64_PE_GREG_rdx     2
+ %define SEH64_PE_GREG_rbx     3
+ %define SEH64_PE_GREG_rsp     4
+ %define SEH64_PE_GREG_rbp     5
+ %define SEH64_PE_GREG_rsi     6
+ %define SEH64_PE_GREG_rdi     7
+ %define SEH64_PE_GREG_r8      8
+ %define SEH64_PE_GREG_r9      9
+ %define SEH64_PE_GREG_r10     10
+ %define SEH64_PE_GREG_r11     11
+ %define SEH64_PE_GREG_r12     12
+ %define SEH64_PE_GREG_r13     13
+ %define SEH64_PE_GREG_r14     14
+ %define SEH64_PE_GREG_r15     15
+
+ %define SEH64_PE_XREG_xmm0     0
+ %define SEH64_PE_XREG_xmm1     1
+ %define SEH64_PE_XREG_xmm2     2
+ %define SEH64_PE_XREG_xmm3     3
+ %define SEH64_PE_XREG_xmm4     4
+ %define SEH64_PE_XREG_xmm5     5
+ %define SEH64_PE_XREG_xmm6     6
+ %define SEH64_PE_XREG_xmm7     7
+ %define SEH64_PE_XREG_xmm8     8
+ %define SEH64_PE_XREG_xmm9     9
+ %define SEH64_PE_XREG_xmm10    10
+ %define SEH64_PE_XREG_xmm11    11
+ %define SEH64_PE_XREG_xmm12    12
+ %define SEH64_PE_XREG_xmm13    13
+ %define SEH64_PE_XREG_xmm14    14
+ %define SEH64_PE_XREG_xmm15    15
+ ;; @}
+
+ ;; @name PE unwind operations.
+ ;; @{
+ %define SEH64_PE_PUSH_NONVOL      0
+ %define SEH64_PE_ALLOC_LARGE      1
+ %define SEH64_PE_ALLOC_SMALL      2
+ %define SEH64_PE_SET_FPREG        3
+ %define SEH64_PE_SAVE_NONVOL      4
+ %define SEH64_PE_SAVE_NONVOL_FAR  5
+ %define SEH64_PE_SAVE_XMM128      8
+ %define SEH64_PE_SAVE_XMM128_FAR  9
+ ;; @}
+
+ ;; We keep the unwind bytes in the seh64_slot_bytes (x)define, in reverse order as per spec.
+ %macro SEH64_APPEND_SLOT_PAIR 2
+  %ifdef seh64_slot_bytes
+   %xdefine seh64_slot_bytes %1, %2, seh64_slot_bytes
+  %else
+   %xdefine seh64_slot_bytes %1, %2
+  %endif
+ %endmacro
+
+ ;; For multi-slot unwind info.
+ %macro SEH64_APPEND_SLOT_BYTES 2+
+  %rep %0
+   %rotate -1
+   %ifdef seh64_slot_bytes
+    %xdefine seh64_slot_bytes %1, seh64_slot_bytes
+   %else
+    %xdefine seh64_slot_bytes %1
+   %endif
+  %endrep
+ %endmacro
+
+ ;; For generating labels.
+ %define SEH64_OP_LABEL(a_idx) asm_seh64_proc %+ .seh64_op_label %+ a_idx
+%endif ; !__YASM__
+
+;; For producing proper .labels despite .Lxxxx labels messing up the prefixing.
+%define SEH64_DOT_LABEL(a_DotLabel) SEH64_CONCAT(asm_seh64_proc,a_DotLabel)
+
+%macro SEH64_PROC_FRAME 2
+ %define asm_seh64_proc %1
+ %ifdef __YASM_MAJOR__
+        proc_frame %1
+ %else
+  %assign seh64_idxOps   0
+  ;%assign seh64_FrameReg SEH64_PE_GREG_rsp
+  %assign seh64_FrameReg 0
+  %assign seh64_offFrame 0
+  %undef  seh64_slot_bytes
+%1:
+.start_of_prologue:
+ %endif
+%endmacro
+
+%macro SEH64_ENDPROC_FRAME 1
+SEH64_DOT_LABEL(.end_proc):
+ %ifdef __YASM_MAJOR__
+	[endproc_frame]
+ %else
+        ; Emit the RUNTIME_FUNCTION entry.  The linker is picky here, no label.
+  %ifndef ASM_DEFINED_PDATA_SECTION
+   %define ASM_DEFINED_PDATA_SECTION
+        section .pdata rdata align=4
+  %else
+        section .pdata
+  %endif
+        dd      %1                              wrt ..imagebase
+        dd      SEH64_DOT_LABEL(.end_proc)      wrt ..imagebase
+        dd      SEH64_DOT_LABEL(.unwind_info)   wrt ..imagebase
+
+        ; Restore code section.
+        section .text
+ %endif
+%endmacro
+
+%macro SEH64_ENDPROLOG 0
+SEH64_DOT_LABEL(.end_of_prologue):
+ %ifdef __YASM_MAJOR__
+        [endprolog]
+ %else
+        ; Emit the unwind info now.
+  %ifndef ASM_DEFINED_XDATA_SECTION
+   %define ASM_DEFINED_XDATA_SECTION
+        section .xdata rdata align=4
+  %else
+        section .xdata
+        align   4, db 0
+  %endif
+SEH64_DOT_LABEL(.unwind_info):
+        db      1                       ; version 1 (3 bit), no flags (5 bits)
+        db      SEH64_DOT_LABEL(.end_of_prologue) - SEH64_DOT_LABEL(.start_of_prologue)
+
+        db      (SEH64_DOT_LABEL(.unwind_info_array_end) - SEH64_DOT_LABEL(.unwind_info_array)) / 2
+        db      seh64_FrameReg | (seh64_offFrame & 0xf0) ; framereg and offset/16.
+SEH64_DOT_LABEL(.unwind_info_array):
+   %ifdef seh64_slot_bytes
+        db      seh64_slot_bytes
+    %undef seh64_slot_bytes
+   %endif
+SEH64_DOT_LABEL(.unwind_info_array_end):
+
+        ; Reset the segment
+        section .text
+ %endif
+%endmacro
+
+%macro SEH64_ALLOCSTACK 1
+ %ifdef __YASM_MAJOR__
+        [allocstack %1]
+ %else
+SEH64_OP_LABEL(seh64_idxOps):
+  %if (%1) & 7
+   %error "SEH64_ALLOCSTACK must be a multiple of 8"
+  %endif
+  %if (%1) < 8
+   %error "SEH64_ALLOCSTACK must have an argument that's 8 or higher."
+  %elif (%1) <= 128
+   SEH64_APPEND_SLOT_PAIR \
+	SEH64_OP_LABEL(seh64_idxOps) - SEH64_DOT_LABEL(.start_of_prologue), \
+        SEH64_PE_ALLOC_SMALL | ((((%1) / 8) - 1) << 4)
+  %elif (%1) < 512
+   SEH64_APPEND_SLOT_BYTES \
+	SEH64_OP_LABEL(seh64_idxOps) - SEH64_DOT_LABEL(.start_of_prologue), \
+	SEH64_PE_ALLOC_LARGE | 0, \
+	((%1) / 8) & 0xff, ((%1) / 8) >> 8
+  %else
+   SEH64_APPEND_SLOT_BYTES \
+	SEH64_OP_LABEL(seh64_idxOps) - SEH64_DOT_LABEL(.start_of_prologue), \
+	SEH64_PE_ALLOC_LARGE | 1, \
+	(%1) & 0xff, ((%1) >> 8) & 0xff, ((%1) >> 16) & 0xff, ((%1) >> 24) & 0xff
+  %endif
+  %assign seh64_idxOps seh64_idxOps + 1
+ %endif
+%endmacro
+
+%macro SEH64_PUSHREG 1
+ %ifdef __YASM_MAJOR__
+        [pushreg %1]
+ %else
+SEH64_OP_LABEL(seh64_idxOps):
+  SEH64_APPEND_SLOT_PAIR \
+	SEH64_OP_LABEL(seh64_idxOps) - SEH64_DOT_LABEL(.start_of_prologue), \
+	SEH64_PE_PUSH_NONVOL | (SEH64_PE_GREG_ %+ %1 << 4)
+  %assign seh64_idxOps seh64_idxOps + 1
+ %endif
+%endmacro
+
+%macro SEH64_SAVEREG 2
+ %ifdef __YASM_MAJOR__
+        [savereg %1, %2]
+ %else
+  %if (%2) & 7
+   %error "SEH64_SAVEREG offset must be a multiple of 8"
+  %endif
+  %if (%2) <= (65535*8)
+SEH64_OP_LABEL(seh64_idxOps):
+   SEH64_APPEND_SLOT_BYTES \
+	SEH64_OP_LABEL(seh64_idxOps) - SEH64_DOT_LABEL(.start_of_prologue), \
+	SEH64_PE_SAVE_NONVOL | (SEH64_PE_GREG_ %+ %1 << 4), \
+	((%2) / 8) & 0xff, \
+	((%2) / 8) >> 8
+  %else
+   %error "SEH64_SAVEREG implement far offsets"
+  %endif
+  %assign seh64_idxOps seh64_idxOps + 1
+ %endif
+%endmacro
+
+%macro SEH64_SAVEXMM128 2
+ %ifdef __YASM_MAJOR__
+        [savexmm128 %1, %2]
+ %else
+SEH64_OP_LABEL(seh64_idxOps):
+  %if (%2) & 15
+   %error "SEH64_SAVE_XMM128 offset must be a multiple of 16"
+  %endif
+  %if (%2) <= (65535*16)
+   SEH64_APPEND_SLOT_BYTES \
+	SEH64_OP_LABEL(seh64_idxOps) - SEH64_DOT_LABEL(.start_of_prologue), \
+        SEH64_PE_SAVE_XMM128 | (SEH64_PE_XREG_ %+ %1 << 4), \
+        ((%2) / 16) & 0xff, \
+        ((%2) / 16) >> 8
+  %else
+   %error "SEH64_SAVE_XMM128 implement far offsets"
+  %endif
+  %assign seh64_idxOps seh64_idxOps + 1
+ %endif
+%endmacro
+
+%macro SEH64_SETFRAME 2
+ %ifdef __YASM_MAJOR__
+        [setframe %1, %2]
+ %else
+SEH64_OP_LABEL(seh64_idxOps):
+  SEH64_APPEND_SLOT_PAIR \
+	SEH64_OP_LABEL(seh64_idxOps) - SEH64_DOT_LABEL(.start_of_prologue), \
+        SEH64_PE_SET_FPREG | 0
+  %assign seh64_FrameReg SEH64_PE_GREG_ %+ %1
+  %assign seh64_offFrame %2
+  %assign seh64_idxOps seh64_idxOps + 1
+ %endif
+%endmacro
 section	.text code align=64
 
 
 
 ALIGN	16
-_mul_1x1:
+SEH64_PROC_FRAME _mul_1x1,PRIVATE
 
 	sub	rsp,128+8
-
+SEH64_ALLOCSTACK 136
+	; cfa_rsp=-144
+SEH64_ENDPROLOG	; cfa_reg=%rsp cfa_reg_offset=144 cfa_rsp=-144
 	mov	r9,-1
 	lea	rsi,[rax*1+rax]
 	shr	r9,3
@@ -203,18 +449,20 @@ DB	102,72,15,126,199
 
 	DB	0F3h,0C3h		;repret
 $L$end_mul_1x1:
-
+SEH64_ENDPROC_FRAME	_mul_1x1
 
 EXTERN	OPENSSL_ia32cap_P
 global	bn_GF2m_mul_2x2
 
 ALIGN	16
-bn_GF2m_mul_2x2:
+SEH64_PROC_FRAME bn_GF2m_mul_2x2,PUBLIC
 
 	mov	rax,rsp
+	; cfa_rsp=-8
+SEH64_ENDPROLOG	; cfa_reg=%rsp cfa_reg_offset=8 cfa_rsp=-8
 	mov	r10,QWORD[OPENSSL_ia32cap_P]
 	bt	r10,33
-	jnc	NEAR $L$vanilla_mul_2x2
+	jnc	NEAR _bn_GF2m_mul_2x2_vanilla_shortcut
 
 DB	102,72,15,110,194
 DB	102,73,15,110,201
@@ -237,25 +485,34 @@ DB	102,15,58,68,229,0
 	movdqu	XMMWORD[rcx],xmm2
 	movdqu	XMMWORD[16+rcx],xmm0
 	DB	0F3h,0C3h		;repret
+SEH64_ENDPROC_FRAME	bn_GF2m_mul_2x2
+
+
 
 ALIGN	16
-$L$vanilla_mul_2x2:
+SEH64_PROC_FRAME _bn_GF2m_mul_2x2_vanilla,PRIVATE
+
+_bn_GF2m_mul_2x2_vanilla_shortcut:
 	lea	rsp,[((-136))+rsp]
-
+SEH64_ALLOCSTACK 136
 	mov	r10,QWORD[176+rsp]
+SEH64_ALLOCSTACK 176
 	mov	QWORD[120+rsp],rdi
+SEH64_SAVEREG rdi, 120	; .cfi_offset rdi, -200 cfa_reg_offset=320 cfa_rsp=-320
 	mov	QWORD[128+rsp],rsi
+SEH64_SAVEREG rsi, 128	; .cfi_offset rsi, -192 cfa_reg_offset=320 cfa_rsp=-320
 	mov	QWORD[80+rsp],r14
-
+SEH64_SAVEREG r14, 80	; .cfi_offset r14, -240 cfa_reg_offset=320 cfa_rsp=-320
 	mov	QWORD[88+rsp],r13
-
+SEH64_SAVEREG r13, 88	; .cfi_offset r13, -232 cfa_reg_offset=320 cfa_rsp=-320
 	mov	QWORD[96+rsp],r12
-
+SEH64_SAVEREG r12, 96	; .cfi_offset r12, -224 cfa_reg_offset=320 cfa_rsp=-320
 	mov	QWORD[104+rsp],rbp
-
+SEH64_SAVEREG rbp, 104	; .cfi_offset rbp, -216 cfa_reg_offset=320 cfa_rsp=-320
 	mov	QWORD[112+rsp],rbx
-
-$L$body_mul_2x2:
+SEH64_SAVEREG rbx, 112	; .cfi_offset rbx, -208 cfa_reg_offset=320 cfa_rsp=-320
+	; cfa_rsp=-320
+SEH64_ENDPROLOG	; cfa_reg=%rsp cfa_reg_offset=320 cfa_rsp=-320
 	mov	QWORD[32+rsp],rcx
 	mov	QWORD[40+rsp],rdx
 	mov	QWORD[48+rsp],r8
@@ -312,10 +569,8 @@ $L$body_mul_2x2:
 	mov	rsi,QWORD[128+rsp]
 	lea	rsp,[136+rsp]
 
-$L$epilogue_mul_2x2:
 	DB	0F3h,0C3h		;repret
-$L$end_mul_2x2:
-
+SEH64_ENDPROC_FRAME	_bn_GF2m_mul_2x2_vanilla
 
 DB	71,70,40,50,94,109,41,32,77,117,108,116,105,112,108,105
 DB	99,97,116,105,111,110,32,102,111,114,32,120,56,54,95,54
@@ -323,103 +578,3 @@ DB	52,44,32,67,82,89,80,84,79,71,65,77,83,32,98,121
 DB	32,60,97,112,112,114,111,64,111,112,101,110,115,115,108,46
 DB	111,114,103,62,0
 ALIGN	16
-EXTERN	__imp_RtlVirtualUnwind
-
-
-ALIGN	16
-se_handler:
-	push	rsi
-	push	rdi
-	push	rbx
-	push	rbp
-	push	r12
-	push	r13
-	push	r14
-	push	r15
-	pushfq
-	sub	rsp,64
-
-	mov	rax,QWORD[120+r8]
-	mov	rbx,QWORD[248+r8]
-
-	lea	r10,[$L$body_mul_2x2]
-	cmp	rbx,r10
-	jb	NEAR $L$in_prologue
-
-	mov	rax,QWORD[152+r8]
-
-	lea	r10,[$L$epilogue_mul_2x2]
-	cmp	rbx,r10
-	jae	NEAR $L$in_prologue
-
-	mov	r14,QWORD[80+rax]
-	mov	r13,QWORD[88+rax]
-	mov	r12,QWORD[96+rax]
-	mov	rbp,QWORD[104+rax]
-	mov	rbx,QWORD[112+rax]
-	mov	rdi,QWORD[120+rax]
-	mov	rsi,QWORD[128+rax]
-
-	mov	QWORD[144+r8],rbx
-	mov	QWORD[160+r8],rbp
-	mov	QWORD[168+r8],rsi
-	mov	QWORD[176+r8],rdi
-	mov	QWORD[216+r8],r12
-	mov	QWORD[224+r8],r13
-	mov	QWORD[232+r8],r14
-
-	lea	rax,[136+rax]
-
-$L$in_prologue:
-	mov	QWORD[152+r8],rax
-
-	mov	rdi,QWORD[40+r9]
-	mov	rsi,r8
-	mov	ecx,154
-	DD	0xa548f3fc
-
-	mov	rsi,r9
-	xor	rcx,rcx
-	mov	rdx,QWORD[8+rsi]
-	mov	r8,QWORD[rsi]
-	mov	r9,QWORD[16+rsi]
-	mov	r10,QWORD[40+rsi]
-	lea	r11,[56+rsi]
-	lea	r12,[24+rsi]
-	mov	QWORD[32+rsp],r10
-	mov	QWORD[40+rsp],r11
-	mov	QWORD[48+rsp],r12
-	mov	QWORD[56+rsp],rcx
-	call	QWORD[__imp_RtlVirtualUnwind]
-
-	mov	eax,1
-	add	rsp,64
-	popfq
-	pop	r15
-	pop	r14
-	pop	r13
-	pop	r12
-	pop	rbp
-	pop	rbx
-	pop	rdi
-	pop	rsi
-	DB	0F3h,0C3h		;repret
-
-
-section	.pdata rdata align=4
-ALIGN	4
-	DD	_mul_1x1 wrt ..imagebase
-	DD	$L$end_mul_1x1 wrt ..imagebase
-	DD	$L$SEH_info_1x1 wrt ..imagebase
-
-	DD	$L$vanilla_mul_2x2 wrt ..imagebase
-	DD	$L$end_mul_2x2 wrt ..imagebase
-	DD	$L$SEH_info_2x2 wrt ..imagebase
-section	.xdata rdata align=8
-ALIGN	8
-$L$SEH_info_1x1:
-DB	0x01,0x07,0x02,0x00
-DB	0x07,0x01,0x11,0x00
-$L$SEH_info_2x2:
-DB	9,0,0,0
-	DD	se_handler wrt ..imagebase

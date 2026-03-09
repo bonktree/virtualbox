@@ -2,12 +2,258 @@ default	rel
 %define XMMWORD
 %define YMMWORD
 %define ZMMWORD
+;; For concatenation.
+%define SEH64_CONCAT(a,b) a %+ b
+
+%ifndef __YASM_MAJOR__
+ ;; @name Register numbers.
+ ;; @{
+ %define SEH64_PE_GREG_rax     0
+ %define SEH64_PE_GREG_rcx     1
+ %define SEH64_PE_GREG_rdx     2
+ %define SEH64_PE_GREG_rbx     3
+ %define SEH64_PE_GREG_rsp     4
+ %define SEH64_PE_GREG_rbp     5
+ %define SEH64_PE_GREG_rsi     6
+ %define SEH64_PE_GREG_rdi     7
+ %define SEH64_PE_GREG_r8      8
+ %define SEH64_PE_GREG_r9      9
+ %define SEH64_PE_GREG_r10     10
+ %define SEH64_PE_GREG_r11     11
+ %define SEH64_PE_GREG_r12     12
+ %define SEH64_PE_GREG_r13     13
+ %define SEH64_PE_GREG_r14     14
+ %define SEH64_PE_GREG_r15     15
+
+ %define SEH64_PE_XREG_xmm0     0
+ %define SEH64_PE_XREG_xmm1     1
+ %define SEH64_PE_XREG_xmm2     2
+ %define SEH64_PE_XREG_xmm3     3
+ %define SEH64_PE_XREG_xmm4     4
+ %define SEH64_PE_XREG_xmm5     5
+ %define SEH64_PE_XREG_xmm6     6
+ %define SEH64_PE_XREG_xmm7     7
+ %define SEH64_PE_XREG_xmm8     8
+ %define SEH64_PE_XREG_xmm9     9
+ %define SEH64_PE_XREG_xmm10    10
+ %define SEH64_PE_XREG_xmm11    11
+ %define SEH64_PE_XREG_xmm12    12
+ %define SEH64_PE_XREG_xmm13    13
+ %define SEH64_PE_XREG_xmm14    14
+ %define SEH64_PE_XREG_xmm15    15
+ ;; @}
+
+ ;; @name PE unwind operations.
+ ;; @{
+ %define SEH64_PE_PUSH_NONVOL      0
+ %define SEH64_PE_ALLOC_LARGE      1
+ %define SEH64_PE_ALLOC_SMALL      2
+ %define SEH64_PE_SET_FPREG        3
+ %define SEH64_PE_SAVE_NONVOL      4
+ %define SEH64_PE_SAVE_NONVOL_FAR  5
+ %define SEH64_PE_SAVE_XMM128      8
+ %define SEH64_PE_SAVE_XMM128_FAR  9
+ ;; @}
+
+ ;; We keep the unwind bytes in the seh64_slot_bytes (x)define, in reverse order as per spec.
+ %macro SEH64_APPEND_SLOT_PAIR 2
+  %ifdef seh64_slot_bytes
+   %xdefine seh64_slot_bytes %1, %2, seh64_slot_bytes
+  %else
+   %xdefine seh64_slot_bytes %1, %2
+  %endif
+ %endmacro
+
+ ;; For multi-slot unwind info.
+ %macro SEH64_APPEND_SLOT_BYTES 2+
+  %rep %0
+   %rotate -1
+   %ifdef seh64_slot_bytes
+    %xdefine seh64_slot_bytes %1, seh64_slot_bytes
+   %else
+    %xdefine seh64_slot_bytes %1
+   %endif
+  %endrep
+ %endmacro
+
+ ;; For generating labels.
+ %define SEH64_OP_LABEL(a_idx) asm_seh64_proc %+ .seh64_op_label %+ a_idx
+%endif ; !__YASM__
+
+;; For producing proper .labels despite .Lxxxx labels messing up the prefixing.
+%define SEH64_DOT_LABEL(a_DotLabel) SEH64_CONCAT(asm_seh64_proc,a_DotLabel)
+
+%macro SEH64_PROC_FRAME 2
+ %define asm_seh64_proc %1
+ %ifdef __YASM_MAJOR__
+        proc_frame %1
+ %else
+  %assign seh64_idxOps   0
+  ;%assign seh64_FrameReg SEH64_PE_GREG_rsp
+  %assign seh64_FrameReg 0
+  %assign seh64_offFrame 0
+  %undef  seh64_slot_bytes
+%1:
+.start_of_prologue:
+ %endif
+%endmacro
+
+%macro SEH64_ENDPROC_FRAME 1
+SEH64_DOT_LABEL(.end_proc):
+ %ifdef __YASM_MAJOR__
+	[endproc_frame]
+ %else
+        ; Emit the RUNTIME_FUNCTION entry.  The linker is picky here, no label.
+  %ifndef ASM_DEFINED_PDATA_SECTION
+   %define ASM_DEFINED_PDATA_SECTION
+        section .pdata rdata align=4
+  %else
+        section .pdata
+  %endif
+        dd      %1                              wrt ..imagebase
+        dd      SEH64_DOT_LABEL(.end_proc)      wrt ..imagebase
+        dd      SEH64_DOT_LABEL(.unwind_info)   wrt ..imagebase
+
+        ; Restore code section.
+        section .text
+ %endif
+%endmacro
+
+%macro SEH64_ENDPROLOG 0
+SEH64_DOT_LABEL(.end_of_prologue):
+ %ifdef __YASM_MAJOR__
+        [endprolog]
+ %else
+        ; Emit the unwind info now.
+  %ifndef ASM_DEFINED_XDATA_SECTION
+   %define ASM_DEFINED_XDATA_SECTION
+        section .xdata rdata align=4
+  %else
+        section .xdata
+        align   4, db 0
+  %endif
+SEH64_DOT_LABEL(.unwind_info):
+        db      1                       ; version 1 (3 bit), no flags (5 bits)
+        db      SEH64_DOT_LABEL(.end_of_prologue) - SEH64_DOT_LABEL(.start_of_prologue)
+
+        db      (SEH64_DOT_LABEL(.unwind_info_array_end) - SEH64_DOT_LABEL(.unwind_info_array)) / 2
+        db      seh64_FrameReg | (seh64_offFrame & 0xf0) ; framereg and offset/16.
+SEH64_DOT_LABEL(.unwind_info_array):
+   %ifdef seh64_slot_bytes
+        db      seh64_slot_bytes
+    %undef seh64_slot_bytes
+   %endif
+SEH64_DOT_LABEL(.unwind_info_array_end):
+
+        ; Reset the segment
+        section .text
+ %endif
+%endmacro
+
+%macro SEH64_ALLOCSTACK 1
+ %ifdef __YASM_MAJOR__
+        [allocstack %1]
+ %else
+SEH64_OP_LABEL(seh64_idxOps):
+  %if (%1) & 7
+   %error "SEH64_ALLOCSTACK must be a multiple of 8"
+  %endif
+  %if (%1) < 8
+   %error "SEH64_ALLOCSTACK must have an argument that's 8 or higher."
+  %elif (%1) <= 128
+   SEH64_APPEND_SLOT_PAIR \
+	SEH64_OP_LABEL(seh64_idxOps) - SEH64_DOT_LABEL(.start_of_prologue), \
+        SEH64_PE_ALLOC_SMALL | ((((%1) / 8) - 1) << 4)
+  %elif (%1) < 512
+   SEH64_APPEND_SLOT_BYTES \
+	SEH64_OP_LABEL(seh64_idxOps) - SEH64_DOT_LABEL(.start_of_prologue), \
+	SEH64_PE_ALLOC_LARGE | 0, \
+	((%1) / 8) & 0xff, ((%1) / 8) >> 8
+  %else
+   SEH64_APPEND_SLOT_BYTES \
+	SEH64_OP_LABEL(seh64_idxOps) - SEH64_DOT_LABEL(.start_of_prologue), \
+	SEH64_PE_ALLOC_LARGE | 1, \
+	(%1) & 0xff, ((%1) >> 8) & 0xff, ((%1) >> 16) & 0xff, ((%1) >> 24) & 0xff
+  %endif
+  %assign seh64_idxOps seh64_idxOps + 1
+ %endif
+%endmacro
+
+%macro SEH64_PUSHREG 1
+ %ifdef __YASM_MAJOR__
+        [pushreg %1]
+ %else
+SEH64_OP_LABEL(seh64_idxOps):
+  SEH64_APPEND_SLOT_PAIR \
+	SEH64_OP_LABEL(seh64_idxOps) - SEH64_DOT_LABEL(.start_of_prologue), \
+	SEH64_PE_PUSH_NONVOL | (SEH64_PE_GREG_ %+ %1 << 4)
+  %assign seh64_idxOps seh64_idxOps + 1
+ %endif
+%endmacro
+
+%macro SEH64_SAVEREG 2
+ %ifdef __YASM_MAJOR__
+        [savereg %1, %2]
+ %else
+  %if (%2) & 7
+   %error "SEH64_SAVEREG offset must be a multiple of 8"
+  %endif
+  %if (%2) <= (65535*8)
+SEH64_OP_LABEL(seh64_idxOps):
+   SEH64_APPEND_SLOT_BYTES \
+	SEH64_OP_LABEL(seh64_idxOps) - SEH64_DOT_LABEL(.start_of_prologue), \
+	SEH64_PE_SAVE_NONVOL | (SEH64_PE_GREG_ %+ %1 << 4), \
+	((%2) / 8) & 0xff, \
+	((%2) / 8) >> 8
+  %else
+   %error "SEH64_SAVEREG implement far offsets"
+  %endif
+  %assign seh64_idxOps seh64_idxOps + 1
+ %endif
+%endmacro
+
+%macro SEH64_SAVEXMM128 2
+ %ifdef __YASM_MAJOR__
+        [savexmm128 %1, %2]
+ %else
+SEH64_OP_LABEL(seh64_idxOps):
+  %if (%2) & 15
+   %error "SEH64_SAVE_XMM128 offset must be a multiple of 16"
+  %endif
+  %if (%2) <= (65535*16)
+   SEH64_APPEND_SLOT_BYTES \
+	SEH64_OP_LABEL(seh64_idxOps) - SEH64_DOT_LABEL(.start_of_prologue), \
+        SEH64_PE_SAVE_XMM128 | (SEH64_PE_XREG_ %+ %1 << 4), \
+        ((%2) / 16) & 0xff, \
+        ((%2) / 16) >> 8
+  %else
+   %error "SEH64_SAVE_XMM128 implement far offsets"
+  %endif
+  %assign seh64_idxOps seh64_idxOps + 1
+ %endif
+%endmacro
+
+%macro SEH64_SETFRAME 2
+ %ifdef __YASM_MAJOR__
+        [setframe %1, %2]
+ %else
+SEH64_OP_LABEL(seh64_idxOps):
+  SEH64_APPEND_SLOT_PAIR \
+	SEH64_OP_LABEL(seh64_idxOps) - SEH64_DOT_LABEL(.start_of_prologue), \
+        SEH64_PE_SET_FPREG | 0
+  %assign seh64_FrameReg SEH64_PE_GREG_ %+ %1
+  %assign seh64_offFrame %2
+  %assign seh64_idxOps seh64_idxOps + 1
+ %endif
+%endmacro
 section	.text code align=64
 
 
 ALIGN	16
-_x86_64_AES_encrypt:
+SEH64_PROC_FRAME _x86_64_AES_encrypt,PRIVATE
 
+	; cfa_rsp=-8
+SEH64_ENDPROLOG	; cfa_reg=%rsp cfa_reg_offset=8 cfa_rsp=-8
 	xor	eax,DWORD[r15]
 	xor	ebx,DWORD[4+r15]
 	xor	ecx,DWORD[8+r15]
@@ -157,12 +403,14 @@ $L$enc_loop:
 	xor	ecx,r12d
 	xor	edx,r8d
 DB	0xf3,0xc3
-
+SEH64_ENDPROC_FRAME	_x86_64_AES_encrypt
 
 
 ALIGN	16
-_x86_64_AES_encrypt_compact:
+SEH64_PROC_FRAME _x86_64_AES_encrypt_compact,PRIVATE
 
+	; cfa_rsp=-8
+SEH64_ENDPROLOG	; cfa_reg=%rsp cfa_reg_offset=8 cfa_rsp=-8
 	lea	r8,[128+r14]
 	mov	edi,DWORD[((0-128))+r8]
 	mov	ebp,DWORD[((32-128))+r8]
@@ -332,7 +580,7 @@ $L$enc_compact_done:
 	xor	ecx,DWORD[8+r15]
 	xor	edx,DWORD[12+r15]
 DB	0xf3,0xc3
-
+SEH64_ENDPROC_FRAME	_x86_64_AES_encrypt_compact
 
 global	AES_encrypt
 
@@ -340,11 +588,12 @@ ALIGN	16
 global	asm_AES_encrypt
 
 asm_AES_encrypt:
-AES_encrypt:
+SEH64_PROC_FRAME AES_encrypt,PUBLIC
 	mov	QWORD[8+rsp],rdi	;WIN64 prologue
+SEH64_SAVEREG rdi, 8
 	mov	QWORD[16+rsp],rsi
+SEH64_SAVEREG rsi, 16
 	mov	rax,rsp
-$L$SEH_begin_AES_encrypt:
 	mov	rdi,rcx
 	mov	rsi,rdx
 	mov	rdx,r8
@@ -355,17 +604,17 @@ DB	243,15,30,250
 	mov	rax,rsp
 
 	push	rbx
-
+SEH64_PUSHREG	rbx	; cfa_rsp,cfa_reg_offset => -16,8 cfa_reg=%rax
 	push	rbp
-
+SEH64_PUSHREG	rbp	; cfa_rsp,cfa_reg_offset => -24,8 cfa_reg=%rax
 	push	r12
-
+SEH64_PUSHREG	r12	; cfa_rsp,cfa_reg_offset => -32,8 cfa_reg=%rax
 	push	r13
-
+SEH64_PUSHREG	r13	; cfa_rsp,cfa_reg_offset => -40,8 cfa_reg=%rax
 	push	r14
-
+SEH64_PUSHREG	r14	; cfa_rsp,cfa_reg_offset => -48,8 cfa_reg=%rax
 	push	r15
-
+SEH64_PUSHREG	r15	; cfa_rsp,cfa_reg_offset => -56,8 cfa_reg=%rax
 
 
 	lea	rcx,[((-63))+rdx]
@@ -379,7 +628,11 @@ DB	243,15,30,250
 	mov	QWORD[16+rsp],rsi
 	mov	QWORD[24+rsp],rax
 
-$L$enc_prologue:
+; Hack using rax to load saved CFA expression: %rsp+24,deref,+8
+SEH64_SETFRAME rax, 48	; Unwind basically does: rsp = rax - offset
+SEH64_PUSHREG rax    	; Unwind will load deref'ed value into volatile reg for SET_FRAME above.
+SEH64_ALLOCSTACK 24	; Can only deref by .PUSHREG, so adjust RSP by feigning stack alloc.
+SEH64_ENDPROLOG	; cfa_reg=%rax cfa_reg_offset= cfa_rsp=-56
 
 	mov	r15,rdx
 	mov	r13d,DWORD[240+r15]
@@ -425,16 +678,17 @@ $L$enc_prologue:
 
 	lea	rsp,[rsi]
 
-$L$enc_epilogue:
 	mov	rdi,QWORD[8+rsp]	;WIN64 epilogue
 	mov	rsi,QWORD[16+rsp]
 	DB	0F3h,0C3h		;repret
-
+SEH64_ENDPROC_FRAME	AES_encrypt
 $L$SEH_end_AES_encrypt:
 
 ALIGN	16
-_x86_64_AES_decrypt:
+SEH64_PROC_FRAME _x86_64_AES_decrypt,PRIVATE
 
+	; cfa_rsp=-8
+SEH64_ENDPROLOG	; cfa_reg=%rsp cfa_reg_offset=8 cfa_rsp=-8
 	xor	eax,DWORD[r15]
 	xor	ebx,DWORD[4+r15]
 	xor	ecx,DWORD[8+r15]
@@ -586,12 +840,14 @@ $L$dec_loop:
 	xor	ecx,r12d
 	xor	edx,r8d
 DB	0xf3,0xc3
-
+SEH64_ENDPROC_FRAME	_x86_64_AES_decrypt
 
 
 ALIGN	16
-_x86_64_AES_decrypt_compact:
+SEH64_PROC_FRAME _x86_64_AES_decrypt_compact,PRIVATE
 
+	; cfa_rsp=-8
+SEH64_ENDPROLOG	; cfa_reg=%rsp cfa_reg_offset=8 cfa_rsp=-8
 	lea	r8,[128+r14]
 	mov	edi,DWORD[((0-128))+r8]
 	mov	ebp,DWORD[((32-128))+r8]
@@ -813,7 +1069,7 @@ $L$dec_compact_done:
 	xor	ecx,DWORD[8+r15]
 	xor	edx,DWORD[12+r15]
 DB	0xf3,0xc3
-
+SEH64_ENDPROC_FRAME	_x86_64_AES_decrypt_compact
 
 global	AES_decrypt
 
@@ -821,11 +1077,12 @@ ALIGN	16
 global	asm_AES_decrypt
 
 asm_AES_decrypt:
-AES_decrypt:
+SEH64_PROC_FRAME AES_decrypt,PUBLIC
 	mov	QWORD[8+rsp],rdi	;WIN64 prologue
+SEH64_SAVEREG rdi, 8
 	mov	QWORD[16+rsp],rsi
+SEH64_SAVEREG rsi, 16
 	mov	rax,rsp
-$L$SEH_begin_AES_decrypt:
 	mov	rdi,rcx
 	mov	rsi,rdx
 	mov	rdx,r8
@@ -836,17 +1093,17 @@ DB	243,15,30,250
 	mov	rax,rsp
 
 	push	rbx
-
+SEH64_PUSHREG	rbx	; cfa_rsp,cfa_reg_offset => -16,8 cfa_reg=%rax
 	push	rbp
-
+SEH64_PUSHREG	rbp	; cfa_rsp,cfa_reg_offset => -24,8 cfa_reg=%rax
 	push	r12
-
+SEH64_PUSHREG	r12	; cfa_rsp,cfa_reg_offset => -32,8 cfa_reg=%rax
 	push	r13
-
+SEH64_PUSHREG	r13	; cfa_rsp,cfa_reg_offset => -40,8 cfa_reg=%rax
 	push	r14
-
+SEH64_PUSHREG	r14	; cfa_rsp,cfa_reg_offset => -48,8 cfa_reg=%rax
 	push	r15
-
+SEH64_PUSHREG	r15	; cfa_rsp,cfa_reg_offset => -56,8 cfa_reg=%rax
 
 
 	lea	rcx,[((-63))+rdx]
@@ -860,7 +1117,11 @@ DB	243,15,30,250
 	mov	QWORD[16+rsp],rsi
 	mov	QWORD[24+rsp],rax
 
-$L$dec_prologue:
+; Hack using rax to load saved CFA expression: %rsp+24,deref,+8
+SEH64_SETFRAME rax, 48	; Unwind basically does: rsp = rax - offset
+SEH64_PUSHREG rax    	; Unwind will load deref'ed value into volatile reg for SET_FRAME above.
+SEH64_ALLOCSTACK 24	; Can only deref by .PUSHREG, so adjust RSP by feigning stack alloc.
+SEH64_ENDPROLOG	; cfa_reg=%rax cfa_reg_offset= cfa_rsp=-56
 
 	mov	r15,rdx
 	mov	r13d,DWORD[240+r15]
@@ -908,20 +1169,20 @@ $L$dec_prologue:
 
 	lea	rsp,[rsi]
 
-$L$dec_epilogue:
 	mov	rdi,QWORD[8+rsp]	;WIN64 epilogue
 	mov	rsi,QWORD[16+rsp]
 	DB	0F3h,0C3h		;repret
-
+SEH64_ENDPROC_FRAME	AES_decrypt
 $L$SEH_end_AES_decrypt:
 global	AES_set_encrypt_key
 
 ALIGN	16
-AES_set_encrypt_key:
+SEH64_PROC_FRAME AES_set_encrypt_key,PUBLIC
 	mov	QWORD[8+rsp],rdi	;WIN64 prologue
+SEH64_SAVEREG rdi, 8
 	mov	QWORD[16+rsp],rsi
+SEH64_SAVEREG rsi, 16
 	mov	rax,rsp
-$L$SEH_begin_AES_set_encrypt_key:
 	mov	rdi,rcx
 	mov	rsi,rdx
 	mov	rdx,r8
@@ -930,20 +1191,21 @@ $L$SEH_begin_AES_set_encrypt_key:
 
 DB	243,15,30,250
 	push	rbx
-
+SEH64_PUSHREG	rbx	; cfa_rsp,cfa_reg_offset => -16,16 cfa_reg=%rsp
 	push	rbp
-
+SEH64_PUSHREG	rbp	; cfa_rsp,cfa_reg_offset => -24,24 cfa_reg=%rsp
 	push	r12
-
+SEH64_PUSHREG	r12	; cfa_rsp,cfa_reg_offset => -32,32 cfa_reg=%rsp
 	push	r13
-
+SEH64_PUSHREG	r13	; cfa_rsp,cfa_reg_offset => -40,40 cfa_reg=%rsp
 	push	r14
-
+SEH64_PUSHREG	r14	; cfa_rsp,cfa_reg_offset => -48,48 cfa_reg=%rsp
 	push	r15
-
+SEH64_PUSHREG	r15	; cfa_rsp,cfa_reg_offset => -56,56 cfa_reg=%rsp
 	sub	rsp,8
-
-$L$enc_key_prologue:
+SEH64_ALLOCSTACK 8
+	; cfa_rsp=-64
+SEH64_ENDPROLOG	; cfa_reg=%rsp cfa_reg_offset=64 cfa_rsp=-64
 
 	call	_x86_64_AES_set_encrypt_key
 
@@ -953,17 +1215,18 @@ $L$enc_key_prologue:
 
 	add	rsp,56
 
-$L$enc_key_epilogue:
 	mov	rdi,QWORD[8+rsp]	;WIN64 epilogue
 	mov	rsi,QWORD[16+rsp]
 	DB	0F3h,0C3h		;repret
-
+SEH64_ENDPROC_FRAME	AES_set_encrypt_key
 $L$SEH_end_AES_set_encrypt_key:
 
 
 ALIGN	16
-_x86_64_AES_set_encrypt_key:
+SEH64_PROC_FRAME _x86_64_AES_set_encrypt_key,PRIVATE
 
+	; cfa_rsp=-8
+SEH64_ENDPROLOG	; cfa_reg=%rsp cfa_reg_offset=8 cfa_rsp=-8
 	mov	ecx,esi
 	mov	rsi,rdi
 	mov	rdi,rdx
@@ -1199,16 +1462,17 @@ $L$badpointer:
 	mov	rax,-1
 $L$exit:
 DB	0xf3,0xc3
-
+SEH64_ENDPROC_FRAME	_x86_64_AES_set_encrypt_key
 
 global	AES_set_decrypt_key
 
 ALIGN	16
-AES_set_decrypt_key:
+SEH64_PROC_FRAME AES_set_decrypt_key,PUBLIC
 	mov	QWORD[8+rsp],rdi	;WIN64 prologue
+SEH64_SAVEREG rdi, 8
 	mov	QWORD[16+rsp],rsi
+SEH64_SAVEREG rsi, 16
 	mov	rax,rsp
-$L$SEH_begin_AES_set_decrypt_key:
 	mov	rdi,rcx
 	mov	rsi,rdx
 	mov	rdx,r8
@@ -1217,20 +1481,21 @@ $L$SEH_begin_AES_set_decrypt_key:
 
 DB	243,15,30,250
 	push	rbx
-
+SEH64_PUSHREG	rbx	; cfa_rsp,cfa_reg_offset => -16,16 cfa_reg=%rsp
 	push	rbp
-
+SEH64_PUSHREG	rbp	; cfa_rsp,cfa_reg_offset => -24,24 cfa_reg=%rsp
 	push	r12
-
+SEH64_PUSHREG	r12	; cfa_rsp,cfa_reg_offset => -32,32 cfa_reg=%rsp
 	push	r13
-
+SEH64_PUSHREG	r13	; cfa_rsp,cfa_reg_offset => -40,40 cfa_reg=%rsp
 	push	r14
-
+SEH64_PUSHREG	r14	; cfa_rsp,cfa_reg_offset => -48,48 cfa_reg=%rsp
 	push	r15
-
+SEH64_PUSHREG	r15	; cfa_rsp,cfa_reg_offset => -56,56 cfa_reg=%rsp
 	push	rdx
-
-$L$dec_key_prologue:
+SEH64_ALLOCSTACK 8
+	; cfa_rsp=-64
+SEH64_ENDPROLOG	; cfa_reg=%rsp cfa_reg_offset=64 cfa_rsp=-64
 
 	call	_x86_64_AES_set_encrypt_key
 	mov	r8,QWORD[rsp]
@@ -1410,11 +1675,10 @@ $L$abort:
 
 	add	rsp,56
 
-$L$dec_key_epilogue:
 	mov	rdi,QWORD[8+rsp]	;WIN64 epilogue
 	mov	rsi,QWORD[16+rsp]
 	DB	0F3h,0C3h		;repret
-
+SEH64_ENDPROC_FRAME	AES_set_decrypt_key
 $L$SEH_end_AES_set_decrypt_key:
 global	AES_cbc_encrypt
 
@@ -1423,11 +1687,12 @@ EXTERN	OPENSSL_ia32cap_P
 global	asm_AES_cbc_encrypt
 
 asm_AES_cbc_encrypt:
-AES_cbc_encrypt:
+SEH64_PROC_FRAME AES_cbc_encrypt,PUBLIC
 	mov	QWORD[8+rsp],rdi	;WIN64 prologue
+SEH64_SAVEREG rdi, 8
 	mov	QWORD[16+rsp],rsi
+SEH64_SAVEREG rsi, 16
 	mov	rax,rsp
-$L$SEH_begin_AES_cbc_encrypt:
 	mov	rdi,rcx
 	mov	rsi,rdx
 	mov	rdx,r8
@@ -1443,19 +1708,19 @@ DB	243,15,30,250
 	pushfq
 
 
-
+SEH64_ALLOCSTACK 8
 	push	rbx
-
+SEH64_PUSHREG	rbx	; cfa_rsp,cfa_reg_offset => -24,24 cfa_reg=%rsp
 	push	rbp
-
+SEH64_PUSHREG	rbp	; cfa_rsp,cfa_reg_offset => -32,32 cfa_reg=%rsp
 	push	r12
-
+SEH64_PUSHREG	r12	; cfa_rsp,cfa_reg_offset => -40,40 cfa_reg=%rsp
 	push	r13
-
+SEH64_PUSHREG	r13	; cfa_rsp,cfa_reg_offset => -48,48 cfa_reg=%rsp
 	push	r14
-
+SEH64_PUSHREG	r14	; cfa_rsp,cfa_reg_offset => -56,56 cfa_reg=%rsp
 	push	r15
-
+SEH64_PUSHREG	r15	; cfa_rsp,cfa_reg_offset => -64,64 cfa_reg=%rsp
 $L$cbc_prologue:
 
 	cld
@@ -1465,7 +1730,6 @@ $L$cbc_prologue:
 	lea	r10,[$L$AES_Td]
 	cmp	r9,0
 	cmove	r14,r10
-
 
 	mov	r10d,DWORD[OPENSSL_ia32cap_P]
 	cmp	rdx,512
@@ -1505,7 +1769,11 @@ $L$cbc_te_ok:
 
 	mov	QWORD[16+rsp],r15
 
-$L$cbc_fast_body:
+; Hack using rax to load saved CFA expression: 16(%rsp),deref,+64
+SEH64_SETFRAME rax, 0	; Unwind basically does: rsp = rax - offset
+SEH64_PUSHREG rax    	; Unwind will load deref'ed value into volatile reg for SET_FRAME above.
+SEH64_ALLOCSTACK 16	; Can only deref by .PUSHREG, so adjust RSP by feigning stack alloc.
+SEH64_ENDPROLOG	; cfa_reg=%r15 cfa_reg_offset= cfa_rsp=-64
 	mov	QWORD[24+rsp],rdi
 	mov	QWORD[32+rsp],rsi
 	mov	QWORD[40+rsp],rdx
@@ -1699,10 +1967,69 @@ $L$cbc_fast_cleanup:
 
 	jmp	NEAR $L$cbc_exit
 
+ALIGN	16
+$L$cbc_exit:
+	mov	rsi,QWORD[16+rsp]
+
+	mov	r15,QWORD[rsi]
+
+	mov	r14,QWORD[8+rsi]
+
+	mov	r13,QWORD[16+rsi]
+
+	mov	r12,QWORD[24+rsi]
+
+	mov	rbp,QWORD[32+rsi]
+
+	mov	rbx,QWORD[40+rsi]
+
+	lea	rsp,[48+rsi]
+
+$L$cbc_popfq:
+	popfq
+
+
+
+$L$cbc_epilogue:
+	mov	rdi,QWORD[8+rsp]	;WIN64 epilogue
+	mov	rsi,QWORD[16+rsp]
+	DB	0F3h,0C3h		;repret
+SEH64_ENDPROC_FRAME	AES_cbc_encrypt
+$L$SEH_end_AES_cbc_encrypt:
+
+
+
+
+
+ALIGN	16
+
+SEH64_PROC_FRAME _AES_cbc_encrypt_slow,PRIVATE
+	mov	QWORD[8+rsp],rdi	;WIN64 prologue
+SEH64_SAVEREG rdi, 8
+	mov	QWORD[16+rsp],rsi
+SEH64_SAVEREG rsi, 16
+	mov	rax,rsp
+	mov	rdi,rcx
+	mov	rsi,rdx
+	mov	rdx,r8
+	mov	rcx,r9
+	mov	r8,QWORD[40+rsp]
+	mov	r9,QWORD[48+rsp]
+
+
+
+	ud2
+SEH64_ALLOCSTACK 8
+SEH64_PUSHREG	rbx	; cfa_rsp,cfa_reg_offset => -24,24 cfa_reg=%rsp
+SEH64_PUSHREG	rbp	; cfa_rsp,cfa_reg_offset => -32,32 cfa_reg=%rsp
+SEH64_PUSHREG	r12	; cfa_rsp,cfa_reg_offset => -40,40 cfa_reg=%rsp
+SEH64_PUSHREG	r13	; cfa_rsp,cfa_reg_offset => -48,48 cfa_reg=%rsp
+SEH64_PUSHREG	r14	; cfa_rsp,cfa_reg_offset => -56,56 cfa_reg=%rsp
+SEH64_PUSHREG	r15	; cfa_rsp,cfa_reg_offset => -64,64 cfa_reg=%rsp
+
 
 ALIGN	16
 $L$cbc_slow_prologue:
-
 
 	lea	rbp,[((-88))+rsp]
 	and	rbp,-64
@@ -1718,7 +2045,11 @@ $L$cbc_slow_prologue:
 
 	mov	QWORD[16+rsp],rbp
 
-$L$cbc_slow_body:
+; Hack using rax to load saved CFA expression: 16(%rsp),deref,+64
+SEH64_SETFRAME rax, 0	; Unwind basically does: rsp = rax - offset
+SEH64_PUSHREG rax    	; Unwind will load deref'ed value into volatile reg for SET_FRAME above.
+SEH64_ALLOCSTACK 16	; Can only deref by .PUSHREG, so adjust RSP by feigning stack alloc.
+SEH64_ENDPROLOG	; cfa_reg=%rbp cfa_reg_offset= cfa_rsp=-64
 
 
 
@@ -1886,35 +2217,11 @@ $L$cbc_slow_dec_partial:
 	DD	0x9066A4F3
 	jmp	NEAR $L$cbc_exit
 
-ALIGN	16
-$L$cbc_exit:
-	mov	rsi,QWORD[16+rsp]
-
-	mov	r15,QWORD[rsi]
-
-	mov	r14,QWORD[8+rsi]
-
-	mov	r13,QWORD[16+rsi]
-
-	mov	r12,QWORD[24+rsi]
-
-	mov	rbp,QWORD[32+rsi]
-
-	mov	rbx,QWORD[40+rsi]
-
-	lea	rsp,[48+rsi]
-
-$L$cbc_popfq:
-	popfq
-
-
-
-$L$cbc_epilogue:
 	mov	rdi,QWORD[8+rsp]	;WIN64 epilogue
 	mov	rsi,QWORD[16+rsp]
 	DB	0F3h,0C3h		;repret
-
-$L$SEH_end_AES_cbc_encrypt:
+SEH64_ENDPROC_FRAME	_AES_cbc_encrypt_slow
+$L$SEH_end__AES_cbc_encrypt_slow:
 section	.rdata rdata align=64
 ALIGN	64
 $L$AES_Te:
@@ -2706,266 +3013,3 @@ DB	112,112,114,111,64,111,112,101,110,115,115,108,46,111,114,103
 DB	62,0
 ALIGN	64
 section .text
-EXTERN	__imp_RtlVirtualUnwind
-
-ALIGN	16
-block_se_handler:
-	push	rsi
-	push	rdi
-	push	rbx
-	push	rbp
-	push	r12
-	push	r13
-	push	r14
-	push	r15
-	pushfq
-	sub	rsp,64
-
-	mov	rax,QWORD[120+r8]
-	mov	rbx,QWORD[248+r8]
-
-	mov	rsi,QWORD[8+r9]
-	mov	r11,QWORD[56+r9]
-
-	mov	r10d,DWORD[r11]
-	lea	r10,[r10*1+rsi]
-	cmp	rbx,r10
-	jb	NEAR $L$in_block_prologue
-
-	mov	rax,QWORD[152+r8]
-
-	mov	r10d,DWORD[4+r11]
-	lea	r10,[r10*1+rsi]
-	cmp	rbx,r10
-	jae	NEAR $L$in_block_prologue
-
-	mov	rax,QWORD[24+rax]
-
-	mov	rbx,QWORD[((-8))+rax]
-	mov	rbp,QWORD[((-16))+rax]
-	mov	r12,QWORD[((-24))+rax]
-	mov	r13,QWORD[((-32))+rax]
-	mov	r14,QWORD[((-40))+rax]
-	mov	r15,QWORD[((-48))+rax]
-	mov	QWORD[144+r8],rbx
-	mov	QWORD[160+r8],rbp
-	mov	QWORD[216+r8],r12
-	mov	QWORD[224+r8],r13
-	mov	QWORD[232+r8],r14
-	mov	QWORD[240+r8],r15
-
-$L$in_block_prologue:
-	mov	rdi,QWORD[8+rax]
-	mov	rsi,QWORD[16+rax]
-	mov	QWORD[152+r8],rax
-	mov	QWORD[168+r8],rsi
-	mov	QWORD[176+r8],rdi
-
-	jmp	NEAR $L$common_seh_exit
-
-
-
-ALIGN	16
-key_se_handler:
-	push	rsi
-	push	rdi
-	push	rbx
-	push	rbp
-	push	r12
-	push	r13
-	push	r14
-	push	r15
-	pushfq
-	sub	rsp,64
-
-	mov	rax,QWORD[120+r8]
-	mov	rbx,QWORD[248+r8]
-
-	mov	rsi,QWORD[8+r9]
-	mov	r11,QWORD[56+r9]
-
-	mov	r10d,DWORD[r11]
-	lea	r10,[r10*1+rsi]
-	cmp	rbx,r10
-	jb	NEAR $L$in_key_prologue
-
-	mov	rax,QWORD[152+r8]
-
-	mov	r10d,DWORD[4+r11]
-	lea	r10,[r10*1+rsi]
-	cmp	rbx,r10
-	jae	NEAR $L$in_key_prologue
-
-	lea	rax,[56+rax]
-
-	mov	rbx,QWORD[((-8))+rax]
-	mov	rbp,QWORD[((-16))+rax]
-	mov	r12,QWORD[((-24))+rax]
-	mov	r13,QWORD[((-32))+rax]
-	mov	r14,QWORD[((-40))+rax]
-	mov	r15,QWORD[((-48))+rax]
-	mov	QWORD[144+r8],rbx
-	mov	QWORD[160+r8],rbp
-	mov	QWORD[216+r8],r12
-	mov	QWORD[224+r8],r13
-	mov	QWORD[232+r8],r14
-	mov	QWORD[240+r8],r15
-
-$L$in_key_prologue:
-	mov	rdi,QWORD[8+rax]
-	mov	rsi,QWORD[16+rax]
-	mov	QWORD[152+r8],rax
-	mov	QWORD[168+r8],rsi
-	mov	QWORD[176+r8],rdi
-
-	jmp	NEAR $L$common_seh_exit
-
-
-
-ALIGN	16
-cbc_se_handler:
-	push	rsi
-	push	rdi
-	push	rbx
-	push	rbp
-	push	r12
-	push	r13
-	push	r14
-	push	r15
-	pushfq
-	sub	rsp,64
-
-	mov	rax,QWORD[120+r8]
-	mov	rbx,QWORD[248+r8]
-
-	lea	r10,[$L$cbc_prologue]
-	cmp	rbx,r10
-	jb	NEAR $L$in_cbc_prologue
-
-	lea	r10,[$L$cbc_fast_body]
-	cmp	rbx,r10
-	jb	NEAR $L$in_cbc_frame_setup
-
-	lea	r10,[$L$cbc_slow_prologue]
-	cmp	rbx,r10
-	jb	NEAR $L$in_cbc_body
-
-	lea	r10,[$L$cbc_slow_body]
-	cmp	rbx,r10
-	jb	NEAR $L$in_cbc_frame_setup
-
-$L$in_cbc_body:
-	mov	rax,QWORD[152+r8]
-
-	lea	r10,[$L$cbc_epilogue]
-	cmp	rbx,r10
-	jae	NEAR $L$in_cbc_prologue
-
-	lea	rax,[8+rax]
-
-	lea	r10,[$L$cbc_popfq]
-	cmp	rbx,r10
-	jae	NEAR $L$in_cbc_prologue
-
-	mov	rax,QWORD[8+rax]
-	lea	rax,[56+rax]
-
-$L$in_cbc_frame_setup:
-	mov	rbx,QWORD[((-16))+rax]
-	mov	rbp,QWORD[((-24))+rax]
-	mov	r12,QWORD[((-32))+rax]
-	mov	r13,QWORD[((-40))+rax]
-	mov	r14,QWORD[((-48))+rax]
-	mov	r15,QWORD[((-56))+rax]
-	mov	QWORD[144+r8],rbx
-	mov	QWORD[160+r8],rbp
-	mov	QWORD[216+r8],r12
-	mov	QWORD[224+r8],r13
-	mov	QWORD[232+r8],r14
-	mov	QWORD[240+r8],r15
-
-$L$in_cbc_prologue:
-	mov	rdi,QWORD[8+rax]
-	mov	rsi,QWORD[16+rax]
-	mov	QWORD[152+r8],rax
-	mov	QWORD[168+r8],rsi
-	mov	QWORD[176+r8],rdi
-
-$L$common_seh_exit:
-
-	mov	rdi,QWORD[40+r9]
-	mov	rsi,r8
-	mov	ecx,154
-	DD	0xa548f3fc
-
-	mov	rsi,r9
-	xor	rcx,rcx
-	mov	rdx,QWORD[8+rsi]
-	mov	r8,QWORD[rsi]
-	mov	r9,QWORD[16+rsi]
-	mov	r10,QWORD[40+rsi]
-	lea	r11,[56+rsi]
-	lea	r12,[24+rsi]
-	mov	QWORD[32+rsp],r10
-	mov	QWORD[40+rsp],r11
-	mov	QWORD[48+rsp],r12
-	mov	QWORD[56+rsp],rcx
-	call	QWORD[__imp_RtlVirtualUnwind]
-
-	mov	eax,1
-	add	rsp,64
-	popfq
-	pop	r15
-	pop	r14
-	pop	r13
-	pop	r12
-	pop	rbp
-	pop	rbx
-	pop	rdi
-	pop	rsi
-	DB	0F3h,0C3h		;repret
-
-
-section	.pdata rdata align=4
-ALIGN	4
-	DD	$L$SEH_begin_AES_encrypt wrt ..imagebase
-	DD	$L$SEH_end_AES_encrypt wrt ..imagebase
-	DD	$L$SEH_info_AES_encrypt wrt ..imagebase
-
-	DD	$L$SEH_begin_AES_decrypt wrt ..imagebase
-	DD	$L$SEH_end_AES_decrypt wrt ..imagebase
-	DD	$L$SEH_info_AES_decrypt wrt ..imagebase
-
-	DD	$L$SEH_begin_AES_set_encrypt_key wrt ..imagebase
-	DD	$L$SEH_end_AES_set_encrypt_key wrt ..imagebase
-	DD	$L$SEH_info_AES_set_encrypt_key wrt ..imagebase
-
-	DD	$L$SEH_begin_AES_set_decrypt_key wrt ..imagebase
-	DD	$L$SEH_end_AES_set_decrypt_key wrt ..imagebase
-	DD	$L$SEH_info_AES_set_decrypt_key wrt ..imagebase
-
-	DD	$L$SEH_begin_AES_cbc_encrypt wrt ..imagebase
-	DD	$L$SEH_end_AES_cbc_encrypt wrt ..imagebase
-	DD	$L$SEH_info_AES_cbc_encrypt wrt ..imagebase
-
-section	.xdata rdata align=8
-ALIGN	8
-$L$SEH_info_AES_encrypt:
-DB	9,0,0,0
-	DD	block_se_handler wrt ..imagebase
-	DD	$L$enc_prologue wrt ..imagebase,$L$enc_epilogue wrt ..imagebase
-$L$SEH_info_AES_decrypt:
-DB	9,0,0,0
-	DD	block_se_handler wrt ..imagebase
-	DD	$L$dec_prologue wrt ..imagebase,$L$dec_epilogue wrt ..imagebase
-$L$SEH_info_AES_set_encrypt_key:
-DB	9,0,0,0
-	DD	key_se_handler wrt ..imagebase
-	DD	$L$enc_key_prologue wrt ..imagebase,$L$enc_key_epilogue wrt ..imagebase
-$L$SEH_info_AES_set_decrypt_key:
-DB	9,0,0,0
-	DD	key_se_handler wrt ..imagebase
-	DD	$L$dec_key_prologue wrt ..imagebase,$L$dec_key_epilogue wrt ..imagebase
-$L$SEH_info_AES_cbc_encrypt:
-DB	9,0,0,0
-	DD	cbc_se_handler wrt ..imagebase

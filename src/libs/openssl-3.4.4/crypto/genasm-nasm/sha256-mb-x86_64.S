@@ -2,6 +2,250 @@ default	rel
 %define XMMWORD
 %define YMMWORD
 %define ZMMWORD
+;; For concatenation.
+%define SEH64_CONCAT(a,b) a %+ b
+
+%ifndef __YASM_MAJOR__
+ ;; @name Register numbers.
+ ;; @{
+ %define SEH64_PE_GREG_rax     0
+ %define SEH64_PE_GREG_rcx     1
+ %define SEH64_PE_GREG_rdx     2
+ %define SEH64_PE_GREG_rbx     3
+ %define SEH64_PE_GREG_rsp     4
+ %define SEH64_PE_GREG_rbp     5
+ %define SEH64_PE_GREG_rsi     6
+ %define SEH64_PE_GREG_rdi     7
+ %define SEH64_PE_GREG_r8      8
+ %define SEH64_PE_GREG_r9      9
+ %define SEH64_PE_GREG_r10     10
+ %define SEH64_PE_GREG_r11     11
+ %define SEH64_PE_GREG_r12     12
+ %define SEH64_PE_GREG_r13     13
+ %define SEH64_PE_GREG_r14     14
+ %define SEH64_PE_GREG_r15     15
+
+ %define SEH64_PE_XREG_xmm0     0
+ %define SEH64_PE_XREG_xmm1     1
+ %define SEH64_PE_XREG_xmm2     2
+ %define SEH64_PE_XREG_xmm3     3
+ %define SEH64_PE_XREG_xmm4     4
+ %define SEH64_PE_XREG_xmm5     5
+ %define SEH64_PE_XREG_xmm6     6
+ %define SEH64_PE_XREG_xmm7     7
+ %define SEH64_PE_XREG_xmm8     8
+ %define SEH64_PE_XREG_xmm9     9
+ %define SEH64_PE_XREG_xmm10    10
+ %define SEH64_PE_XREG_xmm11    11
+ %define SEH64_PE_XREG_xmm12    12
+ %define SEH64_PE_XREG_xmm13    13
+ %define SEH64_PE_XREG_xmm14    14
+ %define SEH64_PE_XREG_xmm15    15
+ ;; @}
+
+ ;; @name PE unwind operations.
+ ;; @{
+ %define SEH64_PE_PUSH_NONVOL      0
+ %define SEH64_PE_ALLOC_LARGE      1
+ %define SEH64_PE_ALLOC_SMALL      2
+ %define SEH64_PE_SET_FPREG        3
+ %define SEH64_PE_SAVE_NONVOL      4
+ %define SEH64_PE_SAVE_NONVOL_FAR  5
+ %define SEH64_PE_SAVE_XMM128      8
+ %define SEH64_PE_SAVE_XMM128_FAR  9
+ ;; @}
+
+ ;; We keep the unwind bytes in the seh64_slot_bytes (x)define, in reverse order as per spec.
+ %macro SEH64_APPEND_SLOT_PAIR 2
+  %ifdef seh64_slot_bytes
+   %xdefine seh64_slot_bytes %1, %2, seh64_slot_bytes
+  %else
+   %xdefine seh64_slot_bytes %1, %2
+  %endif
+ %endmacro
+
+ ;; For multi-slot unwind info.
+ %macro SEH64_APPEND_SLOT_BYTES 2+
+  %rep %0
+   %rotate -1
+   %ifdef seh64_slot_bytes
+    %xdefine seh64_slot_bytes %1, seh64_slot_bytes
+   %else
+    %xdefine seh64_slot_bytes %1
+   %endif
+  %endrep
+ %endmacro
+
+ ;; For generating labels.
+ %define SEH64_OP_LABEL(a_idx) asm_seh64_proc %+ .seh64_op_label %+ a_idx
+%endif ; !__YASM__
+
+;; For producing proper .labels despite .Lxxxx labels messing up the prefixing.
+%define SEH64_DOT_LABEL(a_DotLabel) SEH64_CONCAT(asm_seh64_proc,a_DotLabel)
+
+%macro SEH64_PROC_FRAME 2
+ %define asm_seh64_proc %1
+ %ifdef __YASM_MAJOR__
+        proc_frame %1
+ %else
+  %assign seh64_idxOps   0
+  ;%assign seh64_FrameReg SEH64_PE_GREG_rsp
+  %assign seh64_FrameReg 0
+  %assign seh64_offFrame 0
+  %undef  seh64_slot_bytes
+%1:
+.start_of_prologue:
+ %endif
+%endmacro
+
+%macro SEH64_ENDPROC_FRAME 1
+SEH64_DOT_LABEL(.end_proc):
+ %ifdef __YASM_MAJOR__
+	[endproc_frame]
+ %else
+        ; Emit the RUNTIME_FUNCTION entry.  The linker is picky here, no label.
+  %ifndef ASM_DEFINED_PDATA_SECTION
+   %define ASM_DEFINED_PDATA_SECTION
+        section .pdata rdata align=4
+  %else
+        section .pdata
+  %endif
+        dd      %1                              wrt ..imagebase
+        dd      SEH64_DOT_LABEL(.end_proc)      wrt ..imagebase
+        dd      SEH64_DOT_LABEL(.unwind_info)   wrt ..imagebase
+
+        ; Restore code section.
+        section .text
+ %endif
+%endmacro
+
+%macro SEH64_ENDPROLOG 0
+SEH64_DOT_LABEL(.end_of_prologue):
+ %ifdef __YASM_MAJOR__
+        [endprolog]
+ %else
+        ; Emit the unwind info now.
+  %ifndef ASM_DEFINED_XDATA_SECTION
+   %define ASM_DEFINED_XDATA_SECTION
+        section .xdata rdata align=4
+  %else
+        section .xdata
+        align   4, db 0
+  %endif
+SEH64_DOT_LABEL(.unwind_info):
+        db      1                       ; version 1 (3 bit), no flags (5 bits)
+        db      SEH64_DOT_LABEL(.end_of_prologue) - SEH64_DOT_LABEL(.start_of_prologue)
+
+        db      (SEH64_DOT_LABEL(.unwind_info_array_end) - SEH64_DOT_LABEL(.unwind_info_array)) / 2
+        db      seh64_FrameReg | (seh64_offFrame & 0xf0) ; framereg and offset/16.
+SEH64_DOT_LABEL(.unwind_info_array):
+   %ifdef seh64_slot_bytes
+        db      seh64_slot_bytes
+    %undef seh64_slot_bytes
+   %endif
+SEH64_DOT_LABEL(.unwind_info_array_end):
+
+        ; Reset the segment
+        section .text
+ %endif
+%endmacro
+
+%macro SEH64_ALLOCSTACK 1
+ %ifdef __YASM_MAJOR__
+        [allocstack %1]
+ %else
+SEH64_OP_LABEL(seh64_idxOps):
+  %if (%1) & 7
+   %error "SEH64_ALLOCSTACK must be a multiple of 8"
+  %endif
+  %if (%1) < 8
+   %error "SEH64_ALLOCSTACK must have an argument that's 8 or higher."
+  %elif (%1) <= 128
+   SEH64_APPEND_SLOT_PAIR \
+	SEH64_OP_LABEL(seh64_idxOps) - SEH64_DOT_LABEL(.start_of_prologue), \
+        SEH64_PE_ALLOC_SMALL | ((((%1) / 8) - 1) << 4)
+  %elif (%1) < 512
+   SEH64_APPEND_SLOT_BYTES \
+	SEH64_OP_LABEL(seh64_idxOps) - SEH64_DOT_LABEL(.start_of_prologue), \
+	SEH64_PE_ALLOC_LARGE | 0, \
+	((%1) / 8) & 0xff, ((%1) / 8) >> 8
+  %else
+   SEH64_APPEND_SLOT_BYTES \
+	SEH64_OP_LABEL(seh64_idxOps) - SEH64_DOT_LABEL(.start_of_prologue), \
+	SEH64_PE_ALLOC_LARGE | 1, \
+	(%1) & 0xff, ((%1) >> 8) & 0xff, ((%1) >> 16) & 0xff, ((%1) >> 24) & 0xff
+  %endif
+  %assign seh64_idxOps seh64_idxOps + 1
+ %endif
+%endmacro
+
+%macro SEH64_PUSHREG 1
+ %ifdef __YASM_MAJOR__
+        [pushreg %1]
+ %else
+SEH64_OP_LABEL(seh64_idxOps):
+  SEH64_APPEND_SLOT_PAIR \
+	SEH64_OP_LABEL(seh64_idxOps) - SEH64_DOT_LABEL(.start_of_prologue), \
+	SEH64_PE_PUSH_NONVOL | (SEH64_PE_GREG_ %+ %1 << 4)
+  %assign seh64_idxOps seh64_idxOps + 1
+ %endif
+%endmacro
+
+%macro SEH64_SAVEREG 2
+ %ifdef __YASM_MAJOR__
+        [savereg %1, %2]
+ %else
+  %if (%2) & 7
+   %error "SEH64_SAVEREG offset must be a multiple of 8"
+  %endif
+  %if (%2) <= (65535*8)
+SEH64_OP_LABEL(seh64_idxOps):
+   SEH64_APPEND_SLOT_BYTES \
+	SEH64_OP_LABEL(seh64_idxOps) - SEH64_DOT_LABEL(.start_of_prologue), \
+	SEH64_PE_SAVE_NONVOL | (SEH64_PE_GREG_ %+ %1 << 4), \
+	((%2) / 8) & 0xff, \
+	((%2) / 8) >> 8
+  %else
+   %error "SEH64_SAVEREG implement far offsets"
+  %endif
+  %assign seh64_idxOps seh64_idxOps + 1
+ %endif
+%endmacro
+
+%macro SEH64_SAVEXMM128 2
+ %ifdef __YASM_MAJOR__
+        [savexmm128 %1, %2]
+ %else
+SEH64_OP_LABEL(seh64_idxOps):
+  %if (%2) & 15
+   %error "SEH64_SAVE_XMM128 offset must be a multiple of 16"
+  %endif
+  %if (%2) <= (65535*16)
+   SEH64_APPEND_SLOT_BYTES \
+	SEH64_OP_LABEL(seh64_idxOps) - SEH64_DOT_LABEL(.start_of_prologue), \
+        SEH64_PE_SAVE_XMM128 | (SEH64_PE_XREG_ %+ %1 << 4), \
+        ((%2) / 16) & 0xff, \
+        ((%2) / 16) >> 8
+  %else
+   %error "SEH64_SAVE_XMM128 implement far offsets"
+  %endif
+  %assign seh64_idxOps seh64_idxOps + 1
+ %endif
+%endmacro
+
+%macro SEH64_SETFRAME 2
+ %ifdef __YASM_MAJOR__
+        [setframe %1, %2]
+ %else
+SEH64_OP_LABEL(seh64_idxOps):
+  SEH64_APPEND_SLOT_PAIR \
+	SEH64_OP_LABEL(seh64_idxOps) - SEH64_DOT_LABEL(.start_of_prologue), \
+        SEH64_PE_SET_FPREG | 0
+  %assign seh64_FrameReg SEH64_PE_GREG_ %+ %1
+  %assign seh64_offFrame %2
+  %assign seh64_idxOps seh64_idxOps + 1
+ %endif
+%endmacro
 section	.text code align=64
 
 
@@ -10,11 +254,12 @@ EXTERN	OPENSSL_ia32cap_P
 global	sha256_multi_block
 
 ALIGN	32
-sha256_multi_block:
+SEH64_PROC_FRAME sha256_multi_block,PUBLIC
 	mov	QWORD[8+rsp],rdi	;WIN64 prologue
+SEH64_SAVEREG rdi, 8
 	mov	QWORD[16+rsp],rsi
+SEH64_SAVEREG rsi, 16
 	mov	rax,rsp
-$L$SEH_begin_sha256_multi_block:
 	mov	rdi,rcx
 	mov	rsi,rdx
 	mov	rdx,r8
@@ -24,28 +269,46 @@ $L$SEH_begin_sha256_multi_block:
 	mov	rcx,QWORD[((OPENSSL_ia32cap_P+4))]
 	bt	rcx,61
 	jc	NEAR _shaext_shortcut
+	test	ecx,268435456
+	jnz	NEAR _avx_shortcut
 	mov	rax,rsp
 
 	push	rbx
-
+SEH64_PUSHREG	rbx	; cfa_rsp,cfa_reg_offset => -16,8 cfa_reg=%rax
 	push	rbp
-
+SEH64_PUSHREG	rbp	; cfa_rsp,cfa_reg_offset => -24,8 cfa_reg=%rax
 	lea	rsp,[((-168))+rsp]
+SEH64_ALLOCSTACK 168
 	movaps	XMMWORD[rsp],xmm6
+SEH64_SAVEXMM128 xmm6, 0	; .cfi_offset xmm6, -192 cfa_reg_offset=8 cfa_rsp=-192
 	movaps	XMMWORD[16+rsp],xmm7
+SEH64_SAVEXMM128 xmm7, 16	; .cfi_offset xmm7, -176 cfa_reg_offset=8 cfa_rsp=-192
 	movaps	XMMWORD[32+rsp],xmm8
+SEH64_SAVEXMM128 xmm8, 32	; .cfi_offset xmm8, -160 cfa_reg_offset=8 cfa_rsp=-192
 	movaps	XMMWORD[48+rsp],xmm9
+SEH64_SAVEXMM128 xmm9, 48	; .cfi_offset xmm9, -144 cfa_reg_offset=8 cfa_rsp=-192
 	movaps	XMMWORD[(-120)+rax],xmm10
+SEH64_SAVEXMM128 xmm10, 64	; .cfi_offset xmm10, -0x78-8 cfa_reg_offset=8 cfa_rsp=-192
 	movaps	XMMWORD[(-104)+rax],xmm11
+SEH64_SAVEXMM128 xmm11, 80	; .cfi_offset xmm11, -0x68-8 cfa_reg_offset=8 cfa_rsp=-192
 	movaps	XMMWORD[(-88)+rax],xmm12
+SEH64_SAVEXMM128 xmm12, 96	; .cfi_offset xmm12, -0x58-8 cfa_reg_offset=8 cfa_rsp=-192
 	movaps	XMMWORD[(-72)+rax],xmm13
+SEH64_SAVEXMM128 xmm13, 112	; .cfi_offset xmm13, -0x48-8 cfa_reg_offset=8 cfa_rsp=-192
 	movaps	XMMWORD[(-56)+rax],xmm14
+SEH64_SAVEXMM128 xmm14, 128	; .cfi_offset xmm14, -0x38-8 cfa_reg_offset=8 cfa_rsp=-192
 	movaps	XMMWORD[(-40)+rax],xmm15
+SEH64_SAVEXMM128 xmm15, 144	; .cfi_offset xmm15, -0x28-8 cfa_reg_offset=8 cfa_rsp=-192
 	sub	rsp,288
 	and	rsp,-256
 	mov	QWORD[272+rsp],rax
 
-$L$body:
+; Hack using rax to load saved CFA expression: %rsp+272,deref,+8
+SEH64_ALLOCSTACK 8	; Make frame reg offset multiple of 16.
+SEH64_SETFRAME rax, 192	; Unwind basically does: rsp = rax - offset
+SEH64_PUSHREG rax    	; Unwind will load deref'ed value into volatile reg for SET_FRAME above.
+SEH64_ALLOCSTACK 272	; Can only deref by .PUSHREG, so adjust RSP by feigning stack alloc.
+SEH64_ENDPROLOG	; cfa_reg=%rax cfa_reg_offset= cfa_rsp=-192
 	lea	rbp,[((K256+128))]
 	lea	rbx,[256+rsp]
 	lea	rdi,[128+rdi]
@@ -2668,19 +2931,19 @@ $L$done:
 
 	lea	rsp,[rax]
 
-$L$epilogue:
 	mov	rdi,QWORD[8+rsp]	;WIN64 epilogue
 	mov	rsi,QWORD[16+rsp]
 	DB	0F3h,0C3h		;repret
-
+SEH64_ENDPROC_FRAME	sha256_multi_block
 $L$SEH_end_sha256_multi_block:
 
 ALIGN	32
-sha256_multi_block_shaext:
+SEH64_PROC_FRAME sha256_multi_block_shaext,PRIVATE
 	mov	QWORD[8+rsp],rdi	;WIN64 prologue
+SEH64_SAVEREG rdi, 8
 	mov	QWORD[16+rsp],rsi
+SEH64_SAVEREG rsi, 16
 	mov	rax,rsp
-$L$SEH_begin_sha256_multi_block_shaext:
 	mov	rdi,rcx
 	mov	rsi,rdx
 	mov	rdx,r8
@@ -2691,26 +2954,39 @@ _shaext_shortcut:
 	mov	rax,rsp
 
 	push	rbx
-
+SEH64_PUSHREG	rbx	; cfa_rsp,cfa_reg_offset => -16,8 cfa_reg=%rax
 	push	rbp
-
+SEH64_PUSHREG	rbp	; cfa_rsp,cfa_reg_offset => -24,8 cfa_reg=%rax
 	lea	rsp,[((-168))+rsp]
+SEH64_ALLOCSTACK 168
 	movaps	XMMWORD[rsp],xmm6
+SEH64_SAVEXMM128 xmm6, 0	; .cfi_offset xmm6, -192 cfa_reg_offset=8 cfa_rsp=-192
 	movaps	XMMWORD[16+rsp],xmm7
+SEH64_SAVEXMM128 xmm7, 16	; .cfi_offset xmm7, -176 cfa_reg_offset=8 cfa_rsp=-192
 	movaps	XMMWORD[32+rsp],xmm8
+SEH64_SAVEXMM128 xmm8, 32	; .cfi_offset xmm8, -160 cfa_reg_offset=8 cfa_rsp=-192
 	movaps	XMMWORD[48+rsp],xmm9
+SEH64_SAVEXMM128 xmm9, 48	; .cfi_offset xmm9, -144 cfa_reg_offset=8 cfa_rsp=-192
 	movaps	XMMWORD[(-120)+rax],xmm10
+SEH64_SAVEXMM128 xmm10, 64	; .cfi_offset xmm10, -0x78-8 cfa_reg_offset=8 cfa_rsp=-192
 	movaps	XMMWORD[(-104)+rax],xmm11
+SEH64_SAVEXMM128 xmm11, 80	; .cfi_offset xmm11, -0x68-8 cfa_reg_offset=8 cfa_rsp=-192
 	movaps	XMMWORD[(-88)+rax],xmm12
+SEH64_SAVEXMM128 xmm12, 96	; .cfi_offset xmm12, -0x58-8 cfa_reg_offset=8 cfa_rsp=-192
 	movaps	XMMWORD[(-72)+rax],xmm13
+SEH64_SAVEXMM128 xmm13, 112	; .cfi_offset xmm13, -0x48-8 cfa_reg_offset=8 cfa_rsp=-192
 	movaps	XMMWORD[(-56)+rax],xmm14
+SEH64_SAVEXMM128 xmm14, 128	; .cfi_offset xmm14, -0x38-8 cfa_reg_offset=8 cfa_rsp=-192
 	movaps	XMMWORD[(-40)+rax],xmm15
+SEH64_SAVEXMM128 xmm15, 144	; .cfi_offset xmm15, -0x28-8 cfa_reg_offset=8 cfa_rsp=-192
 	sub	rsp,288
 	shl	edx,1
 	and	rsp,-256
 	lea	rdi,[128+rdi]
 	mov	QWORD[272+rsp],rax
-$L$body_shaext:
+SEH64_ALLOCSTACK 8
+SEH64_SETFRAME rax, 192
+SEH64_ENDPROLOG	; cfa_reg=%rax cfa_reg_offset=8 cfa_rsp=-192
 	lea	rbx,[256+rsp]
 	lea	rbp,[((K256_shaext+128))]
 
@@ -3198,12 +3474,4801 @@ $L$done_shaext:
 
 	lea	rsp,[rax]
 
-$L$epilogue_shaext:
 	mov	rdi,QWORD[8+rsp]	;WIN64 epilogue
 	mov	rsi,QWORD[16+rsp]
 	DB	0F3h,0C3h		;repret
-
+SEH64_ENDPROC_FRAME	sha256_multi_block_shaext
 $L$SEH_end_sha256_multi_block_shaext:
+
+ALIGN	32
+SEH64_PROC_FRAME sha256_multi_block_avx,PRIVATE
+	mov	QWORD[8+rsp],rdi	;WIN64 prologue
+SEH64_SAVEREG rdi, 8
+	mov	QWORD[16+rsp],rsi
+SEH64_SAVEREG rsi, 16
+	mov	rax,rsp
+	mov	rdi,rcx
+	mov	rsi,rdx
+	mov	rdx,r8
+
+
+
+_avx_shortcut:
+	shr	rcx,32
+	cmp	edx,2
+	jb	NEAR $L$avx
+	test	ecx,32
+	jnz	NEAR _avx2_shortcut
+	jmp	NEAR $L$avx
+ALIGN	32
+$L$avx:
+	mov	rax,rsp
+
+	push	rbx
+SEH64_PUSHREG	rbx	; cfa_rsp,cfa_reg_offset => -16,8 cfa_reg=%rax
+	push	rbp
+SEH64_PUSHREG	rbp	; cfa_rsp,cfa_reg_offset => -24,8 cfa_reg=%rax
+	lea	rsp,[((-168))+rsp]
+SEH64_ALLOCSTACK 168
+	movaps	XMMWORD[rsp],xmm6
+SEH64_SAVEXMM128 xmm6, 0	; .cfi_offset xmm6, -192 cfa_reg_offset=8 cfa_rsp=-192
+	movaps	XMMWORD[16+rsp],xmm7
+SEH64_SAVEXMM128 xmm7, 16	; .cfi_offset xmm7, -176 cfa_reg_offset=8 cfa_rsp=-192
+	movaps	XMMWORD[32+rsp],xmm8
+SEH64_SAVEXMM128 xmm8, 32	; .cfi_offset xmm8, -160 cfa_reg_offset=8 cfa_rsp=-192
+	movaps	XMMWORD[48+rsp],xmm9
+SEH64_SAVEXMM128 xmm9, 48	; .cfi_offset xmm9, -144 cfa_reg_offset=8 cfa_rsp=-192
+	movaps	XMMWORD[(-120)+rax],xmm10
+SEH64_SAVEXMM128 xmm10, 64	; .cfi_offset xmm10, -0x78-8 cfa_reg_offset=8 cfa_rsp=-192
+	movaps	XMMWORD[(-104)+rax],xmm11
+SEH64_SAVEXMM128 xmm11, 80	; .cfi_offset xmm11, -0x68-8 cfa_reg_offset=8 cfa_rsp=-192
+	movaps	XMMWORD[(-88)+rax],xmm12
+SEH64_SAVEXMM128 xmm12, 96	; .cfi_offset xmm12, -0x58-8 cfa_reg_offset=8 cfa_rsp=-192
+	movaps	XMMWORD[(-72)+rax],xmm13
+SEH64_SAVEXMM128 xmm13, 112	; .cfi_offset xmm13, -0x48-8 cfa_reg_offset=8 cfa_rsp=-192
+	movaps	XMMWORD[(-56)+rax],xmm14
+SEH64_SAVEXMM128 xmm14, 128	; .cfi_offset xmm14, -0x38-8 cfa_reg_offset=8 cfa_rsp=-192
+	movaps	XMMWORD[(-40)+rax],xmm15
+SEH64_SAVEXMM128 xmm15, 144	; .cfi_offset xmm15, -0x28-8 cfa_reg_offset=8 cfa_rsp=-192
+	sub	rsp,288
+	and	rsp,-256
+	mov	QWORD[272+rsp],rax
+
+; Hack using rax to load saved CFA expression: %rsp+272,deref,+8
+SEH64_ALLOCSTACK 8	; Make frame reg offset multiple of 16.
+SEH64_SETFRAME rax, 192	; Unwind basically does: rsp = rax - offset
+SEH64_PUSHREG rax    	; Unwind will load deref'ed value into volatile reg for SET_FRAME above.
+SEH64_ALLOCSTACK 272	; Can only deref by .PUSHREG, so adjust RSP by feigning stack alloc.
+SEH64_ENDPROLOG	; cfa_reg=%rax cfa_reg_offset= cfa_rsp=-192
+	lea	rbp,[((K256+128))]
+	lea	rbx,[256+rsp]
+	lea	rdi,[128+rdi]
+
+$L$oop_grande_avx:
+	mov	DWORD[280+rsp],edx
+	xor	edx,edx
+
+	mov	r8,QWORD[rsi]
+
+	mov	ecx,DWORD[8+rsi]
+	cmp	ecx,edx
+	cmovg	edx,ecx
+	test	ecx,ecx
+	mov	DWORD[rbx],ecx
+	cmovle	r8,rbp
+
+	mov	r9,QWORD[16+rsi]
+
+	mov	ecx,DWORD[24+rsi]
+	cmp	ecx,edx
+	cmovg	edx,ecx
+	test	ecx,ecx
+	mov	DWORD[4+rbx],ecx
+	cmovle	r9,rbp
+
+	mov	r10,QWORD[32+rsi]
+
+	mov	ecx,DWORD[40+rsi]
+	cmp	ecx,edx
+	cmovg	edx,ecx
+	test	ecx,ecx
+	mov	DWORD[8+rbx],ecx
+	cmovle	r10,rbp
+
+	mov	r11,QWORD[48+rsi]
+
+	mov	ecx,DWORD[56+rsi]
+	cmp	ecx,edx
+	cmovg	edx,ecx
+	test	ecx,ecx
+	mov	DWORD[12+rbx],ecx
+	cmovle	r11,rbp
+	test	edx,edx
+	jz	NEAR $L$done_avx
+
+	vmovdqu	xmm8,XMMWORD[((0-128))+rdi]
+	lea	rax,[128+rsp]
+	vmovdqu	xmm9,XMMWORD[((32-128))+rdi]
+	vmovdqu	xmm10,XMMWORD[((64-128))+rdi]
+	vmovdqu	xmm11,XMMWORD[((96-128))+rdi]
+	vmovdqu	xmm12,XMMWORD[((128-128))+rdi]
+	vmovdqu	xmm13,XMMWORD[((160-128))+rdi]
+	vmovdqu	xmm14,XMMWORD[((192-128))+rdi]
+	vmovdqu	xmm15,XMMWORD[((224-128))+rdi]
+	vmovdqu	xmm6,XMMWORD[$L$pbswap]
+	jmp	NEAR $L$oop_avx
+
+ALIGN	32
+$L$oop_avx:
+	vpxor	xmm4,xmm10,xmm9
+	vmovd	xmm5,DWORD[r8]
+	vmovd	xmm0,DWORD[r9]
+	vpinsrd	xmm5,xmm5,DWORD[r10],1
+	vpinsrd	xmm0,xmm0,DWORD[r11],1
+	vpunpckldq	xmm5,xmm5,xmm0
+	vpshufb	xmm5,xmm5,xmm6
+	vpsrld	xmm7,xmm12,6
+	vpslld	xmm2,xmm12,26
+	vmovdqu	XMMWORD[(0-128)+rax],xmm5
+	vpaddd	xmm5,xmm5,xmm15
+
+	vpsrld	xmm1,xmm12,11
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm12,21
+	vpaddd	xmm5,xmm5,XMMWORD[((-128))+rbp]
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm1,xmm12,25
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm12,7
+	vpandn	xmm0,xmm12,xmm14
+	vpand	xmm3,xmm12,xmm13
+
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm15,xmm8,2
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm1,xmm8,30
+	vpxor	xmm0,xmm0,xmm3
+	vpxor	xmm3,xmm9,xmm8
+
+	vpxor	xmm15,xmm15,xmm1
+	vpaddd	xmm5,xmm5,xmm7
+
+	vpsrld	xmm1,xmm8,13
+
+	vpslld	xmm2,xmm8,19
+	vpaddd	xmm5,xmm5,xmm0
+	vpand	xmm4,xmm4,xmm3
+
+	vpxor	xmm7,xmm15,xmm1
+
+	vpsrld	xmm1,xmm8,22
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm8,10
+	vpxor	xmm15,xmm9,xmm4
+	vpaddd	xmm11,xmm11,xmm5
+
+	vpxor	xmm7,xmm7,xmm1
+	vpxor	xmm7,xmm7,xmm2
+
+	vpaddd	xmm15,xmm15,xmm5
+	vpaddd	xmm15,xmm15,xmm7
+	vmovd	xmm5,DWORD[4+r8]
+	vmovd	xmm0,DWORD[4+r9]
+	vpinsrd	xmm5,xmm5,DWORD[4+r10],1
+	vpinsrd	xmm0,xmm0,DWORD[4+r11],1
+	vpunpckldq	xmm5,xmm5,xmm0
+	vpshufb	xmm5,xmm5,xmm6
+	vpsrld	xmm7,xmm11,6
+	vpslld	xmm2,xmm11,26
+	vmovdqu	XMMWORD[(16-128)+rax],xmm5
+	vpaddd	xmm5,xmm5,xmm14
+
+	vpsrld	xmm1,xmm11,11
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm11,21
+	vpaddd	xmm5,xmm5,XMMWORD[((-96))+rbp]
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm1,xmm11,25
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm11,7
+	vpandn	xmm0,xmm11,xmm13
+	vpand	xmm4,xmm11,xmm12
+
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm14,xmm15,2
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm1,xmm15,30
+	vpxor	xmm0,xmm0,xmm4
+	vpxor	xmm4,xmm8,xmm15
+
+	vpxor	xmm14,xmm14,xmm1
+	vpaddd	xmm5,xmm5,xmm7
+
+	vpsrld	xmm1,xmm15,13
+
+	vpslld	xmm2,xmm15,19
+	vpaddd	xmm5,xmm5,xmm0
+	vpand	xmm3,xmm3,xmm4
+
+	vpxor	xmm7,xmm14,xmm1
+
+	vpsrld	xmm1,xmm15,22
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm15,10
+	vpxor	xmm14,xmm8,xmm3
+	vpaddd	xmm10,xmm10,xmm5
+
+	vpxor	xmm7,xmm7,xmm1
+	vpxor	xmm7,xmm7,xmm2
+
+	vpaddd	xmm14,xmm14,xmm5
+	vpaddd	xmm14,xmm14,xmm7
+	vmovd	xmm5,DWORD[8+r8]
+	vmovd	xmm0,DWORD[8+r9]
+	vpinsrd	xmm5,xmm5,DWORD[8+r10],1
+	vpinsrd	xmm0,xmm0,DWORD[8+r11],1
+	vpunpckldq	xmm5,xmm5,xmm0
+	vpshufb	xmm5,xmm5,xmm6
+	vpsrld	xmm7,xmm10,6
+	vpslld	xmm2,xmm10,26
+	vmovdqu	XMMWORD[(32-128)+rax],xmm5
+	vpaddd	xmm5,xmm5,xmm13
+
+	vpsrld	xmm1,xmm10,11
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm10,21
+	vpaddd	xmm5,xmm5,XMMWORD[((-64))+rbp]
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm1,xmm10,25
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm10,7
+	vpandn	xmm0,xmm10,xmm12
+	vpand	xmm3,xmm10,xmm11
+
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm13,xmm14,2
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm1,xmm14,30
+	vpxor	xmm0,xmm0,xmm3
+	vpxor	xmm3,xmm15,xmm14
+
+	vpxor	xmm13,xmm13,xmm1
+	vpaddd	xmm5,xmm5,xmm7
+
+	vpsrld	xmm1,xmm14,13
+
+	vpslld	xmm2,xmm14,19
+	vpaddd	xmm5,xmm5,xmm0
+	vpand	xmm4,xmm4,xmm3
+
+	vpxor	xmm7,xmm13,xmm1
+
+	vpsrld	xmm1,xmm14,22
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm14,10
+	vpxor	xmm13,xmm15,xmm4
+	vpaddd	xmm9,xmm9,xmm5
+
+	vpxor	xmm7,xmm7,xmm1
+	vpxor	xmm7,xmm7,xmm2
+
+	vpaddd	xmm13,xmm13,xmm5
+	vpaddd	xmm13,xmm13,xmm7
+	vmovd	xmm5,DWORD[12+r8]
+	vmovd	xmm0,DWORD[12+r9]
+	vpinsrd	xmm5,xmm5,DWORD[12+r10],1
+	vpinsrd	xmm0,xmm0,DWORD[12+r11],1
+	vpunpckldq	xmm5,xmm5,xmm0
+	vpshufb	xmm5,xmm5,xmm6
+	vpsrld	xmm7,xmm9,6
+	vpslld	xmm2,xmm9,26
+	vmovdqu	XMMWORD[(48-128)+rax],xmm5
+	vpaddd	xmm5,xmm5,xmm12
+
+	vpsrld	xmm1,xmm9,11
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm9,21
+	vpaddd	xmm5,xmm5,XMMWORD[((-32))+rbp]
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm1,xmm9,25
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm9,7
+	vpandn	xmm0,xmm9,xmm11
+	vpand	xmm4,xmm9,xmm10
+
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm12,xmm13,2
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm1,xmm13,30
+	vpxor	xmm0,xmm0,xmm4
+	vpxor	xmm4,xmm14,xmm13
+
+	vpxor	xmm12,xmm12,xmm1
+	vpaddd	xmm5,xmm5,xmm7
+
+	vpsrld	xmm1,xmm13,13
+
+	vpslld	xmm2,xmm13,19
+	vpaddd	xmm5,xmm5,xmm0
+	vpand	xmm3,xmm3,xmm4
+
+	vpxor	xmm7,xmm12,xmm1
+
+	vpsrld	xmm1,xmm13,22
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm13,10
+	vpxor	xmm12,xmm14,xmm3
+	vpaddd	xmm8,xmm8,xmm5
+
+	vpxor	xmm7,xmm7,xmm1
+	vpxor	xmm7,xmm7,xmm2
+
+	vpaddd	xmm12,xmm12,xmm5
+	vpaddd	xmm12,xmm12,xmm7
+	vmovd	xmm5,DWORD[16+r8]
+	vmovd	xmm0,DWORD[16+r9]
+	vpinsrd	xmm5,xmm5,DWORD[16+r10],1
+	vpinsrd	xmm0,xmm0,DWORD[16+r11],1
+	vpunpckldq	xmm5,xmm5,xmm0
+	vpshufb	xmm5,xmm5,xmm6
+	vpsrld	xmm7,xmm8,6
+	vpslld	xmm2,xmm8,26
+	vmovdqu	XMMWORD[(64-128)+rax],xmm5
+	vpaddd	xmm5,xmm5,xmm11
+
+	vpsrld	xmm1,xmm8,11
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm8,21
+	vpaddd	xmm5,xmm5,XMMWORD[rbp]
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm1,xmm8,25
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm8,7
+	vpandn	xmm0,xmm8,xmm10
+	vpand	xmm3,xmm8,xmm9
+
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm11,xmm12,2
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm1,xmm12,30
+	vpxor	xmm0,xmm0,xmm3
+	vpxor	xmm3,xmm13,xmm12
+
+	vpxor	xmm11,xmm11,xmm1
+	vpaddd	xmm5,xmm5,xmm7
+
+	vpsrld	xmm1,xmm12,13
+
+	vpslld	xmm2,xmm12,19
+	vpaddd	xmm5,xmm5,xmm0
+	vpand	xmm4,xmm4,xmm3
+
+	vpxor	xmm7,xmm11,xmm1
+
+	vpsrld	xmm1,xmm12,22
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm12,10
+	vpxor	xmm11,xmm13,xmm4
+	vpaddd	xmm15,xmm15,xmm5
+
+	vpxor	xmm7,xmm7,xmm1
+	vpxor	xmm7,xmm7,xmm2
+
+	vpaddd	xmm11,xmm11,xmm5
+	vpaddd	xmm11,xmm11,xmm7
+	vmovd	xmm5,DWORD[20+r8]
+	vmovd	xmm0,DWORD[20+r9]
+	vpinsrd	xmm5,xmm5,DWORD[20+r10],1
+	vpinsrd	xmm0,xmm0,DWORD[20+r11],1
+	vpunpckldq	xmm5,xmm5,xmm0
+	vpshufb	xmm5,xmm5,xmm6
+	vpsrld	xmm7,xmm15,6
+	vpslld	xmm2,xmm15,26
+	vmovdqu	XMMWORD[(80-128)+rax],xmm5
+	vpaddd	xmm5,xmm5,xmm10
+
+	vpsrld	xmm1,xmm15,11
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm15,21
+	vpaddd	xmm5,xmm5,XMMWORD[32+rbp]
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm1,xmm15,25
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm15,7
+	vpandn	xmm0,xmm15,xmm9
+	vpand	xmm4,xmm15,xmm8
+
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm10,xmm11,2
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm1,xmm11,30
+	vpxor	xmm0,xmm0,xmm4
+	vpxor	xmm4,xmm12,xmm11
+
+	vpxor	xmm10,xmm10,xmm1
+	vpaddd	xmm5,xmm5,xmm7
+
+	vpsrld	xmm1,xmm11,13
+
+	vpslld	xmm2,xmm11,19
+	vpaddd	xmm5,xmm5,xmm0
+	vpand	xmm3,xmm3,xmm4
+
+	vpxor	xmm7,xmm10,xmm1
+
+	vpsrld	xmm1,xmm11,22
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm11,10
+	vpxor	xmm10,xmm12,xmm3
+	vpaddd	xmm14,xmm14,xmm5
+
+	vpxor	xmm7,xmm7,xmm1
+	vpxor	xmm7,xmm7,xmm2
+
+	vpaddd	xmm10,xmm10,xmm5
+	vpaddd	xmm10,xmm10,xmm7
+	vmovd	xmm5,DWORD[24+r8]
+	vmovd	xmm0,DWORD[24+r9]
+	vpinsrd	xmm5,xmm5,DWORD[24+r10],1
+	vpinsrd	xmm0,xmm0,DWORD[24+r11],1
+	vpunpckldq	xmm5,xmm5,xmm0
+	vpshufb	xmm5,xmm5,xmm6
+	vpsrld	xmm7,xmm14,6
+	vpslld	xmm2,xmm14,26
+	vmovdqu	XMMWORD[(96-128)+rax],xmm5
+	vpaddd	xmm5,xmm5,xmm9
+
+	vpsrld	xmm1,xmm14,11
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm14,21
+	vpaddd	xmm5,xmm5,XMMWORD[64+rbp]
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm1,xmm14,25
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm14,7
+	vpandn	xmm0,xmm14,xmm8
+	vpand	xmm3,xmm14,xmm15
+
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm9,xmm10,2
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm1,xmm10,30
+	vpxor	xmm0,xmm0,xmm3
+	vpxor	xmm3,xmm11,xmm10
+
+	vpxor	xmm9,xmm9,xmm1
+	vpaddd	xmm5,xmm5,xmm7
+
+	vpsrld	xmm1,xmm10,13
+
+	vpslld	xmm2,xmm10,19
+	vpaddd	xmm5,xmm5,xmm0
+	vpand	xmm4,xmm4,xmm3
+
+	vpxor	xmm7,xmm9,xmm1
+
+	vpsrld	xmm1,xmm10,22
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm10,10
+	vpxor	xmm9,xmm11,xmm4
+	vpaddd	xmm13,xmm13,xmm5
+
+	vpxor	xmm7,xmm7,xmm1
+	vpxor	xmm7,xmm7,xmm2
+
+	vpaddd	xmm9,xmm9,xmm5
+	vpaddd	xmm9,xmm9,xmm7
+	vmovd	xmm5,DWORD[28+r8]
+	vmovd	xmm0,DWORD[28+r9]
+	vpinsrd	xmm5,xmm5,DWORD[28+r10],1
+	vpinsrd	xmm0,xmm0,DWORD[28+r11],1
+	vpunpckldq	xmm5,xmm5,xmm0
+	vpshufb	xmm5,xmm5,xmm6
+	vpsrld	xmm7,xmm13,6
+	vpslld	xmm2,xmm13,26
+	vmovdqu	XMMWORD[(112-128)+rax],xmm5
+	vpaddd	xmm5,xmm5,xmm8
+
+	vpsrld	xmm1,xmm13,11
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm13,21
+	vpaddd	xmm5,xmm5,XMMWORD[96+rbp]
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm1,xmm13,25
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm13,7
+	vpandn	xmm0,xmm13,xmm15
+	vpand	xmm4,xmm13,xmm14
+
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm8,xmm9,2
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm1,xmm9,30
+	vpxor	xmm0,xmm0,xmm4
+	vpxor	xmm4,xmm10,xmm9
+
+	vpxor	xmm8,xmm8,xmm1
+	vpaddd	xmm5,xmm5,xmm7
+
+	vpsrld	xmm1,xmm9,13
+
+	vpslld	xmm2,xmm9,19
+	vpaddd	xmm5,xmm5,xmm0
+	vpand	xmm3,xmm3,xmm4
+
+	vpxor	xmm7,xmm8,xmm1
+
+	vpsrld	xmm1,xmm9,22
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm9,10
+	vpxor	xmm8,xmm10,xmm3
+	vpaddd	xmm12,xmm12,xmm5
+
+	vpxor	xmm7,xmm7,xmm1
+	vpxor	xmm7,xmm7,xmm2
+
+	vpaddd	xmm8,xmm8,xmm5
+	vpaddd	xmm8,xmm8,xmm7
+	add	rbp,256
+	vmovd	xmm5,DWORD[32+r8]
+	vmovd	xmm0,DWORD[32+r9]
+	vpinsrd	xmm5,xmm5,DWORD[32+r10],1
+	vpinsrd	xmm0,xmm0,DWORD[32+r11],1
+	vpunpckldq	xmm5,xmm5,xmm0
+	vpshufb	xmm5,xmm5,xmm6
+	vpsrld	xmm7,xmm12,6
+	vpslld	xmm2,xmm12,26
+	vmovdqu	XMMWORD[(128-128)+rax],xmm5
+	vpaddd	xmm5,xmm5,xmm15
+
+	vpsrld	xmm1,xmm12,11
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm12,21
+	vpaddd	xmm5,xmm5,XMMWORD[((-128))+rbp]
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm1,xmm12,25
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm12,7
+	vpandn	xmm0,xmm12,xmm14
+	vpand	xmm3,xmm12,xmm13
+
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm15,xmm8,2
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm1,xmm8,30
+	vpxor	xmm0,xmm0,xmm3
+	vpxor	xmm3,xmm9,xmm8
+
+	vpxor	xmm15,xmm15,xmm1
+	vpaddd	xmm5,xmm5,xmm7
+
+	vpsrld	xmm1,xmm8,13
+
+	vpslld	xmm2,xmm8,19
+	vpaddd	xmm5,xmm5,xmm0
+	vpand	xmm4,xmm4,xmm3
+
+	vpxor	xmm7,xmm15,xmm1
+
+	vpsrld	xmm1,xmm8,22
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm8,10
+	vpxor	xmm15,xmm9,xmm4
+	vpaddd	xmm11,xmm11,xmm5
+
+	vpxor	xmm7,xmm7,xmm1
+	vpxor	xmm7,xmm7,xmm2
+
+	vpaddd	xmm15,xmm15,xmm5
+	vpaddd	xmm15,xmm15,xmm7
+	vmovd	xmm5,DWORD[36+r8]
+	vmovd	xmm0,DWORD[36+r9]
+	vpinsrd	xmm5,xmm5,DWORD[36+r10],1
+	vpinsrd	xmm0,xmm0,DWORD[36+r11],1
+	vpunpckldq	xmm5,xmm5,xmm0
+	vpshufb	xmm5,xmm5,xmm6
+	vpsrld	xmm7,xmm11,6
+	vpslld	xmm2,xmm11,26
+	vmovdqu	XMMWORD[(144-128)+rax],xmm5
+	vpaddd	xmm5,xmm5,xmm14
+
+	vpsrld	xmm1,xmm11,11
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm11,21
+	vpaddd	xmm5,xmm5,XMMWORD[((-96))+rbp]
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm1,xmm11,25
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm11,7
+	vpandn	xmm0,xmm11,xmm13
+	vpand	xmm4,xmm11,xmm12
+
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm14,xmm15,2
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm1,xmm15,30
+	vpxor	xmm0,xmm0,xmm4
+	vpxor	xmm4,xmm8,xmm15
+
+	vpxor	xmm14,xmm14,xmm1
+	vpaddd	xmm5,xmm5,xmm7
+
+	vpsrld	xmm1,xmm15,13
+
+	vpslld	xmm2,xmm15,19
+	vpaddd	xmm5,xmm5,xmm0
+	vpand	xmm3,xmm3,xmm4
+
+	vpxor	xmm7,xmm14,xmm1
+
+	vpsrld	xmm1,xmm15,22
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm15,10
+	vpxor	xmm14,xmm8,xmm3
+	vpaddd	xmm10,xmm10,xmm5
+
+	vpxor	xmm7,xmm7,xmm1
+	vpxor	xmm7,xmm7,xmm2
+
+	vpaddd	xmm14,xmm14,xmm5
+	vpaddd	xmm14,xmm14,xmm7
+	vmovd	xmm5,DWORD[40+r8]
+	vmovd	xmm0,DWORD[40+r9]
+	vpinsrd	xmm5,xmm5,DWORD[40+r10],1
+	vpinsrd	xmm0,xmm0,DWORD[40+r11],1
+	vpunpckldq	xmm5,xmm5,xmm0
+	vpshufb	xmm5,xmm5,xmm6
+	vpsrld	xmm7,xmm10,6
+	vpslld	xmm2,xmm10,26
+	vmovdqu	XMMWORD[(160-128)+rax],xmm5
+	vpaddd	xmm5,xmm5,xmm13
+
+	vpsrld	xmm1,xmm10,11
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm10,21
+	vpaddd	xmm5,xmm5,XMMWORD[((-64))+rbp]
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm1,xmm10,25
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm10,7
+	vpandn	xmm0,xmm10,xmm12
+	vpand	xmm3,xmm10,xmm11
+
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm13,xmm14,2
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm1,xmm14,30
+	vpxor	xmm0,xmm0,xmm3
+	vpxor	xmm3,xmm15,xmm14
+
+	vpxor	xmm13,xmm13,xmm1
+	vpaddd	xmm5,xmm5,xmm7
+
+	vpsrld	xmm1,xmm14,13
+
+	vpslld	xmm2,xmm14,19
+	vpaddd	xmm5,xmm5,xmm0
+	vpand	xmm4,xmm4,xmm3
+
+	vpxor	xmm7,xmm13,xmm1
+
+	vpsrld	xmm1,xmm14,22
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm14,10
+	vpxor	xmm13,xmm15,xmm4
+	vpaddd	xmm9,xmm9,xmm5
+
+	vpxor	xmm7,xmm7,xmm1
+	vpxor	xmm7,xmm7,xmm2
+
+	vpaddd	xmm13,xmm13,xmm5
+	vpaddd	xmm13,xmm13,xmm7
+	vmovd	xmm5,DWORD[44+r8]
+	vmovd	xmm0,DWORD[44+r9]
+	vpinsrd	xmm5,xmm5,DWORD[44+r10],1
+	vpinsrd	xmm0,xmm0,DWORD[44+r11],1
+	vpunpckldq	xmm5,xmm5,xmm0
+	vpshufb	xmm5,xmm5,xmm6
+	vpsrld	xmm7,xmm9,6
+	vpslld	xmm2,xmm9,26
+	vmovdqu	XMMWORD[(176-128)+rax],xmm5
+	vpaddd	xmm5,xmm5,xmm12
+
+	vpsrld	xmm1,xmm9,11
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm9,21
+	vpaddd	xmm5,xmm5,XMMWORD[((-32))+rbp]
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm1,xmm9,25
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm9,7
+	vpandn	xmm0,xmm9,xmm11
+	vpand	xmm4,xmm9,xmm10
+
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm12,xmm13,2
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm1,xmm13,30
+	vpxor	xmm0,xmm0,xmm4
+	vpxor	xmm4,xmm14,xmm13
+
+	vpxor	xmm12,xmm12,xmm1
+	vpaddd	xmm5,xmm5,xmm7
+
+	vpsrld	xmm1,xmm13,13
+
+	vpslld	xmm2,xmm13,19
+	vpaddd	xmm5,xmm5,xmm0
+	vpand	xmm3,xmm3,xmm4
+
+	vpxor	xmm7,xmm12,xmm1
+
+	vpsrld	xmm1,xmm13,22
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm13,10
+	vpxor	xmm12,xmm14,xmm3
+	vpaddd	xmm8,xmm8,xmm5
+
+	vpxor	xmm7,xmm7,xmm1
+	vpxor	xmm7,xmm7,xmm2
+
+	vpaddd	xmm12,xmm12,xmm5
+	vpaddd	xmm12,xmm12,xmm7
+	vmovd	xmm5,DWORD[48+r8]
+	vmovd	xmm0,DWORD[48+r9]
+	vpinsrd	xmm5,xmm5,DWORD[48+r10],1
+	vpinsrd	xmm0,xmm0,DWORD[48+r11],1
+	vpunpckldq	xmm5,xmm5,xmm0
+	vpshufb	xmm5,xmm5,xmm6
+	vpsrld	xmm7,xmm8,6
+	vpslld	xmm2,xmm8,26
+	vmovdqu	XMMWORD[(192-128)+rax],xmm5
+	vpaddd	xmm5,xmm5,xmm11
+
+	vpsrld	xmm1,xmm8,11
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm8,21
+	vpaddd	xmm5,xmm5,XMMWORD[rbp]
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm1,xmm8,25
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm8,7
+	vpandn	xmm0,xmm8,xmm10
+	vpand	xmm3,xmm8,xmm9
+
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm11,xmm12,2
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm1,xmm12,30
+	vpxor	xmm0,xmm0,xmm3
+	vpxor	xmm3,xmm13,xmm12
+
+	vpxor	xmm11,xmm11,xmm1
+	vpaddd	xmm5,xmm5,xmm7
+
+	vpsrld	xmm1,xmm12,13
+
+	vpslld	xmm2,xmm12,19
+	vpaddd	xmm5,xmm5,xmm0
+	vpand	xmm4,xmm4,xmm3
+
+	vpxor	xmm7,xmm11,xmm1
+
+	vpsrld	xmm1,xmm12,22
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm12,10
+	vpxor	xmm11,xmm13,xmm4
+	vpaddd	xmm15,xmm15,xmm5
+
+	vpxor	xmm7,xmm7,xmm1
+	vpxor	xmm7,xmm7,xmm2
+
+	vpaddd	xmm11,xmm11,xmm5
+	vpaddd	xmm11,xmm11,xmm7
+	vmovd	xmm5,DWORD[52+r8]
+	vmovd	xmm0,DWORD[52+r9]
+	vpinsrd	xmm5,xmm5,DWORD[52+r10],1
+	vpinsrd	xmm0,xmm0,DWORD[52+r11],1
+	vpunpckldq	xmm5,xmm5,xmm0
+	vpshufb	xmm5,xmm5,xmm6
+	vpsrld	xmm7,xmm15,6
+	vpslld	xmm2,xmm15,26
+	vmovdqu	XMMWORD[(208-128)+rax],xmm5
+	vpaddd	xmm5,xmm5,xmm10
+
+	vpsrld	xmm1,xmm15,11
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm15,21
+	vpaddd	xmm5,xmm5,XMMWORD[32+rbp]
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm1,xmm15,25
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm15,7
+	vpandn	xmm0,xmm15,xmm9
+	vpand	xmm4,xmm15,xmm8
+
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm10,xmm11,2
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm1,xmm11,30
+	vpxor	xmm0,xmm0,xmm4
+	vpxor	xmm4,xmm12,xmm11
+
+	vpxor	xmm10,xmm10,xmm1
+	vpaddd	xmm5,xmm5,xmm7
+
+	vpsrld	xmm1,xmm11,13
+
+	vpslld	xmm2,xmm11,19
+	vpaddd	xmm5,xmm5,xmm0
+	vpand	xmm3,xmm3,xmm4
+
+	vpxor	xmm7,xmm10,xmm1
+
+	vpsrld	xmm1,xmm11,22
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm11,10
+	vpxor	xmm10,xmm12,xmm3
+	vpaddd	xmm14,xmm14,xmm5
+
+	vpxor	xmm7,xmm7,xmm1
+	vpxor	xmm7,xmm7,xmm2
+
+	vpaddd	xmm10,xmm10,xmm5
+	vpaddd	xmm10,xmm10,xmm7
+	vmovd	xmm5,DWORD[56+r8]
+	vmovd	xmm0,DWORD[56+r9]
+	vpinsrd	xmm5,xmm5,DWORD[56+r10],1
+	vpinsrd	xmm0,xmm0,DWORD[56+r11],1
+	vpunpckldq	xmm5,xmm5,xmm0
+	vpshufb	xmm5,xmm5,xmm6
+	vpsrld	xmm7,xmm14,6
+	vpslld	xmm2,xmm14,26
+	vmovdqu	XMMWORD[(224-128)+rax],xmm5
+	vpaddd	xmm5,xmm5,xmm9
+
+	vpsrld	xmm1,xmm14,11
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm14,21
+	vpaddd	xmm5,xmm5,XMMWORD[64+rbp]
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm1,xmm14,25
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm14,7
+	vpandn	xmm0,xmm14,xmm8
+	vpand	xmm3,xmm14,xmm15
+
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm9,xmm10,2
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm1,xmm10,30
+	vpxor	xmm0,xmm0,xmm3
+	vpxor	xmm3,xmm11,xmm10
+
+	vpxor	xmm9,xmm9,xmm1
+	vpaddd	xmm5,xmm5,xmm7
+
+	vpsrld	xmm1,xmm10,13
+
+	vpslld	xmm2,xmm10,19
+	vpaddd	xmm5,xmm5,xmm0
+	vpand	xmm4,xmm4,xmm3
+
+	vpxor	xmm7,xmm9,xmm1
+
+	vpsrld	xmm1,xmm10,22
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm10,10
+	vpxor	xmm9,xmm11,xmm4
+	vpaddd	xmm13,xmm13,xmm5
+
+	vpxor	xmm7,xmm7,xmm1
+	vpxor	xmm7,xmm7,xmm2
+
+	vpaddd	xmm9,xmm9,xmm5
+	vpaddd	xmm9,xmm9,xmm7
+	vmovd	xmm5,DWORD[60+r8]
+	lea	r8,[64+r8]
+	vmovd	xmm0,DWORD[60+r9]
+	lea	r9,[64+r9]
+	vpinsrd	xmm5,xmm5,DWORD[60+r10],1
+	lea	r10,[64+r10]
+	vpinsrd	xmm0,xmm0,DWORD[60+r11],1
+	lea	r11,[64+r11]
+	vpunpckldq	xmm5,xmm5,xmm0
+	vpshufb	xmm5,xmm5,xmm6
+	vpsrld	xmm7,xmm13,6
+	vpslld	xmm2,xmm13,26
+	vmovdqu	XMMWORD[(240-128)+rax],xmm5
+	vpaddd	xmm5,xmm5,xmm8
+
+	vpsrld	xmm1,xmm13,11
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm13,21
+	vpaddd	xmm5,xmm5,XMMWORD[96+rbp]
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm1,xmm13,25
+	vpxor	xmm7,xmm7,xmm2
+	prefetcht0	[63+r8]
+	vpslld	xmm2,xmm13,7
+	vpandn	xmm0,xmm13,xmm15
+	vpand	xmm4,xmm13,xmm14
+	prefetcht0	[63+r9]
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm8,xmm9,2
+	vpxor	xmm7,xmm7,xmm2
+	prefetcht0	[63+r10]
+	vpslld	xmm1,xmm9,30
+	vpxor	xmm0,xmm0,xmm4
+	vpxor	xmm4,xmm10,xmm9
+	prefetcht0	[63+r11]
+	vpxor	xmm8,xmm8,xmm1
+	vpaddd	xmm5,xmm5,xmm7
+
+	vpsrld	xmm1,xmm9,13
+
+	vpslld	xmm2,xmm9,19
+	vpaddd	xmm5,xmm5,xmm0
+	vpand	xmm3,xmm3,xmm4
+
+	vpxor	xmm7,xmm8,xmm1
+
+	vpsrld	xmm1,xmm9,22
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm9,10
+	vpxor	xmm8,xmm10,xmm3
+	vpaddd	xmm12,xmm12,xmm5
+
+	vpxor	xmm7,xmm7,xmm1
+	vpxor	xmm7,xmm7,xmm2
+
+	vpaddd	xmm8,xmm8,xmm5
+	vpaddd	xmm8,xmm8,xmm7
+	add	rbp,256
+	vmovdqu	xmm5,XMMWORD[((0-128))+rax]
+	mov	ecx,3
+	jmp	NEAR $L$oop_16_xx_avx
+ALIGN	32
+$L$oop_16_xx_avx:
+	vmovdqu	xmm6,XMMWORD[((16-128))+rax]
+	vpaddd	xmm5,xmm5,XMMWORD[((144-128))+rax]
+
+	vpsrld	xmm7,xmm6,3
+	vpsrld	xmm1,xmm6,7
+	vpslld	xmm2,xmm6,25
+	vpxor	xmm7,xmm7,xmm1
+	vpsrld	xmm1,xmm6,18
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm6,14
+	vmovdqu	xmm0,XMMWORD[((224-128))+rax]
+	vpsrld	xmm3,xmm0,10
+
+	vpxor	xmm7,xmm7,xmm1
+	vpsrld	xmm1,xmm0,17
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm0,15
+	vpaddd	xmm5,xmm5,xmm7
+	vpxor	xmm7,xmm3,xmm1
+	vpsrld	xmm1,xmm0,19
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm0,13
+	vpxor	xmm7,xmm7,xmm1
+	vpxor	xmm7,xmm7,xmm2
+	vpaddd	xmm5,xmm5,xmm7
+	vpsrld	xmm7,xmm12,6
+	vpslld	xmm2,xmm12,26
+	vmovdqu	XMMWORD[(0-128)+rax],xmm5
+	vpaddd	xmm5,xmm5,xmm15
+
+	vpsrld	xmm1,xmm12,11
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm12,21
+	vpaddd	xmm5,xmm5,XMMWORD[((-128))+rbp]
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm1,xmm12,25
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm12,7
+	vpandn	xmm0,xmm12,xmm14
+	vpand	xmm3,xmm12,xmm13
+
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm15,xmm8,2
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm1,xmm8,30
+	vpxor	xmm0,xmm0,xmm3
+	vpxor	xmm3,xmm9,xmm8
+
+	vpxor	xmm15,xmm15,xmm1
+	vpaddd	xmm5,xmm5,xmm7
+
+	vpsrld	xmm1,xmm8,13
+
+	vpslld	xmm2,xmm8,19
+	vpaddd	xmm5,xmm5,xmm0
+	vpand	xmm4,xmm4,xmm3
+
+	vpxor	xmm7,xmm15,xmm1
+
+	vpsrld	xmm1,xmm8,22
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm8,10
+	vpxor	xmm15,xmm9,xmm4
+	vpaddd	xmm11,xmm11,xmm5
+
+	vpxor	xmm7,xmm7,xmm1
+	vpxor	xmm7,xmm7,xmm2
+
+	vpaddd	xmm15,xmm15,xmm5
+	vpaddd	xmm15,xmm15,xmm7
+	vmovdqu	xmm5,XMMWORD[((32-128))+rax]
+	vpaddd	xmm6,xmm6,XMMWORD[((160-128))+rax]
+
+	vpsrld	xmm7,xmm5,3
+	vpsrld	xmm1,xmm5,7
+	vpslld	xmm2,xmm5,25
+	vpxor	xmm7,xmm7,xmm1
+	vpsrld	xmm1,xmm5,18
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm5,14
+	vmovdqu	xmm0,XMMWORD[((240-128))+rax]
+	vpsrld	xmm4,xmm0,10
+
+	vpxor	xmm7,xmm7,xmm1
+	vpsrld	xmm1,xmm0,17
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm0,15
+	vpaddd	xmm6,xmm6,xmm7
+	vpxor	xmm7,xmm4,xmm1
+	vpsrld	xmm1,xmm0,19
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm0,13
+	vpxor	xmm7,xmm7,xmm1
+	vpxor	xmm7,xmm7,xmm2
+	vpaddd	xmm6,xmm6,xmm7
+	vpsrld	xmm7,xmm11,6
+	vpslld	xmm2,xmm11,26
+	vmovdqu	XMMWORD[(16-128)+rax],xmm6
+	vpaddd	xmm6,xmm6,xmm14
+
+	vpsrld	xmm1,xmm11,11
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm11,21
+	vpaddd	xmm6,xmm6,XMMWORD[((-96))+rbp]
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm1,xmm11,25
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm11,7
+	vpandn	xmm0,xmm11,xmm13
+	vpand	xmm4,xmm11,xmm12
+
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm14,xmm15,2
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm1,xmm15,30
+	vpxor	xmm0,xmm0,xmm4
+	vpxor	xmm4,xmm8,xmm15
+
+	vpxor	xmm14,xmm14,xmm1
+	vpaddd	xmm6,xmm6,xmm7
+
+	vpsrld	xmm1,xmm15,13
+
+	vpslld	xmm2,xmm15,19
+	vpaddd	xmm6,xmm6,xmm0
+	vpand	xmm3,xmm3,xmm4
+
+	vpxor	xmm7,xmm14,xmm1
+
+	vpsrld	xmm1,xmm15,22
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm15,10
+	vpxor	xmm14,xmm8,xmm3
+	vpaddd	xmm10,xmm10,xmm6
+
+	vpxor	xmm7,xmm7,xmm1
+	vpxor	xmm7,xmm7,xmm2
+
+	vpaddd	xmm14,xmm14,xmm6
+	vpaddd	xmm14,xmm14,xmm7
+	vmovdqu	xmm6,XMMWORD[((48-128))+rax]
+	vpaddd	xmm5,xmm5,XMMWORD[((176-128))+rax]
+
+	vpsrld	xmm7,xmm6,3
+	vpsrld	xmm1,xmm6,7
+	vpslld	xmm2,xmm6,25
+	vpxor	xmm7,xmm7,xmm1
+	vpsrld	xmm1,xmm6,18
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm6,14
+	vmovdqu	xmm0,XMMWORD[((0-128))+rax]
+	vpsrld	xmm3,xmm0,10
+
+	vpxor	xmm7,xmm7,xmm1
+	vpsrld	xmm1,xmm0,17
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm0,15
+	vpaddd	xmm5,xmm5,xmm7
+	vpxor	xmm7,xmm3,xmm1
+	vpsrld	xmm1,xmm0,19
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm0,13
+	vpxor	xmm7,xmm7,xmm1
+	vpxor	xmm7,xmm7,xmm2
+	vpaddd	xmm5,xmm5,xmm7
+	vpsrld	xmm7,xmm10,6
+	vpslld	xmm2,xmm10,26
+	vmovdqu	XMMWORD[(32-128)+rax],xmm5
+	vpaddd	xmm5,xmm5,xmm13
+
+	vpsrld	xmm1,xmm10,11
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm10,21
+	vpaddd	xmm5,xmm5,XMMWORD[((-64))+rbp]
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm1,xmm10,25
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm10,7
+	vpandn	xmm0,xmm10,xmm12
+	vpand	xmm3,xmm10,xmm11
+
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm13,xmm14,2
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm1,xmm14,30
+	vpxor	xmm0,xmm0,xmm3
+	vpxor	xmm3,xmm15,xmm14
+
+	vpxor	xmm13,xmm13,xmm1
+	vpaddd	xmm5,xmm5,xmm7
+
+	vpsrld	xmm1,xmm14,13
+
+	vpslld	xmm2,xmm14,19
+	vpaddd	xmm5,xmm5,xmm0
+	vpand	xmm4,xmm4,xmm3
+
+	vpxor	xmm7,xmm13,xmm1
+
+	vpsrld	xmm1,xmm14,22
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm14,10
+	vpxor	xmm13,xmm15,xmm4
+	vpaddd	xmm9,xmm9,xmm5
+
+	vpxor	xmm7,xmm7,xmm1
+	vpxor	xmm7,xmm7,xmm2
+
+	vpaddd	xmm13,xmm13,xmm5
+	vpaddd	xmm13,xmm13,xmm7
+	vmovdqu	xmm5,XMMWORD[((64-128))+rax]
+	vpaddd	xmm6,xmm6,XMMWORD[((192-128))+rax]
+
+	vpsrld	xmm7,xmm5,3
+	vpsrld	xmm1,xmm5,7
+	vpslld	xmm2,xmm5,25
+	vpxor	xmm7,xmm7,xmm1
+	vpsrld	xmm1,xmm5,18
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm5,14
+	vmovdqu	xmm0,XMMWORD[((16-128))+rax]
+	vpsrld	xmm4,xmm0,10
+
+	vpxor	xmm7,xmm7,xmm1
+	vpsrld	xmm1,xmm0,17
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm0,15
+	vpaddd	xmm6,xmm6,xmm7
+	vpxor	xmm7,xmm4,xmm1
+	vpsrld	xmm1,xmm0,19
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm0,13
+	vpxor	xmm7,xmm7,xmm1
+	vpxor	xmm7,xmm7,xmm2
+	vpaddd	xmm6,xmm6,xmm7
+	vpsrld	xmm7,xmm9,6
+	vpslld	xmm2,xmm9,26
+	vmovdqu	XMMWORD[(48-128)+rax],xmm6
+	vpaddd	xmm6,xmm6,xmm12
+
+	vpsrld	xmm1,xmm9,11
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm9,21
+	vpaddd	xmm6,xmm6,XMMWORD[((-32))+rbp]
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm1,xmm9,25
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm9,7
+	vpandn	xmm0,xmm9,xmm11
+	vpand	xmm4,xmm9,xmm10
+
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm12,xmm13,2
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm1,xmm13,30
+	vpxor	xmm0,xmm0,xmm4
+	vpxor	xmm4,xmm14,xmm13
+
+	vpxor	xmm12,xmm12,xmm1
+	vpaddd	xmm6,xmm6,xmm7
+
+	vpsrld	xmm1,xmm13,13
+
+	vpslld	xmm2,xmm13,19
+	vpaddd	xmm6,xmm6,xmm0
+	vpand	xmm3,xmm3,xmm4
+
+	vpxor	xmm7,xmm12,xmm1
+
+	vpsrld	xmm1,xmm13,22
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm13,10
+	vpxor	xmm12,xmm14,xmm3
+	vpaddd	xmm8,xmm8,xmm6
+
+	vpxor	xmm7,xmm7,xmm1
+	vpxor	xmm7,xmm7,xmm2
+
+	vpaddd	xmm12,xmm12,xmm6
+	vpaddd	xmm12,xmm12,xmm7
+	vmovdqu	xmm6,XMMWORD[((80-128))+rax]
+	vpaddd	xmm5,xmm5,XMMWORD[((208-128))+rax]
+
+	vpsrld	xmm7,xmm6,3
+	vpsrld	xmm1,xmm6,7
+	vpslld	xmm2,xmm6,25
+	vpxor	xmm7,xmm7,xmm1
+	vpsrld	xmm1,xmm6,18
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm6,14
+	vmovdqu	xmm0,XMMWORD[((32-128))+rax]
+	vpsrld	xmm3,xmm0,10
+
+	vpxor	xmm7,xmm7,xmm1
+	vpsrld	xmm1,xmm0,17
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm0,15
+	vpaddd	xmm5,xmm5,xmm7
+	vpxor	xmm7,xmm3,xmm1
+	vpsrld	xmm1,xmm0,19
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm0,13
+	vpxor	xmm7,xmm7,xmm1
+	vpxor	xmm7,xmm7,xmm2
+	vpaddd	xmm5,xmm5,xmm7
+	vpsrld	xmm7,xmm8,6
+	vpslld	xmm2,xmm8,26
+	vmovdqu	XMMWORD[(64-128)+rax],xmm5
+	vpaddd	xmm5,xmm5,xmm11
+
+	vpsrld	xmm1,xmm8,11
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm8,21
+	vpaddd	xmm5,xmm5,XMMWORD[rbp]
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm1,xmm8,25
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm8,7
+	vpandn	xmm0,xmm8,xmm10
+	vpand	xmm3,xmm8,xmm9
+
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm11,xmm12,2
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm1,xmm12,30
+	vpxor	xmm0,xmm0,xmm3
+	vpxor	xmm3,xmm13,xmm12
+
+	vpxor	xmm11,xmm11,xmm1
+	vpaddd	xmm5,xmm5,xmm7
+
+	vpsrld	xmm1,xmm12,13
+
+	vpslld	xmm2,xmm12,19
+	vpaddd	xmm5,xmm5,xmm0
+	vpand	xmm4,xmm4,xmm3
+
+	vpxor	xmm7,xmm11,xmm1
+
+	vpsrld	xmm1,xmm12,22
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm12,10
+	vpxor	xmm11,xmm13,xmm4
+	vpaddd	xmm15,xmm15,xmm5
+
+	vpxor	xmm7,xmm7,xmm1
+	vpxor	xmm7,xmm7,xmm2
+
+	vpaddd	xmm11,xmm11,xmm5
+	vpaddd	xmm11,xmm11,xmm7
+	vmovdqu	xmm5,XMMWORD[((96-128))+rax]
+	vpaddd	xmm6,xmm6,XMMWORD[((224-128))+rax]
+
+	vpsrld	xmm7,xmm5,3
+	vpsrld	xmm1,xmm5,7
+	vpslld	xmm2,xmm5,25
+	vpxor	xmm7,xmm7,xmm1
+	vpsrld	xmm1,xmm5,18
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm5,14
+	vmovdqu	xmm0,XMMWORD[((48-128))+rax]
+	vpsrld	xmm4,xmm0,10
+
+	vpxor	xmm7,xmm7,xmm1
+	vpsrld	xmm1,xmm0,17
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm0,15
+	vpaddd	xmm6,xmm6,xmm7
+	vpxor	xmm7,xmm4,xmm1
+	vpsrld	xmm1,xmm0,19
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm0,13
+	vpxor	xmm7,xmm7,xmm1
+	vpxor	xmm7,xmm7,xmm2
+	vpaddd	xmm6,xmm6,xmm7
+	vpsrld	xmm7,xmm15,6
+	vpslld	xmm2,xmm15,26
+	vmovdqu	XMMWORD[(80-128)+rax],xmm6
+	vpaddd	xmm6,xmm6,xmm10
+
+	vpsrld	xmm1,xmm15,11
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm15,21
+	vpaddd	xmm6,xmm6,XMMWORD[32+rbp]
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm1,xmm15,25
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm15,7
+	vpandn	xmm0,xmm15,xmm9
+	vpand	xmm4,xmm15,xmm8
+
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm10,xmm11,2
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm1,xmm11,30
+	vpxor	xmm0,xmm0,xmm4
+	vpxor	xmm4,xmm12,xmm11
+
+	vpxor	xmm10,xmm10,xmm1
+	vpaddd	xmm6,xmm6,xmm7
+
+	vpsrld	xmm1,xmm11,13
+
+	vpslld	xmm2,xmm11,19
+	vpaddd	xmm6,xmm6,xmm0
+	vpand	xmm3,xmm3,xmm4
+
+	vpxor	xmm7,xmm10,xmm1
+
+	vpsrld	xmm1,xmm11,22
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm11,10
+	vpxor	xmm10,xmm12,xmm3
+	vpaddd	xmm14,xmm14,xmm6
+
+	vpxor	xmm7,xmm7,xmm1
+	vpxor	xmm7,xmm7,xmm2
+
+	vpaddd	xmm10,xmm10,xmm6
+	vpaddd	xmm10,xmm10,xmm7
+	vmovdqu	xmm6,XMMWORD[((112-128))+rax]
+	vpaddd	xmm5,xmm5,XMMWORD[((240-128))+rax]
+
+	vpsrld	xmm7,xmm6,3
+	vpsrld	xmm1,xmm6,7
+	vpslld	xmm2,xmm6,25
+	vpxor	xmm7,xmm7,xmm1
+	vpsrld	xmm1,xmm6,18
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm6,14
+	vmovdqu	xmm0,XMMWORD[((64-128))+rax]
+	vpsrld	xmm3,xmm0,10
+
+	vpxor	xmm7,xmm7,xmm1
+	vpsrld	xmm1,xmm0,17
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm0,15
+	vpaddd	xmm5,xmm5,xmm7
+	vpxor	xmm7,xmm3,xmm1
+	vpsrld	xmm1,xmm0,19
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm0,13
+	vpxor	xmm7,xmm7,xmm1
+	vpxor	xmm7,xmm7,xmm2
+	vpaddd	xmm5,xmm5,xmm7
+	vpsrld	xmm7,xmm14,6
+	vpslld	xmm2,xmm14,26
+	vmovdqu	XMMWORD[(96-128)+rax],xmm5
+	vpaddd	xmm5,xmm5,xmm9
+
+	vpsrld	xmm1,xmm14,11
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm14,21
+	vpaddd	xmm5,xmm5,XMMWORD[64+rbp]
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm1,xmm14,25
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm14,7
+	vpandn	xmm0,xmm14,xmm8
+	vpand	xmm3,xmm14,xmm15
+
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm9,xmm10,2
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm1,xmm10,30
+	vpxor	xmm0,xmm0,xmm3
+	vpxor	xmm3,xmm11,xmm10
+
+	vpxor	xmm9,xmm9,xmm1
+	vpaddd	xmm5,xmm5,xmm7
+
+	vpsrld	xmm1,xmm10,13
+
+	vpslld	xmm2,xmm10,19
+	vpaddd	xmm5,xmm5,xmm0
+	vpand	xmm4,xmm4,xmm3
+
+	vpxor	xmm7,xmm9,xmm1
+
+	vpsrld	xmm1,xmm10,22
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm10,10
+	vpxor	xmm9,xmm11,xmm4
+	vpaddd	xmm13,xmm13,xmm5
+
+	vpxor	xmm7,xmm7,xmm1
+	vpxor	xmm7,xmm7,xmm2
+
+	vpaddd	xmm9,xmm9,xmm5
+	vpaddd	xmm9,xmm9,xmm7
+	vmovdqu	xmm5,XMMWORD[((128-128))+rax]
+	vpaddd	xmm6,xmm6,XMMWORD[((0-128))+rax]
+
+	vpsrld	xmm7,xmm5,3
+	vpsrld	xmm1,xmm5,7
+	vpslld	xmm2,xmm5,25
+	vpxor	xmm7,xmm7,xmm1
+	vpsrld	xmm1,xmm5,18
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm5,14
+	vmovdqu	xmm0,XMMWORD[((80-128))+rax]
+	vpsrld	xmm4,xmm0,10
+
+	vpxor	xmm7,xmm7,xmm1
+	vpsrld	xmm1,xmm0,17
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm0,15
+	vpaddd	xmm6,xmm6,xmm7
+	vpxor	xmm7,xmm4,xmm1
+	vpsrld	xmm1,xmm0,19
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm0,13
+	vpxor	xmm7,xmm7,xmm1
+	vpxor	xmm7,xmm7,xmm2
+	vpaddd	xmm6,xmm6,xmm7
+	vpsrld	xmm7,xmm13,6
+	vpslld	xmm2,xmm13,26
+	vmovdqu	XMMWORD[(112-128)+rax],xmm6
+	vpaddd	xmm6,xmm6,xmm8
+
+	vpsrld	xmm1,xmm13,11
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm13,21
+	vpaddd	xmm6,xmm6,XMMWORD[96+rbp]
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm1,xmm13,25
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm13,7
+	vpandn	xmm0,xmm13,xmm15
+	vpand	xmm4,xmm13,xmm14
+
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm8,xmm9,2
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm1,xmm9,30
+	vpxor	xmm0,xmm0,xmm4
+	vpxor	xmm4,xmm10,xmm9
+
+	vpxor	xmm8,xmm8,xmm1
+	vpaddd	xmm6,xmm6,xmm7
+
+	vpsrld	xmm1,xmm9,13
+
+	vpslld	xmm2,xmm9,19
+	vpaddd	xmm6,xmm6,xmm0
+	vpand	xmm3,xmm3,xmm4
+
+	vpxor	xmm7,xmm8,xmm1
+
+	vpsrld	xmm1,xmm9,22
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm9,10
+	vpxor	xmm8,xmm10,xmm3
+	vpaddd	xmm12,xmm12,xmm6
+
+	vpxor	xmm7,xmm7,xmm1
+	vpxor	xmm7,xmm7,xmm2
+
+	vpaddd	xmm8,xmm8,xmm6
+	vpaddd	xmm8,xmm8,xmm7
+	add	rbp,256
+	vmovdqu	xmm6,XMMWORD[((144-128))+rax]
+	vpaddd	xmm5,xmm5,XMMWORD[((16-128))+rax]
+
+	vpsrld	xmm7,xmm6,3
+	vpsrld	xmm1,xmm6,7
+	vpslld	xmm2,xmm6,25
+	vpxor	xmm7,xmm7,xmm1
+	vpsrld	xmm1,xmm6,18
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm6,14
+	vmovdqu	xmm0,XMMWORD[((96-128))+rax]
+	vpsrld	xmm3,xmm0,10
+
+	vpxor	xmm7,xmm7,xmm1
+	vpsrld	xmm1,xmm0,17
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm0,15
+	vpaddd	xmm5,xmm5,xmm7
+	vpxor	xmm7,xmm3,xmm1
+	vpsrld	xmm1,xmm0,19
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm0,13
+	vpxor	xmm7,xmm7,xmm1
+	vpxor	xmm7,xmm7,xmm2
+	vpaddd	xmm5,xmm5,xmm7
+	vpsrld	xmm7,xmm12,6
+	vpslld	xmm2,xmm12,26
+	vmovdqu	XMMWORD[(128-128)+rax],xmm5
+	vpaddd	xmm5,xmm5,xmm15
+
+	vpsrld	xmm1,xmm12,11
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm12,21
+	vpaddd	xmm5,xmm5,XMMWORD[((-128))+rbp]
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm1,xmm12,25
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm12,7
+	vpandn	xmm0,xmm12,xmm14
+	vpand	xmm3,xmm12,xmm13
+
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm15,xmm8,2
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm1,xmm8,30
+	vpxor	xmm0,xmm0,xmm3
+	vpxor	xmm3,xmm9,xmm8
+
+	vpxor	xmm15,xmm15,xmm1
+	vpaddd	xmm5,xmm5,xmm7
+
+	vpsrld	xmm1,xmm8,13
+
+	vpslld	xmm2,xmm8,19
+	vpaddd	xmm5,xmm5,xmm0
+	vpand	xmm4,xmm4,xmm3
+
+	vpxor	xmm7,xmm15,xmm1
+
+	vpsrld	xmm1,xmm8,22
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm8,10
+	vpxor	xmm15,xmm9,xmm4
+	vpaddd	xmm11,xmm11,xmm5
+
+	vpxor	xmm7,xmm7,xmm1
+	vpxor	xmm7,xmm7,xmm2
+
+	vpaddd	xmm15,xmm15,xmm5
+	vpaddd	xmm15,xmm15,xmm7
+	vmovdqu	xmm5,XMMWORD[((160-128))+rax]
+	vpaddd	xmm6,xmm6,XMMWORD[((32-128))+rax]
+
+	vpsrld	xmm7,xmm5,3
+	vpsrld	xmm1,xmm5,7
+	vpslld	xmm2,xmm5,25
+	vpxor	xmm7,xmm7,xmm1
+	vpsrld	xmm1,xmm5,18
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm5,14
+	vmovdqu	xmm0,XMMWORD[((112-128))+rax]
+	vpsrld	xmm4,xmm0,10
+
+	vpxor	xmm7,xmm7,xmm1
+	vpsrld	xmm1,xmm0,17
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm0,15
+	vpaddd	xmm6,xmm6,xmm7
+	vpxor	xmm7,xmm4,xmm1
+	vpsrld	xmm1,xmm0,19
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm0,13
+	vpxor	xmm7,xmm7,xmm1
+	vpxor	xmm7,xmm7,xmm2
+	vpaddd	xmm6,xmm6,xmm7
+	vpsrld	xmm7,xmm11,6
+	vpslld	xmm2,xmm11,26
+	vmovdqu	XMMWORD[(144-128)+rax],xmm6
+	vpaddd	xmm6,xmm6,xmm14
+
+	vpsrld	xmm1,xmm11,11
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm11,21
+	vpaddd	xmm6,xmm6,XMMWORD[((-96))+rbp]
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm1,xmm11,25
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm11,7
+	vpandn	xmm0,xmm11,xmm13
+	vpand	xmm4,xmm11,xmm12
+
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm14,xmm15,2
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm1,xmm15,30
+	vpxor	xmm0,xmm0,xmm4
+	vpxor	xmm4,xmm8,xmm15
+
+	vpxor	xmm14,xmm14,xmm1
+	vpaddd	xmm6,xmm6,xmm7
+
+	vpsrld	xmm1,xmm15,13
+
+	vpslld	xmm2,xmm15,19
+	vpaddd	xmm6,xmm6,xmm0
+	vpand	xmm3,xmm3,xmm4
+
+	vpxor	xmm7,xmm14,xmm1
+
+	vpsrld	xmm1,xmm15,22
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm15,10
+	vpxor	xmm14,xmm8,xmm3
+	vpaddd	xmm10,xmm10,xmm6
+
+	vpxor	xmm7,xmm7,xmm1
+	vpxor	xmm7,xmm7,xmm2
+
+	vpaddd	xmm14,xmm14,xmm6
+	vpaddd	xmm14,xmm14,xmm7
+	vmovdqu	xmm6,XMMWORD[((176-128))+rax]
+	vpaddd	xmm5,xmm5,XMMWORD[((48-128))+rax]
+
+	vpsrld	xmm7,xmm6,3
+	vpsrld	xmm1,xmm6,7
+	vpslld	xmm2,xmm6,25
+	vpxor	xmm7,xmm7,xmm1
+	vpsrld	xmm1,xmm6,18
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm6,14
+	vmovdqu	xmm0,XMMWORD[((128-128))+rax]
+	vpsrld	xmm3,xmm0,10
+
+	vpxor	xmm7,xmm7,xmm1
+	vpsrld	xmm1,xmm0,17
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm0,15
+	vpaddd	xmm5,xmm5,xmm7
+	vpxor	xmm7,xmm3,xmm1
+	vpsrld	xmm1,xmm0,19
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm0,13
+	vpxor	xmm7,xmm7,xmm1
+	vpxor	xmm7,xmm7,xmm2
+	vpaddd	xmm5,xmm5,xmm7
+	vpsrld	xmm7,xmm10,6
+	vpslld	xmm2,xmm10,26
+	vmovdqu	XMMWORD[(160-128)+rax],xmm5
+	vpaddd	xmm5,xmm5,xmm13
+
+	vpsrld	xmm1,xmm10,11
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm10,21
+	vpaddd	xmm5,xmm5,XMMWORD[((-64))+rbp]
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm1,xmm10,25
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm10,7
+	vpandn	xmm0,xmm10,xmm12
+	vpand	xmm3,xmm10,xmm11
+
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm13,xmm14,2
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm1,xmm14,30
+	vpxor	xmm0,xmm0,xmm3
+	vpxor	xmm3,xmm15,xmm14
+
+	vpxor	xmm13,xmm13,xmm1
+	vpaddd	xmm5,xmm5,xmm7
+
+	vpsrld	xmm1,xmm14,13
+
+	vpslld	xmm2,xmm14,19
+	vpaddd	xmm5,xmm5,xmm0
+	vpand	xmm4,xmm4,xmm3
+
+	vpxor	xmm7,xmm13,xmm1
+
+	vpsrld	xmm1,xmm14,22
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm14,10
+	vpxor	xmm13,xmm15,xmm4
+	vpaddd	xmm9,xmm9,xmm5
+
+	vpxor	xmm7,xmm7,xmm1
+	vpxor	xmm7,xmm7,xmm2
+
+	vpaddd	xmm13,xmm13,xmm5
+	vpaddd	xmm13,xmm13,xmm7
+	vmovdqu	xmm5,XMMWORD[((192-128))+rax]
+	vpaddd	xmm6,xmm6,XMMWORD[((64-128))+rax]
+
+	vpsrld	xmm7,xmm5,3
+	vpsrld	xmm1,xmm5,7
+	vpslld	xmm2,xmm5,25
+	vpxor	xmm7,xmm7,xmm1
+	vpsrld	xmm1,xmm5,18
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm5,14
+	vmovdqu	xmm0,XMMWORD[((144-128))+rax]
+	vpsrld	xmm4,xmm0,10
+
+	vpxor	xmm7,xmm7,xmm1
+	vpsrld	xmm1,xmm0,17
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm0,15
+	vpaddd	xmm6,xmm6,xmm7
+	vpxor	xmm7,xmm4,xmm1
+	vpsrld	xmm1,xmm0,19
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm0,13
+	vpxor	xmm7,xmm7,xmm1
+	vpxor	xmm7,xmm7,xmm2
+	vpaddd	xmm6,xmm6,xmm7
+	vpsrld	xmm7,xmm9,6
+	vpslld	xmm2,xmm9,26
+	vmovdqu	XMMWORD[(176-128)+rax],xmm6
+	vpaddd	xmm6,xmm6,xmm12
+
+	vpsrld	xmm1,xmm9,11
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm9,21
+	vpaddd	xmm6,xmm6,XMMWORD[((-32))+rbp]
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm1,xmm9,25
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm9,7
+	vpandn	xmm0,xmm9,xmm11
+	vpand	xmm4,xmm9,xmm10
+
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm12,xmm13,2
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm1,xmm13,30
+	vpxor	xmm0,xmm0,xmm4
+	vpxor	xmm4,xmm14,xmm13
+
+	vpxor	xmm12,xmm12,xmm1
+	vpaddd	xmm6,xmm6,xmm7
+
+	vpsrld	xmm1,xmm13,13
+
+	vpslld	xmm2,xmm13,19
+	vpaddd	xmm6,xmm6,xmm0
+	vpand	xmm3,xmm3,xmm4
+
+	vpxor	xmm7,xmm12,xmm1
+
+	vpsrld	xmm1,xmm13,22
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm13,10
+	vpxor	xmm12,xmm14,xmm3
+	vpaddd	xmm8,xmm8,xmm6
+
+	vpxor	xmm7,xmm7,xmm1
+	vpxor	xmm7,xmm7,xmm2
+
+	vpaddd	xmm12,xmm12,xmm6
+	vpaddd	xmm12,xmm12,xmm7
+	vmovdqu	xmm6,XMMWORD[((208-128))+rax]
+	vpaddd	xmm5,xmm5,XMMWORD[((80-128))+rax]
+
+	vpsrld	xmm7,xmm6,3
+	vpsrld	xmm1,xmm6,7
+	vpslld	xmm2,xmm6,25
+	vpxor	xmm7,xmm7,xmm1
+	vpsrld	xmm1,xmm6,18
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm6,14
+	vmovdqu	xmm0,XMMWORD[((160-128))+rax]
+	vpsrld	xmm3,xmm0,10
+
+	vpxor	xmm7,xmm7,xmm1
+	vpsrld	xmm1,xmm0,17
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm0,15
+	vpaddd	xmm5,xmm5,xmm7
+	vpxor	xmm7,xmm3,xmm1
+	vpsrld	xmm1,xmm0,19
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm0,13
+	vpxor	xmm7,xmm7,xmm1
+	vpxor	xmm7,xmm7,xmm2
+	vpaddd	xmm5,xmm5,xmm7
+	vpsrld	xmm7,xmm8,6
+	vpslld	xmm2,xmm8,26
+	vmovdqu	XMMWORD[(192-128)+rax],xmm5
+	vpaddd	xmm5,xmm5,xmm11
+
+	vpsrld	xmm1,xmm8,11
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm8,21
+	vpaddd	xmm5,xmm5,XMMWORD[rbp]
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm1,xmm8,25
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm8,7
+	vpandn	xmm0,xmm8,xmm10
+	vpand	xmm3,xmm8,xmm9
+
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm11,xmm12,2
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm1,xmm12,30
+	vpxor	xmm0,xmm0,xmm3
+	vpxor	xmm3,xmm13,xmm12
+
+	vpxor	xmm11,xmm11,xmm1
+	vpaddd	xmm5,xmm5,xmm7
+
+	vpsrld	xmm1,xmm12,13
+
+	vpslld	xmm2,xmm12,19
+	vpaddd	xmm5,xmm5,xmm0
+	vpand	xmm4,xmm4,xmm3
+
+	vpxor	xmm7,xmm11,xmm1
+
+	vpsrld	xmm1,xmm12,22
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm12,10
+	vpxor	xmm11,xmm13,xmm4
+	vpaddd	xmm15,xmm15,xmm5
+
+	vpxor	xmm7,xmm7,xmm1
+	vpxor	xmm7,xmm7,xmm2
+
+	vpaddd	xmm11,xmm11,xmm5
+	vpaddd	xmm11,xmm11,xmm7
+	vmovdqu	xmm5,XMMWORD[((224-128))+rax]
+	vpaddd	xmm6,xmm6,XMMWORD[((96-128))+rax]
+
+	vpsrld	xmm7,xmm5,3
+	vpsrld	xmm1,xmm5,7
+	vpslld	xmm2,xmm5,25
+	vpxor	xmm7,xmm7,xmm1
+	vpsrld	xmm1,xmm5,18
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm5,14
+	vmovdqu	xmm0,XMMWORD[((176-128))+rax]
+	vpsrld	xmm4,xmm0,10
+
+	vpxor	xmm7,xmm7,xmm1
+	vpsrld	xmm1,xmm0,17
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm0,15
+	vpaddd	xmm6,xmm6,xmm7
+	vpxor	xmm7,xmm4,xmm1
+	vpsrld	xmm1,xmm0,19
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm0,13
+	vpxor	xmm7,xmm7,xmm1
+	vpxor	xmm7,xmm7,xmm2
+	vpaddd	xmm6,xmm6,xmm7
+	vpsrld	xmm7,xmm15,6
+	vpslld	xmm2,xmm15,26
+	vmovdqu	XMMWORD[(208-128)+rax],xmm6
+	vpaddd	xmm6,xmm6,xmm10
+
+	vpsrld	xmm1,xmm15,11
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm15,21
+	vpaddd	xmm6,xmm6,XMMWORD[32+rbp]
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm1,xmm15,25
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm15,7
+	vpandn	xmm0,xmm15,xmm9
+	vpand	xmm4,xmm15,xmm8
+
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm10,xmm11,2
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm1,xmm11,30
+	vpxor	xmm0,xmm0,xmm4
+	vpxor	xmm4,xmm12,xmm11
+
+	vpxor	xmm10,xmm10,xmm1
+	vpaddd	xmm6,xmm6,xmm7
+
+	vpsrld	xmm1,xmm11,13
+
+	vpslld	xmm2,xmm11,19
+	vpaddd	xmm6,xmm6,xmm0
+	vpand	xmm3,xmm3,xmm4
+
+	vpxor	xmm7,xmm10,xmm1
+
+	vpsrld	xmm1,xmm11,22
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm11,10
+	vpxor	xmm10,xmm12,xmm3
+	vpaddd	xmm14,xmm14,xmm6
+
+	vpxor	xmm7,xmm7,xmm1
+	vpxor	xmm7,xmm7,xmm2
+
+	vpaddd	xmm10,xmm10,xmm6
+	vpaddd	xmm10,xmm10,xmm7
+	vmovdqu	xmm6,XMMWORD[((240-128))+rax]
+	vpaddd	xmm5,xmm5,XMMWORD[((112-128))+rax]
+
+	vpsrld	xmm7,xmm6,3
+	vpsrld	xmm1,xmm6,7
+	vpslld	xmm2,xmm6,25
+	vpxor	xmm7,xmm7,xmm1
+	vpsrld	xmm1,xmm6,18
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm6,14
+	vmovdqu	xmm0,XMMWORD[((192-128))+rax]
+	vpsrld	xmm3,xmm0,10
+
+	vpxor	xmm7,xmm7,xmm1
+	vpsrld	xmm1,xmm0,17
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm0,15
+	vpaddd	xmm5,xmm5,xmm7
+	vpxor	xmm7,xmm3,xmm1
+	vpsrld	xmm1,xmm0,19
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm0,13
+	vpxor	xmm7,xmm7,xmm1
+	vpxor	xmm7,xmm7,xmm2
+	vpaddd	xmm5,xmm5,xmm7
+	vpsrld	xmm7,xmm14,6
+	vpslld	xmm2,xmm14,26
+	vmovdqu	XMMWORD[(224-128)+rax],xmm5
+	vpaddd	xmm5,xmm5,xmm9
+
+	vpsrld	xmm1,xmm14,11
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm14,21
+	vpaddd	xmm5,xmm5,XMMWORD[64+rbp]
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm1,xmm14,25
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm14,7
+	vpandn	xmm0,xmm14,xmm8
+	vpand	xmm3,xmm14,xmm15
+
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm9,xmm10,2
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm1,xmm10,30
+	vpxor	xmm0,xmm0,xmm3
+	vpxor	xmm3,xmm11,xmm10
+
+	vpxor	xmm9,xmm9,xmm1
+	vpaddd	xmm5,xmm5,xmm7
+
+	vpsrld	xmm1,xmm10,13
+
+	vpslld	xmm2,xmm10,19
+	vpaddd	xmm5,xmm5,xmm0
+	vpand	xmm4,xmm4,xmm3
+
+	vpxor	xmm7,xmm9,xmm1
+
+	vpsrld	xmm1,xmm10,22
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm10,10
+	vpxor	xmm9,xmm11,xmm4
+	vpaddd	xmm13,xmm13,xmm5
+
+	vpxor	xmm7,xmm7,xmm1
+	vpxor	xmm7,xmm7,xmm2
+
+	vpaddd	xmm9,xmm9,xmm5
+	vpaddd	xmm9,xmm9,xmm7
+	vmovdqu	xmm5,XMMWORD[((0-128))+rax]
+	vpaddd	xmm6,xmm6,XMMWORD[((128-128))+rax]
+
+	vpsrld	xmm7,xmm5,3
+	vpsrld	xmm1,xmm5,7
+	vpslld	xmm2,xmm5,25
+	vpxor	xmm7,xmm7,xmm1
+	vpsrld	xmm1,xmm5,18
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm5,14
+	vmovdqu	xmm0,XMMWORD[((208-128))+rax]
+	vpsrld	xmm4,xmm0,10
+
+	vpxor	xmm7,xmm7,xmm1
+	vpsrld	xmm1,xmm0,17
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm0,15
+	vpaddd	xmm6,xmm6,xmm7
+	vpxor	xmm7,xmm4,xmm1
+	vpsrld	xmm1,xmm0,19
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm0,13
+	vpxor	xmm7,xmm7,xmm1
+	vpxor	xmm7,xmm7,xmm2
+	vpaddd	xmm6,xmm6,xmm7
+	vpsrld	xmm7,xmm13,6
+	vpslld	xmm2,xmm13,26
+	vmovdqu	XMMWORD[(240-128)+rax],xmm6
+	vpaddd	xmm6,xmm6,xmm8
+
+	vpsrld	xmm1,xmm13,11
+	vpxor	xmm7,xmm7,xmm2
+	vpslld	xmm2,xmm13,21
+	vpaddd	xmm6,xmm6,XMMWORD[96+rbp]
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm1,xmm13,25
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm13,7
+	vpandn	xmm0,xmm13,xmm15
+	vpand	xmm4,xmm13,xmm14
+
+	vpxor	xmm7,xmm7,xmm1
+
+	vpsrld	xmm8,xmm9,2
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm1,xmm9,30
+	vpxor	xmm0,xmm0,xmm4
+	vpxor	xmm4,xmm10,xmm9
+
+	vpxor	xmm8,xmm8,xmm1
+	vpaddd	xmm6,xmm6,xmm7
+
+	vpsrld	xmm1,xmm9,13
+
+	vpslld	xmm2,xmm9,19
+	vpaddd	xmm6,xmm6,xmm0
+	vpand	xmm3,xmm3,xmm4
+
+	vpxor	xmm7,xmm8,xmm1
+
+	vpsrld	xmm1,xmm9,22
+	vpxor	xmm7,xmm7,xmm2
+
+	vpslld	xmm2,xmm9,10
+	vpxor	xmm8,xmm10,xmm3
+	vpaddd	xmm12,xmm12,xmm6
+
+	vpxor	xmm7,xmm7,xmm1
+	vpxor	xmm7,xmm7,xmm2
+
+	vpaddd	xmm8,xmm8,xmm6
+	vpaddd	xmm8,xmm8,xmm7
+	add	rbp,256
+	dec	ecx
+	jnz	NEAR $L$oop_16_xx_avx
+
+	mov	ecx,1
+	lea	rbp,[((K256+128))]
+	cmp	ecx,DWORD[rbx]
+	cmovge	r8,rbp
+	cmp	ecx,DWORD[4+rbx]
+	cmovge	r9,rbp
+	cmp	ecx,DWORD[8+rbx]
+	cmovge	r10,rbp
+	cmp	ecx,DWORD[12+rbx]
+	cmovge	r11,rbp
+	vmovdqa	xmm7,XMMWORD[rbx]
+	vpxor	xmm0,xmm0,xmm0
+	vmovdqa	xmm6,xmm7
+	vpcmpgtd	xmm6,xmm6,xmm0
+	vpaddd	xmm7,xmm7,xmm6
+
+	vmovdqu	xmm0,XMMWORD[((0-128))+rdi]
+	vpand	xmm8,xmm8,xmm6
+	vmovdqu	xmm1,XMMWORD[((32-128))+rdi]
+	vpand	xmm9,xmm9,xmm6
+	vmovdqu	xmm2,XMMWORD[((64-128))+rdi]
+	vpand	xmm10,xmm10,xmm6
+	vmovdqu	xmm5,XMMWORD[((96-128))+rdi]
+	vpand	xmm11,xmm11,xmm6
+	vpaddd	xmm8,xmm8,xmm0
+	vmovdqu	xmm0,XMMWORD[((128-128))+rdi]
+	vpand	xmm12,xmm12,xmm6
+	vpaddd	xmm9,xmm9,xmm1
+	vmovdqu	xmm1,XMMWORD[((160-128))+rdi]
+	vpand	xmm13,xmm13,xmm6
+	vpaddd	xmm10,xmm10,xmm2
+	vmovdqu	xmm2,XMMWORD[((192-128))+rdi]
+	vpand	xmm14,xmm14,xmm6
+	vpaddd	xmm11,xmm11,xmm5
+	vmovdqu	xmm5,XMMWORD[((224-128))+rdi]
+	vpand	xmm15,xmm15,xmm6
+	vpaddd	xmm12,xmm12,xmm0
+	vpaddd	xmm13,xmm13,xmm1
+	vmovdqu	XMMWORD[(0-128)+rdi],xmm8
+	vpaddd	xmm14,xmm14,xmm2
+	vmovdqu	XMMWORD[(32-128)+rdi],xmm9
+	vpaddd	xmm15,xmm15,xmm5
+	vmovdqu	XMMWORD[(64-128)+rdi],xmm10
+	vmovdqu	XMMWORD[(96-128)+rdi],xmm11
+	vmovdqu	XMMWORD[(128-128)+rdi],xmm12
+	vmovdqu	XMMWORD[(160-128)+rdi],xmm13
+	vmovdqu	XMMWORD[(192-128)+rdi],xmm14
+	vmovdqu	XMMWORD[(224-128)+rdi],xmm15
+
+	vmovdqu	XMMWORD[rbx],xmm7
+	vmovdqu	xmm6,XMMWORD[$L$pbswap]
+	dec	edx
+	jnz	NEAR $L$oop_avx
+
+	mov	edx,DWORD[280+rsp]
+	lea	rdi,[16+rdi]
+	lea	rsi,[64+rsi]
+	dec	edx
+	jnz	NEAR $L$oop_grande_avx
+
+$L$done_avx:
+	mov	rax,QWORD[272+rsp]
+
+	vzeroupper
+	movaps	xmm6,XMMWORD[((-184))+rax]
+	movaps	xmm7,XMMWORD[((-168))+rax]
+	movaps	xmm8,XMMWORD[((-152))+rax]
+	movaps	xmm9,XMMWORD[((-136))+rax]
+	movaps	xmm10,XMMWORD[((-120))+rax]
+	movaps	xmm11,XMMWORD[((-104))+rax]
+	movaps	xmm12,XMMWORD[((-88))+rax]
+	movaps	xmm13,XMMWORD[((-72))+rax]
+	movaps	xmm14,XMMWORD[((-56))+rax]
+	movaps	xmm15,XMMWORD[((-40))+rax]
+	mov	rbp,QWORD[((-16))+rax]
+
+	mov	rbx,QWORD[((-8))+rax]
+
+	lea	rsp,[rax]
+
+	mov	rdi,QWORD[8+rsp]	;WIN64 epilogue
+	mov	rsi,QWORD[16+rsp]
+	DB	0F3h,0C3h		;repret
+SEH64_ENDPROC_FRAME	sha256_multi_block_avx
+$L$SEH_end_sha256_multi_block_avx:
+
+ALIGN	32
+SEH64_PROC_FRAME sha256_multi_block_avx2,PRIVATE
+	mov	QWORD[8+rsp],rdi	;WIN64 prologue
+SEH64_SAVEREG rdi, 8
+	mov	QWORD[16+rsp],rsi
+SEH64_SAVEREG rsi, 16
+	mov	rax,rsp
+	mov	rdi,rcx
+	mov	rsi,rdx
+	mov	rdx,r8
+
+
+
+_avx2_shortcut:
+	mov	rax,rsp
+
+	push	rbx
+SEH64_PUSHREG	rbx	; cfa_rsp,cfa_reg_offset => -16,8 cfa_reg=%rax
+	push	rbp
+SEH64_PUSHREG	rbp	; cfa_rsp,cfa_reg_offset => -24,8 cfa_reg=%rax
+	push	r12
+SEH64_PUSHREG	r12	; cfa_rsp,cfa_reg_offset => -32,8 cfa_reg=%rax
+	push	r13
+SEH64_PUSHREG	r13	; cfa_rsp,cfa_reg_offset => -40,8 cfa_reg=%rax
+	push	r14
+SEH64_PUSHREG	r14	; cfa_rsp,cfa_reg_offset => -48,8 cfa_reg=%rax
+	push	r15
+SEH64_PUSHREG	r15	; cfa_rsp,cfa_reg_offset => -56,8 cfa_reg=%rax
+	lea	rsp,[((-168))+rsp]
+SEH64_ALLOCSTACK 168
+	movaps	XMMWORD[rsp],xmm6
+SEH64_SAVEXMM128 xmm6, 0	; .cfi_offset xmm6, -224 cfa_reg_offset=8 cfa_rsp=-224
+	movaps	XMMWORD[16+rsp],xmm7
+SEH64_SAVEXMM128 xmm7, 16	; .cfi_offset xmm7, -208 cfa_reg_offset=8 cfa_rsp=-224
+	movaps	XMMWORD[32+rsp],xmm8
+SEH64_SAVEXMM128 xmm8, 32	; .cfi_offset xmm8, -192 cfa_reg_offset=8 cfa_rsp=-224
+	movaps	XMMWORD[48+rsp],xmm9
+SEH64_SAVEXMM128 xmm9, 48	; .cfi_offset xmm9, -176 cfa_reg_offset=8 cfa_rsp=-224
+	movaps	XMMWORD[64+rsp],xmm10
+SEH64_SAVEXMM128 xmm10, 64	; .cfi_offset xmm10, -160 cfa_reg_offset=8 cfa_rsp=-224
+	movaps	XMMWORD[80+rsp],xmm11
+SEH64_SAVEXMM128 xmm11, 80	; .cfi_offset xmm11, -144 cfa_reg_offset=8 cfa_rsp=-224
+	movaps	XMMWORD[(-120)+rax],xmm12
+SEH64_SAVEXMM128 xmm12, 96	; .cfi_offset xmm12, -0x78-8 cfa_reg_offset=8 cfa_rsp=-224
+	movaps	XMMWORD[(-104)+rax],xmm13
+SEH64_SAVEXMM128 xmm13, 112	; .cfi_offset xmm13, -0x68-8 cfa_reg_offset=8 cfa_rsp=-224
+	movaps	XMMWORD[(-88)+rax],xmm14
+SEH64_SAVEXMM128 xmm14, 128	; .cfi_offset xmm14, -0x58-8 cfa_reg_offset=8 cfa_rsp=-224
+	movaps	XMMWORD[(-72)+rax],xmm15
+SEH64_SAVEXMM128 xmm15, 144	; .cfi_offset xmm15, -0x48-8 cfa_reg_offset=8 cfa_rsp=-224
+	sub	rsp,576
+	and	rsp,-256
+	mov	QWORD[544+rsp],rax
+
+; Hack using rax to load saved CFA expression: %rsp+544,deref,+8
+SEH64_ALLOCSTACK 8	; Make frame reg offset multiple of 16.
+SEH64_SETFRAME rax, 224	; Unwind basically does: rsp = rax - offset
+SEH64_PUSHREG rax    	; Unwind will load deref'ed value into volatile reg for SET_FRAME above.
+SEH64_ALLOCSTACK 544	; Can only deref by .PUSHREG, so adjust RSP by feigning stack alloc.
+SEH64_ENDPROLOG	; cfa_reg=%rax cfa_reg_offset= cfa_rsp=-224
+	lea	rbp,[((K256+128))]
+	lea	rdi,[128+rdi]
+
+$L$oop_grande_avx2:
+	mov	DWORD[552+rsp],edx
+	xor	edx,edx
+	lea	rbx,[512+rsp]
+
+	mov	r12,QWORD[rsi]
+
+	mov	ecx,DWORD[8+rsi]
+	cmp	ecx,edx
+	cmovg	edx,ecx
+	test	ecx,ecx
+	mov	DWORD[rbx],ecx
+	cmovle	r12,rbp
+
+	mov	r13,QWORD[16+rsi]
+
+	mov	ecx,DWORD[24+rsi]
+	cmp	ecx,edx
+	cmovg	edx,ecx
+	test	ecx,ecx
+	mov	DWORD[4+rbx],ecx
+	cmovle	r13,rbp
+
+	mov	r14,QWORD[32+rsi]
+
+	mov	ecx,DWORD[40+rsi]
+	cmp	ecx,edx
+	cmovg	edx,ecx
+	test	ecx,ecx
+	mov	DWORD[8+rbx],ecx
+	cmovle	r14,rbp
+
+	mov	r15,QWORD[48+rsi]
+
+	mov	ecx,DWORD[56+rsi]
+	cmp	ecx,edx
+	cmovg	edx,ecx
+	test	ecx,ecx
+	mov	DWORD[12+rbx],ecx
+	cmovle	r15,rbp
+
+	mov	r8,QWORD[64+rsi]
+
+	mov	ecx,DWORD[72+rsi]
+	cmp	ecx,edx
+	cmovg	edx,ecx
+	test	ecx,ecx
+	mov	DWORD[16+rbx],ecx
+	cmovle	r8,rbp
+
+	mov	r9,QWORD[80+rsi]
+
+	mov	ecx,DWORD[88+rsi]
+	cmp	ecx,edx
+	cmovg	edx,ecx
+	test	ecx,ecx
+	mov	DWORD[20+rbx],ecx
+	cmovle	r9,rbp
+
+	mov	r10,QWORD[96+rsi]
+
+	mov	ecx,DWORD[104+rsi]
+	cmp	ecx,edx
+	cmovg	edx,ecx
+	test	ecx,ecx
+	mov	DWORD[24+rbx],ecx
+	cmovle	r10,rbp
+
+	mov	r11,QWORD[112+rsi]
+
+	mov	ecx,DWORD[120+rsi]
+	cmp	ecx,edx
+	cmovg	edx,ecx
+	test	ecx,ecx
+	mov	DWORD[28+rbx],ecx
+	cmovle	r11,rbp
+	vmovdqu	ymm8,YMMWORD[((0-128))+rdi]
+	lea	rax,[128+rsp]
+	vmovdqu	ymm9,YMMWORD[((32-128))+rdi]
+	lea	rbx,[((256+128))+rsp]
+	vmovdqu	ymm10,YMMWORD[((64-128))+rdi]
+	vmovdqu	ymm11,YMMWORD[((96-128))+rdi]
+	vmovdqu	ymm12,YMMWORD[((128-128))+rdi]
+	vmovdqu	ymm13,YMMWORD[((160-128))+rdi]
+	vmovdqu	ymm14,YMMWORD[((192-128))+rdi]
+	vmovdqu	ymm15,YMMWORD[((224-128))+rdi]
+	vmovdqu	ymm6,YMMWORD[$L$pbswap]
+	jmp	NEAR $L$oop_avx2
+
+ALIGN	32
+$L$oop_avx2:
+	vpxor	ymm4,ymm10,ymm9
+	vmovd	xmm5,DWORD[r12]
+	vmovd	xmm0,DWORD[r8]
+	vmovd	xmm1,DWORD[r13]
+	vmovd	xmm2,DWORD[r9]
+	vpinsrd	xmm5,xmm5,DWORD[r14],1
+	vpinsrd	xmm0,xmm0,DWORD[r10],1
+	vpinsrd	xmm1,xmm1,DWORD[r15],1
+	vpunpckldq	ymm5,ymm5,ymm1
+	vpinsrd	xmm2,xmm2,DWORD[r11],1
+	vpunpckldq	ymm0,ymm0,ymm2
+	vinserti128	ymm5,ymm5,xmm0,1
+	vpshufb	ymm5,ymm5,ymm6
+	vpsrld	ymm7,ymm12,6
+	vpslld	ymm2,ymm12,26
+	vmovdqu	YMMWORD[(0-128)+rax],ymm5
+	vpaddd	ymm5,ymm5,ymm15
+
+	vpsrld	ymm1,ymm12,11
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm12,21
+	vpaddd	ymm5,ymm5,YMMWORD[((-128))+rbp]
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm1,ymm12,25
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm12,7
+	vpandn	ymm0,ymm12,ymm14
+	vpand	ymm3,ymm12,ymm13
+
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm15,ymm8,2
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm1,ymm8,30
+	vpxor	ymm0,ymm0,ymm3
+	vpxor	ymm3,ymm9,ymm8
+
+	vpxor	ymm15,ymm15,ymm1
+	vpaddd	ymm5,ymm5,ymm7
+
+	vpsrld	ymm1,ymm8,13
+
+	vpslld	ymm2,ymm8,19
+	vpaddd	ymm5,ymm5,ymm0
+	vpand	ymm4,ymm4,ymm3
+
+	vpxor	ymm7,ymm15,ymm1
+
+	vpsrld	ymm1,ymm8,22
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm8,10
+	vpxor	ymm15,ymm9,ymm4
+	vpaddd	ymm11,ymm11,ymm5
+
+	vpxor	ymm7,ymm7,ymm1
+	vpxor	ymm7,ymm7,ymm2
+
+	vpaddd	ymm15,ymm15,ymm5
+	vpaddd	ymm15,ymm15,ymm7
+	vmovd	xmm5,DWORD[4+r12]
+	vmovd	xmm0,DWORD[4+r8]
+	vmovd	xmm1,DWORD[4+r13]
+	vmovd	xmm2,DWORD[4+r9]
+	vpinsrd	xmm5,xmm5,DWORD[4+r14],1
+	vpinsrd	xmm0,xmm0,DWORD[4+r10],1
+	vpinsrd	xmm1,xmm1,DWORD[4+r15],1
+	vpunpckldq	ymm5,ymm5,ymm1
+	vpinsrd	xmm2,xmm2,DWORD[4+r11],1
+	vpunpckldq	ymm0,ymm0,ymm2
+	vinserti128	ymm5,ymm5,xmm0,1
+	vpshufb	ymm5,ymm5,ymm6
+	vpsrld	ymm7,ymm11,6
+	vpslld	ymm2,ymm11,26
+	vmovdqu	YMMWORD[(32-128)+rax],ymm5
+	vpaddd	ymm5,ymm5,ymm14
+
+	vpsrld	ymm1,ymm11,11
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm11,21
+	vpaddd	ymm5,ymm5,YMMWORD[((-96))+rbp]
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm1,ymm11,25
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm11,7
+	vpandn	ymm0,ymm11,ymm13
+	vpand	ymm4,ymm11,ymm12
+
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm14,ymm15,2
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm1,ymm15,30
+	vpxor	ymm0,ymm0,ymm4
+	vpxor	ymm4,ymm8,ymm15
+
+	vpxor	ymm14,ymm14,ymm1
+	vpaddd	ymm5,ymm5,ymm7
+
+	vpsrld	ymm1,ymm15,13
+
+	vpslld	ymm2,ymm15,19
+	vpaddd	ymm5,ymm5,ymm0
+	vpand	ymm3,ymm3,ymm4
+
+	vpxor	ymm7,ymm14,ymm1
+
+	vpsrld	ymm1,ymm15,22
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm15,10
+	vpxor	ymm14,ymm8,ymm3
+	vpaddd	ymm10,ymm10,ymm5
+
+	vpxor	ymm7,ymm7,ymm1
+	vpxor	ymm7,ymm7,ymm2
+
+	vpaddd	ymm14,ymm14,ymm5
+	vpaddd	ymm14,ymm14,ymm7
+	vmovd	xmm5,DWORD[8+r12]
+	vmovd	xmm0,DWORD[8+r8]
+	vmovd	xmm1,DWORD[8+r13]
+	vmovd	xmm2,DWORD[8+r9]
+	vpinsrd	xmm5,xmm5,DWORD[8+r14],1
+	vpinsrd	xmm0,xmm0,DWORD[8+r10],1
+	vpinsrd	xmm1,xmm1,DWORD[8+r15],1
+	vpunpckldq	ymm5,ymm5,ymm1
+	vpinsrd	xmm2,xmm2,DWORD[8+r11],1
+	vpunpckldq	ymm0,ymm0,ymm2
+	vinserti128	ymm5,ymm5,xmm0,1
+	vpshufb	ymm5,ymm5,ymm6
+	vpsrld	ymm7,ymm10,6
+	vpslld	ymm2,ymm10,26
+	vmovdqu	YMMWORD[(64-128)+rax],ymm5
+	vpaddd	ymm5,ymm5,ymm13
+
+	vpsrld	ymm1,ymm10,11
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm10,21
+	vpaddd	ymm5,ymm5,YMMWORD[((-64))+rbp]
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm1,ymm10,25
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm10,7
+	vpandn	ymm0,ymm10,ymm12
+	vpand	ymm3,ymm10,ymm11
+
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm13,ymm14,2
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm1,ymm14,30
+	vpxor	ymm0,ymm0,ymm3
+	vpxor	ymm3,ymm15,ymm14
+
+	vpxor	ymm13,ymm13,ymm1
+	vpaddd	ymm5,ymm5,ymm7
+
+	vpsrld	ymm1,ymm14,13
+
+	vpslld	ymm2,ymm14,19
+	vpaddd	ymm5,ymm5,ymm0
+	vpand	ymm4,ymm4,ymm3
+
+	vpxor	ymm7,ymm13,ymm1
+
+	vpsrld	ymm1,ymm14,22
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm14,10
+	vpxor	ymm13,ymm15,ymm4
+	vpaddd	ymm9,ymm9,ymm5
+
+	vpxor	ymm7,ymm7,ymm1
+	vpxor	ymm7,ymm7,ymm2
+
+	vpaddd	ymm13,ymm13,ymm5
+	vpaddd	ymm13,ymm13,ymm7
+	vmovd	xmm5,DWORD[12+r12]
+	vmovd	xmm0,DWORD[12+r8]
+	vmovd	xmm1,DWORD[12+r13]
+	vmovd	xmm2,DWORD[12+r9]
+	vpinsrd	xmm5,xmm5,DWORD[12+r14],1
+	vpinsrd	xmm0,xmm0,DWORD[12+r10],1
+	vpinsrd	xmm1,xmm1,DWORD[12+r15],1
+	vpunpckldq	ymm5,ymm5,ymm1
+	vpinsrd	xmm2,xmm2,DWORD[12+r11],1
+	vpunpckldq	ymm0,ymm0,ymm2
+	vinserti128	ymm5,ymm5,xmm0,1
+	vpshufb	ymm5,ymm5,ymm6
+	vpsrld	ymm7,ymm9,6
+	vpslld	ymm2,ymm9,26
+	vmovdqu	YMMWORD[(96-128)+rax],ymm5
+	vpaddd	ymm5,ymm5,ymm12
+
+	vpsrld	ymm1,ymm9,11
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm9,21
+	vpaddd	ymm5,ymm5,YMMWORD[((-32))+rbp]
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm1,ymm9,25
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm9,7
+	vpandn	ymm0,ymm9,ymm11
+	vpand	ymm4,ymm9,ymm10
+
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm12,ymm13,2
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm1,ymm13,30
+	vpxor	ymm0,ymm0,ymm4
+	vpxor	ymm4,ymm14,ymm13
+
+	vpxor	ymm12,ymm12,ymm1
+	vpaddd	ymm5,ymm5,ymm7
+
+	vpsrld	ymm1,ymm13,13
+
+	vpslld	ymm2,ymm13,19
+	vpaddd	ymm5,ymm5,ymm0
+	vpand	ymm3,ymm3,ymm4
+
+	vpxor	ymm7,ymm12,ymm1
+
+	vpsrld	ymm1,ymm13,22
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm13,10
+	vpxor	ymm12,ymm14,ymm3
+	vpaddd	ymm8,ymm8,ymm5
+
+	vpxor	ymm7,ymm7,ymm1
+	vpxor	ymm7,ymm7,ymm2
+
+	vpaddd	ymm12,ymm12,ymm5
+	vpaddd	ymm12,ymm12,ymm7
+	vmovd	xmm5,DWORD[16+r12]
+	vmovd	xmm0,DWORD[16+r8]
+	vmovd	xmm1,DWORD[16+r13]
+	vmovd	xmm2,DWORD[16+r9]
+	vpinsrd	xmm5,xmm5,DWORD[16+r14],1
+	vpinsrd	xmm0,xmm0,DWORD[16+r10],1
+	vpinsrd	xmm1,xmm1,DWORD[16+r15],1
+	vpunpckldq	ymm5,ymm5,ymm1
+	vpinsrd	xmm2,xmm2,DWORD[16+r11],1
+	vpunpckldq	ymm0,ymm0,ymm2
+	vinserti128	ymm5,ymm5,xmm0,1
+	vpshufb	ymm5,ymm5,ymm6
+	vpsrld	ymm7,ymm8,6
+	vpslld	ymm2,ymm8,26
+	vmovdqu	YMMWORD[(128-128)+rax],ymm5
+	vpaddd	ymm5,ymm5,ymm11
+
+	vpsrld	ymm1,ymm8,11
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm8,21
+	vpaddd	ymm5,ymm5,YMMWORD[rbp]
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm1,ymm8,25
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm8,7
+	vpandn	ymm0,ymm8,ymm10
+	vpand	ymm3,ymm8,ymm9
+
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm11,ymm12,2
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm1,ymm12,30
+	vpxor	ymm0,ymm0,ymm3
+	vpxor	ymm3,ymm13,ymm12
+
+	vpxor	ymm11,ymm11,ymm1
+	vpaddd	ymm5,ymm5,ymm7
+
+	vpsrld	ymm1,ymm12,13
+
+	vpslld	ymm2,ymm12,19
+	vpaddd	ymm5,ymm5,ymm0
+	vpand	ymm4,ymm4,ymm3
+
+	vpxor	ymm7,ymm11,ymm1
+
+	vpsrld	ymm1,ymm12,22
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm12,10
+	vpxor	ymm11,ymm13,ymm4
+	vpaddd	ymm15,ymm15,ymm5
+
+	vpxor	ymm7,ymm7,ymm1
+	vpxor	ymm7,ymm7,ymm2
+
+	vpaddd	ymm11,ymm11,ymm5
+	vpaddd	ymm11,ymm11,ymm7
+	vmovd	xmm5,DWORD[20+r12]
+	vmovd	xmm0,DWORD[20+r8]
+	vmovd	xmm1,DWORD[20+r13]
+	vmovd	xmm2,DWORD[20+r9]
+	vpinsrd	xmm5,xmm5,DWORD[20+r14],1
+	vpinsrd	xmm0,xmm0,DWORD[20+r10],1
+	vpinsrd	xmm1,xmm1,DWORD[20+r15],1
+	vpunpckldq	ymm5,ymm5,ymm1
+	vpinsrd	xmm2,xmm2,DWORD[20+r11],1
+	vpunpckldq	ymm0,ymm0,ymm2
+	vinserti128	ymm5,ymm5,xmm0,1
+	vpshufb	ymm5,ymm5,ymm6
+	vpsrld	ymm7,ymm15,6
+	vpslld	ymm2,ymm15,26
+	vmovdqu	YMMWORD[(160-128)+rax],ymm5
+	vpaddd	ymm5,ymm5,ymm10
+
+	vpsrld	ymm1,ymm15,11
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm15,21
+	vpaddd	ymm5,ymm5,YMMWORD[32+rbp]
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm1,ymm15,25
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm15,7
+	vpandn	ymm0,ymm15,ymm9
+	vpand	ymm4,ymm15,ymm8
+
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm10,ymm11,2
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm1,ymm11,30
+	vpxor	ymm0,ymm0,ymm4
+	vpxor	ymm4,ymm12,ymm11
+
+	vpxor	ymm10,ymm10,ymm1
+	vpaddd	ymm5,ymm5,ymm7
+
+	vpsrld	ymm1,ymm11,13
+
+	vpslld	ymm2,ymm11,19
+	vpaddd	ymm5,ymm5,ymm0
+	vpand	ymm3,ymm3,ymm4
+
+	vpxor	ymm7,ymm10,ymm1
+
+	vpsrld	ymm1,ymm11,22
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm11,10
+	vpxor	ymm10,ymm12,ymm3
+	vpaddd	ymm14,ymm14,ymm5
+
+	vpxor	ymm7,ymm7,ymm1
+	vpxor	ymm7,ymm7,ymm2
+
+	vpaddd	ymm10,ymm10,ymm5
+	vpaddd	ymm10,ymm10,ymm7
+	vmovd	xmm5,DWORD[24+r12]
+	vmovd	xmm0,DWORD[24+r8]
+	vmovd	xmm1,DWORD[24+r13]
+	vmovd	xmm2,DWORD[24+r9]
+	vpinsrd	xmm5,xmm5,DWORD[24+r14],1
+	vpinsrd	xmm0,xmm0,DWORD[24+r10],1
+	vpinsrd	xmm1,xmm1,DWORD[24+r15],1
+	vpunpckldq	ymm5,ymm5,ymm1
+	vpinsrd	xmm2,xmm2,DWORD[24+r11],1
+	vpunpckldq	ymm0,ymm0,ymm2
+	vinserti128	ymm5,ymm5,xmm0,1
+	vpshufb	ymm5,ymm5,ymm6
+	vpsrld	ymm7,ymm14,6
+	vpslld	ymm2,ymm14,26
+	vmovdqu	YMMWORD[(192-128)+rax],ymm5
+	vpaddd	ymm5,ymm5,ymm9
+
+	vpsrld	ymm1,ymm14,11
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm14,21
+	vpaddd	ymm5,ymm5,YMMWORD[64+rbp]
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm1,ymm14,25
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm14,7
+	vpandn	ymm0,ymm14,ymm8
+	vpand	ymm3,ymm14,ymm15
+
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm9,ymm10,2
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm1,ymm10,30
+	vpxor	ymm0,ymm0,ymm3
+	vpxor	ymm3,ymm11,ymm10
+
+	vpxor	ymm9,ymm9,ymm1
+	vpaddd	ymm5,ymm5,ymm7
+
+	vpsrld	ymm1,ymm10,13
+
+	vpslld	ymm2,ymm10,19
+	vpaddd	ymm5,ymm5,ymm0
+	vpand	ymm4,ymm4,ymm3
+
+	vpxor	ymm7,ymm9,ymm1
+
+	vpsrld	ymm1,ymm10,22
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm10,10
+	vpxor	ymm9,ymm11,ymm4
+	vpaddd	ymm13,ymm13,ymm5
+
+	vpxor	ymm7,ymm7,ymm1
+	vpxor	ymm7,ymm7,ymm2
+
+	vpaddd	ymm9,ymm9,ymm5
+	vpaddd	ymm9,ymm9,ymm7
+	vmovd	xmm5,DWORD[28+r12]
+	vmovd	xmm0,DWORD[28+r8]
+	vmovd	xmm1,DWORD[28+r13]
+	vmovd	xmm2,DWORD[28+r9]
+	vpinsrd	xmm5,xmm5,DWORD[28+r14],1
+	vpinsrd	xmm0,xmm0,DWORD[28+r10],1
+	vpinsrd	xmm1,xmm1,DWORD[28+r15],1
+	vpunpckldq	ymm5,ymm5,ymm1
+	vpinsrd	xmm2,xmm2,DWORD[28+r11],1
+	vpunpckldq	ymm0,ymm0,ymm2
+	vinserti128	ymm5,ymm5,xmm0,1
+	vpshufb	ymm5,ymm5,ymm6
+	vpsrld	ymm7,ymm13,6
+	vpslld	ymm2,ymm13,26
+	vmovdqu	YMMWORD[(224-128)+rax],ymm5
+	vpaddd	ymm5,ymm5,ymm8
+
+	vpsrld	ymm1,ymm13,11
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm13,21
+	vpaddd	ymm5,ymm5,YMMWORD[96+rbp]
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm1,ymm13,25
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm13,7
+	vpandn	ymm0,ymm13,ymm15
+	vpand	ymm4,ymm13,ymm14
+
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm8,ymm9,2
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm1,ymm9,30
+	vpxor	ymm0,ymm0,ymm4
+	vpxor	ymm4,ymm10,ymm9
+
+	vpxor	ymm8,ymm8,ymm1
+	vpaddd	ymm5,ymm5,ymm7
+
+	vpsrld	ymm1,ymm9,13
+
+	vpslld	ymm2,ymm9,19
+	vpaddd	ymm5,ymm5,ymm0
+	vpand	ymm3,ymm3,ymm4
+
+	vpxor	ymm7,ymm8,ymm1
+
+	vpsrld	ymm1,ymm9,22
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm9,10
+	vpxor	ymm8,ymm10,ymm3
+	vpaddd	ymm12,ymm12,ymm5
+
+	vpxor	ymm7,ymm7,ymm1
+	vpxor	ymm7,ymm7,ymm2
+
+	vpaddd	ymm8,ymm8,ymm5
+	vpaddd	ymm8,ymm8,ymm7
+	add	rbp,256
+	vmovd	xmm5,DWORD[32+r12]
+	vmovd	xmm0,DWORD[32+r8]
+	vmovd	xmm1,DWORD[32+r13]
+	vmovd	xmm2,DWORD[32+r9]
+	vpinsrd	xmm5,xmm5,DWORD[32+r14],1
+	vpinsrd	xmm0,xmm0,DWORD[32+r10],1
+	vpinsrd	xmm1,xmm1,DWORD[32+r15],1
+	vpunpckldq	ymm5,ymm5,ymm1
+	vpinsrd	xmm2,xmm2,DWORD[32+r11],1
+	vpunpckldq	ymm0,ymm0,ymm2
+	vinserti128	ymm5,ymm5,xmm0,1
+	vpshufb	ymm5,ymm5,ymm6
+	vpsrld	ymm7,ymm12,6
+	vpslld	ymm2,ymm12,26
+	vmovdqu	YMMWORD[(256-256-128)+rbx],ymm5
+	vpaddd	ymm5,ymm5,ymm15
+
+	vpsrld	ymm1,ymm12,11
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm12,21
+	vpaddd	ymm5,ymm5,YMMWORD[((-128))+rbp]
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm1,ymm12,25
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm12,7
+	vpandn	ymm0,ymm12,ymm14
+	vpand	ymm3,ymm12,ymm13
+
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm15,ymm8,2
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm1,ymm8,30
+	vpxor	ymm0,ymm0,ymm3
+	vpxor	ymm3,ymm9,ymm8
+
+	vpxor	ymm15,ymm15,ymm1
+	vpaddd	ymm5,ymm5,ymm7
+
+	vpsrld	ymm1,ymm8,13
+
+	vpslld	ymm2,ymm8,19
+	vpaddd	ymm5,ymm5,ymm0
+	vpand	ymm4,ymm4,ymm3
+
+	vpxor	ymm7,ymm15,ymm1
+
+	vpsrld	ymm1,ymm8,22
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm8,10
+	vpxor	ymm15,ymm9,ymm4
+	vpaddd	ymm11,ymm11,ymm5
+
+	vpxor	ymm7,ymm7,ymm1
+	vpxor	ymm7,ymm7,ymm2
+
+	vpaddd	ymm15,ymm15,ymm5
+	vpaddd	ymm15,ymm15,ymm7
+	vmovd	xmm5,DWORD[36+r12]
+	vmovd	xmm0,DWORD[36+r8]
+	vmovd	xmm1,DWORD[36+r13]
+	vmovd	xmm2,DWORD[36+r9]
+	vpinsrd	xmm5,xmm5,DWORD[36+r14],1
+	vpinsrd	xmm0,xmm0,DWORD[36+r10],1
+	vpinsrd	xmm1,xmm1,DWORD[36+r15],1
+	vpunpckldq	ymm5,ymm5,ymm1
+	vpinsrd	xmm2,xmm2,DWORD[36+r11],1
+	vpunpckldq	ymm0,ymm0,ymm2
+	vinserti128	ymm5,ymm5,xmm0,1
+	vpshufb	ymm5,ymm5,ymm6
+	vpsrld	ymm7,ymm11,6
+	vpslld	ymm2,ymm11,26
+	vmovdqu	YMMWORD[(288-256-128)+rbx],ymm5
+	vpaddd	ymm5,ymm5,ymm14
+
+	vpsrld	ymm1,ymm11,11
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm11,21
+	vpaddd	ymm5,ymm5,YMMWORD[((-96))+rbp]
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm1,ymm11,25
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm11,7
+	vpandn	ymm0,ymm11,ymm13
+	vpand	ymm4,ymm11,ymm12
+
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm14,ymm15,2
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm1,ymm15,30
+	vpxor	ymm0,ymm0,ymm4
+	vpxor	ymm4,ymm8,ymm15
+
+	vpxor	ymm14,ymm14,ymm1
+	vpaddd	ymm5,ymm5,ymm7
+
+	vpsrld	ymm1,ymm15,13
+
+	vpslld	ymm2,ymm15,19
+	vpaddd	ymm5,ymm5,ymm0
+	vpand	ymm3,ymm3,ymm4
+
+	vpxor	ymm7,ymm14,ymm1
+
+	vpsrld	ymm1,ymm15,22
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm15,10
+	vpxor	ymm14,ymm8,ymm3
+	vpaddd	ymm10,ymm10,ymm5
+
+	vpxor	ymm7,ymm7,ymm1
+	vpxor	ymm7,ymm7,ymm2
+
+	vpaddd	ymm14,ymm14,ymm5
+	vpaddd	ymm14,ymm14,ymm7
+	vmovd	xmm5,DWORD[40+r12]
+	vmovd	xmm0,DWORD[40+r8]
+	vmovd	xmm1,DWORD[40+r13]
+	vmovd	xmm2,DWORD[40+r9]
+	vpinsrd	xmm5,xmm5,DWORD[40+r14],1
+	vpinsrd	xmm0,xmm0,DWORD[40+r10],1
+	vpinsrd	xmm1,xmm1,DWORD[40+r15],1
+	vpunpckldq	ymm5,ymm5,ymm1
+	vpinsrd	xmm2,xmm2,DWORD[40+r11],1
+	vpunpckldq	ymm0,ymm0,ymm2
+	vinserti128	ymm5,ymm5,xmm0,1
+	vpshufb	ymm5,ymm5,ymm6
+	vpsrld	ymm7,ymm10,6
+	vpslld	ymm2,ymm10,26
+	vmovdqu	YMMWORD[(320-256-128)+rbx],ymm5
+	vpaddd	ymm5,ymm5,ymm13
+
+	vpsrld	ymm1,ymm10,11
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm10,21
+	vpaddd	ymm5,ymm5,YMMWORD[((-64))+rbp]
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm1,ymm10,25
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm10,7
+	vpandn	ymm0,ymm10,ymm12
+	vpand	ymm3,ymm10,ymm11
+
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm13,ymm14,2
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm1,ymm14,30
+	vpxor	ymm0,ymm0,ymm3
+	vpxor	ymm3,ymm15,ymm14
+
+	vpxor	ymm13,ymm13,ymm1
+	vpaddd	ymm5,ymm5,ymm7
+
+	vpsrld	ymm1,ymm14,13
+
+	vpslld	ymm2,ymm14,19
+	vpaddd	ymm5,ymm5,ymm0
+	vpand	ymm4,ymm4,ymm3
+
+	vpxor	ymm7,ymm13,ymm1
+
+	vpsrld	ymm1,ymm14,22
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm14,10
+	vpxor	ymm13,ymm15,ymm4
+	vpaddd	ymm9,ymm9,ymm5
+
+	vpxor	ymm7,ymm7,ymm1
+	vpxor	ymm7,ymm7,ymm2
+
+	vpaddd	ymm13,ymm13,ymm5
+	vpaddd	ymm13,ymm13,ymm7
+	vmovd	xmm5,DWORD[44+r12]
+	vmovd	xmm0,DWORD[44+r8]
+	vmovd	xmm1,DWORD[44+r13]
+	vmovd	xmm2,DWORD[44+r9]
+	vpinsrd	xmm5,xmm5,DWORD[44+r14],1
+	vpinsrd	xmm0,xmm0,DWORD[44+r10],1
+	vpinsrd	xmm1,xmm1,DWORD[44+r15],1
+	vpunpckldq	ymm5,ymm5,ymm1
+	vpinsrd	xmm2,xmm2,DWORD[44+r11],1
+	vpunpckldq	ymm0,ymm0,ymm2
+	vinserti128	ymm5,ymm5,xmm0,1
+	vpshufb	ymm5,ymm5,ymm6
+	vpsrld	ymm7,ymm9,6
+	vpslld	ymm2,ymm9,26
+	vmovdqu	YMMWORD[(352-256-128)+rbx],ymm5
+	vpaddd	ymm5,ymm5,ymm12
+
+	vpsrld	ymm1,ymm9,11
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm9,21
+	vpaddd	ymm5,ymm5,YMMWORD[((-32))+rbp]
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm1,ymm9,25
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm9,7
+	vpandn	ymm0,ymm9,ymm11
+	vpand	ymm4,ymm9,ymm10
+
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm12,ymm13,2
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm1,ymm13,30
+	vpxor	ymm0,ymm0,ymm4
+	vpxor	ymm4,ymm14,ymm13
+
+	vpxor	ymm12,ymm12,ymm1
+	vpaddd	ymm5,ymm5,ymm7
+
+	vpsrld	ymm1,ymm13,13
+
+	vpslld	ymm2,ymm13,19
+	vpaddd	ymm5,ymm5,ymm0
+	vpand	ymm3,ymm3,ymm4
+
+	vpxor	ymm7,ymm12,ymm1
+
+	vpsrld	ymm1,ymm13,22
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm13,10
+	vpxor	ymm12,ymm14,ymm3
+	vpaddd	ymm8,ymm8,ymm5
+
+	vpxor	ymm7,ymm7,ymm1
+	vpxor	ymm7,ymm7,ymm2
+
+	vpaddd	ymm12,ymm12,ymm5
+	vpaddd	ymm12,ymm12,ymm7
+	vmovd	xmm5,DWORD[48+r12]
+	vmovd	xmm0,DWORD[48+r8]
+	vmovd	xmm1,DWORD[48+r13]
+	vmovd	xmm2,DWORD[48+r9]
+	vpinsrd	xmm5,xmm5,DWORD[48+r14],1
+	vpinsrd	xmm0,xmm0,DWORD[48+r10],1
+	vpinsrd	xmm1,xmm1,DWORD[48+r15],1
+	vpunpckldq	ymm5,ymm5,ymm1
+	vpinsrd	xmm2,xmm2,DWORD[48+r11],1
+	vpunpckldq	ymm0,ymm0,ymm2
+	vinserti128	ymm5,ymm5,xmm0,1
+	vpshufb	ymm5,ymm5,ymm6
+	vpsrld	ymm7,ymm8,6
+	vpslld	ymm2,ymm8,26
+	vmovdqu	YMMWORD[(384-256-128)+rbx],ymm5
+	vpaddd	ymm5,ymm5,ymm11
+
+	vpsrld	ymm1,ymm8,11
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm8,21
+	vpaddd	ymm5,ymm5,YMMWORD[rbp]
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm1,ymm8,25
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm8,7
+	vpandn	ymm0,ymm8,ymm10
+	vpand	ymm3,ymm8,ymm9
+
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm11,ymm12,2
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm1,ymm12,30
+	vpxor	ymm0,ymm0,ymm3
+	vpxor	ymm3,ymm13,ymm12
+
+	vpxor	ymm11,ymm11,ymm1
+	vpaddd	ymm5,ymm5,ymm7
+
+	vpsrld	ymm1,ymm12,13
+
+	vpslld	ymm2,ymm12,19
+	vpaddd	ymm5,ymm5,ymm0
+	vpand	ymm4,ymm4,ymm3
+
+	vpxor	ymm7,ymm11,ymm1
+
+	vpsrld	ymm1,ymm12,22
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm12,10
+	vpxor	ymm11,ymm13,ymm4
+	vpaddd	ymm15,ymm15,ymm5
+
+	vpxor	ymm7,ymm7,ymm1
+	vpxor	ymm7,ymm7,ymm2
+
+	vpaddd	ymm11,ymm11,ymm5
+	vpaddd	ymm11,ymm11,ymm7
+	vmovd	xmm5,DWORD[52+r12]
+	vmovd	xmm0,DWORD[52+r8]
+	vmovd	xmm1,DWORD[52+r13]
+	vmovd	xmm2,DWORD[52+r9]
+	vpinsrd	xmm5,xmm5,DWORD[52+r14],1
+	vpinsrd	xmm0,xmm0,DWORD[52+r10],1
+	vpinsrd	xmm1,xmm1,DWORD[52+r15],1
+	vpunpckldq	ymm5,ymm5,ymm1
+	vpinsrd	xmm2,xmm2,DWORD[52+r11],1
+	vpunpckldq	ymm0,ymm0,ymm2
+	vinserti128	ymm5,ymm5,xmm0,1
+	vpshufb	ymm5,ymm5,ymm6
+	vpsrld	ymm7,ymm15,6
+	vpslld	ymm2,ymm15,26
+	vmovdqu	YMMWORD[(416-256-128)+rbx],ymm5
+	vpaddd	ymm5,ymm5,ymm10
+
+	vpsrld	ymm1,ymm15,11
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm15,21
+	vpaddd	ymm5,ymm5,YMMWORD[32+rbp]
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm1,ymm15,25
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm15,7
+	vpandn	ymm0,ymm15,ymm9
+	vpand	ymm4,ymm15,ymm8
+
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm10,ymm11,2
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm1,ymm11,30
+	vpxor	ymm0,ymm0,ymm4
+	vpxor	ymm4,ymm12,ymm11
+
+	vpxor	ymm10,ymm10,ymm1
+	vpaddd	ymm5,ymm5,ymm7
+
+	vpsrld	ymm1,ymm11,13
+
+	vpslld	ymm2,ymm11,19
+	vpaddd	ymm5,ymm5,ymm0
+	vpand	ymm3,ymm3,ymm4
+
+	vpxor	ymm7,ymm10,ymm1
+
+	vpsrld	ymm1,ymm11,22
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm11,10
+	vpxor	ymm10,ymm12,ymm3
+	vpaddd	ymm14,ymm14,ymm5
+
+	vpxor	ymm7,ymm7,ymm1
+	vpxor	ymm7,ymm7,ymm2
+
+	vpaddd	ymm10,ymm10,ymm5
+	vpaddd	ymm10,ymm10,ymm7
+	vmovd	xmm5,DWORD[56+r12]
+	vmovd	xmm0,DWORD[56+r8]
+	vmovd	xmm1,DWORD[56+r13]
+	vmovd	xmm2,DWORD[56+r9]
+	vpinsrd	xmm5,xmm5,DWORD[56+r14],1
+	vpinsrd	xmm0,xmm0,DWORD[56+r10],1
+	vpinsrd	xmm1,xmm1,DWORD[56+r15],1
+	vpunpckldq	ymm5,ymm5,ymm1
+	vpinsrd	xmm2,xmm2,DWORD[56+r11],1
+	vpunpckldq	ymm0,ymm0,ymm2
+	vinserti128	ymm5,ymm5,xmm0,1
+	vpshufb	ymm5,ymm5,ymm6
+	vpsrld	ymm7,ymm14,6
+	vpslld	ymm2,ymm14,26
+	vmovdqu	YMMWORD[(448-256-128)+rbx],ymm5
+	vpaddd	ymm5,ymm5,ymm9
+
+	vpsrld	ymm1,ymm14,11
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm14,21
+	vpaddd	ymm5,ymm5,YMMWORD[64+rbp]
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm1,ymm14,25
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm14,7
+	vpandn	ymm0,ymm14,ymm8
+	vpand	ymm3,ymm14,ymm15
+
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm9,ymm10,2
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm1,ymm10,30
+	vpxor	ymm0,ymm0,ymm3
+	vpxor	ymm3,ymm11,ymm10
+
+	vpxor	ymm9,ymm9,ymm1
+	vpaddd	ymm5,ymm5,ymm7
+
+	vpsrld	ymm1,ymm10,13
+
+	vpslld	ymm2,ymm10,19
+	vpaddd	ymm5,ymm5,ymm0
+	vpand	ymm4,ymm4,ymm3
+
+	vpxor	ymm7,ymm9,ymm1
+
+	vpsrld	ymm1,ymm10,22
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm10,10
+	vpxor	ymm9,ymm11,ymm4
+	vpaddd	ymm13,ymm13,ymm5
+
+	vpxor	ymm7,ymm7,ymm1
+	vpxor	ymm7,ymm7,ymm2
+
+	vpaddd	ymm9,ymm9,ymm5
+	vpaddd	ymm9,ymm9,ymm7
+	vmovd	xmm5,DWORD[60+r12]
+	lea	r12,[64+r12]
+	vmovd	xmm0,DWORD[60+r8]
+	lea	r8,[64+r8]
+	vmovd	xmm1,DWORD[60+r13]
+	lea	r13,[64+r13]
+	vmovd	xmm2,DWORD[60+r9]
+	lea	r9,[64+r9]
+	vpinsrd	xmm5,xmm5,DWORD[60+r14],1
+	lea	r14,[64+r14]
+	vpinsrd	xmm0,xmm0,DWORD[60+r10],1
+	lea	r10,[64+r10]
+	vpinsrd	xmm1,xmm1,DWORD[60+r15],1
+	lea	r15,[64+r15]
+	vpunpckldq	ymm5,ymm5,ymm1
+	vpinsrd	xmm2,xmm2,DWORD[60+r11],1
+	lea	r11,[64+r11]
+	vpunpckldq	ymm0,ymm0,ymm2
+	vinserti128	ymm5,ymm5,xmm0,1
+	vpshufb	ymm5,ymm5,ymm6
+	vpsrld	ymm7,ymm13,6
+	vpslld	ymm2,ymm13,26
+	vmovdqu	YMMWORD[(480-256-128)+rbx],ymm5
+	vpaddd	ymm5,ymm5,ymm8
+
+	vpsrld	ymm1,ymm13,11
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm13,21
+	vpaddd	ymm5,ymm5,YMMWORD[96+rbp]
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm1,ymm13,25
+	vpxor	ymm7,ymm7,ymm2
+	prefetcht0	[63+r12]
+	vpslld	ymm2,ymm13,7
+	vpandn	ymm0,ymm13,ymm15
+	vpand	ymm4,ymm13,ymm14
+	prefetcht0	[63+r13]
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm8,ymm9,2
+	vpxor	ymm7,ymm7,ymm2
+	prefetcht0	[63+r14]
+	vpslld	ymm1,ymm9,30
+	vpxor	ymm0,ymm0,ymm4
+	vpxor	ymm4,ymm10,ymm9
+	prefetcht0	[63+r15]
+	vpxor	ymm8,ymm8,ymm1
+	vpaddd	ymm5,ymm5,ymm7
+
+	vpsrld	ymm1,ymm9,13
+	prefetcht0	[63+r8]
+	vpslld	ymm2,ymm9,19
+	vpaddd	ymm5,ymm5,ymm0
+	vpand	ymm3,ymm3,ymm4
+	prefetcht0	[63+r9]
+	vpxor	ymm7,ymm8,ymm1
+
+	vpsrld	ymm1,ymm9,22
+	vpxor	ymm7,ymm7,ymm2
+	prefetcht0	[63+r10]
+	vpslld	ymm2,ymm9,10
+	vpxor	ymm8,ymm10,ymm3
+	vpaddd	ymm12,ymm12,ymm5
+	prefetcht0	[63+r11]
+	vpxor	ymm7,ymm7,ymm1
+	vpxor	ymm7,ymm7,ymm2
+
+	vpaddd	ymm8,ymm8,ymm5
+	vpaddd	ymm8,ymm8,ymm7
+	add	rbp,256
+	vmovdqu	ymm5,YMMWORD[((0-128))+rax]
+	mov	ecx,3
+	jmp	NEAR $L$oop_16_xx_avx2
+ALIGN	32
+$L$oop_16_xx_avx2:
+	vmovdqu	ymm6,YMMWORD[((32-128))+rax]
+	vpaddd	ymm5,ymm5,YMMWORD[((288-256-128))+rbx]
+
+	vpsrld	ymm7,ymm6,3
+	vpsrld	ymm1,ymm6,7
+	vpslld	ymm2,ymm6,25
+	vpxor	ymm7,ymm7,ymm1
+	vpsrld	ymm1,ymm6,18
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm6,14
+	vmovdqu	ymm0,YMMWORD[((448-256-128))+rbx]
+	vpsrld	ymm3,ymm0,10
+
+	vpxor	ymm7,ymm7,ymm1
+	vpsrld	ymm1,ymm0,17
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm0,15
+	vpaddd	ymm5,ymm5,ymm7
+	vpxor	ymm7,ymm3,ymm1
+	vpsrld	ymm1,ymm0,19
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm0,13
+	vpxor	ymm7,ymm7,ymm1
+	vpxor	ymm7,ymm7,ymm2
+	vpaddd	ymm5,ymm5,ymm7
+	vpsrld	ymm7,ymm12,6
+	vpslld	ymm2,ymm12,26
+	vmovdqu	YMMWORD[(0-128)+rax],ymm5
+	vpaddd	ymm5,ymm5,ymm15
+
+	vpsrld	ymm1,ymm12,11
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm12,21
+	vpaddd	ymm5,ymm5,YMMWORD[((-128))+rbp]
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm1,ymm12,25
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm12,7
+	vpandn	ymm0,ymm12,ymm14
+	vpand	ymm3,ymm12,ymm13
+
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm15,ymm8,2
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm1,ymm8,30
+	vpxor	ymm0,ymm0,ymm3
+	vpxor	ymm3,ymm9,ymm8
+
+	vpxor	ymm15,ymm15,ymm1
+	vpaddd	ymm5,ymm5,ymm7
+
+	vpsrld	ymm1,ymm8,13
+
+	vpslld	ymm2,ymm8,19
+	vpaddd	ymm5,ymm5,ymm0
+	vpand	ymm4,ymm4,ymm3
+
+	vpxor	ymm7,ymm15,ymm1
+
+	vpsrld	ymm1,ymm8,22
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm8,10
+	vpxor	ymm15,ymm9,ymm4
+	vpaddd	ymm11,ymm11,ymm5
+
+	vpxor	ymm7,ymm7,ymm1
+	vpxor	ymm7,ymm7,ymm2
+
+	vpaddd	ymm15,ymm15,ymm5
+	vpaddd	ymm15,ymm15,ymm7
+	vmovdqu	ymm5,YMMWORD[((64-128))+rax]
+	vpaddd	ymm6,ymm6,YMMWORD[((320-256-128))+rbx]
+
+	vpsrld	ymm7,ymm5,3
+	vpsrld	ymm1,ymm5,7
+	vpslld	ymm2,ymm5,25
+	vpxor	ymm7,ymm7,ymm1
+	vpsrld	ymm1,ymm5,18
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm5,14
+	vmovdqu	ymm0,YMMWORD[((480-256-128))+rbx]
+	vpsrld	ymm4,ymm0,10
+
+	vpxor	ymm7,ymm7,ymm1
+	vpsrld	ymm1,ymm0,17
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm0,15
+	vpaddd	ymm6,ymm6,ymm7
+	vpxor	ymm7,ymm4,ymm1
+	vpsrld	ymm1,ymm0,19
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm0,13
+	vpxor	ymm7,ymm7,ymm1
+	vpxor	ymm7,ymm7,ymm2
+	vpaddd	ymm6,ymm6,ymm7
+	vpsrld	ymm7,ymm11,6
+	vpslld	ymm2,ymm11,26
+	vmovdqu	YMMWORD[(32-128)+rax],ymm6
+	vpaddd	ymm6,ymm6,ymm14
+
+	vpsrld	ymm1,ymm11,11
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm11,21
+	vpaddd	ymm6,ymm6,YMMWORD[((-96))+rbp]
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm1,ymm11,25
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm11,7
+	vpandn	ymm0,ymm11,ymm13
+	vpand	ymm4,ymm11,ymm12
+
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm14,ymm15,2
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm1,ymm15,30
+	vpxor	ymm0,ymm0,ymm4
+	vpxor	ymm4,ymm8,ymm15
+
+	vpxor	ymm14,ymm14,ymm1
+	vpaddd	ymm6,ymm6,ymm7
+
+	vpsrld	ymm1,ymm15,13
+
+	vpslld	ymm2,ymm15,19
+	vpaddd	ymm6,ymm6,ymm0
+	vpand	ymm3,ymm3,ymm4
+
+	vpxor	ymm7,ymm14,ymm1
+
+	vpsrld	ymm1,ymm15,22
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm15,10
+	vpxor	ymm14,ymm8,ymm3
+	vpaddd	ymm10,ymm10,ymm6
+
+	vpxor	ymm7,ymm7,ymm1
+	vpxor	ymm7,ymm7,ymm2
+
+	vpaddd	ymm14,ymm14,ymm6
+	vpaddd	ymm14,ymm14,ymm7
+	vmovdqu	ymm6,YMMWORD[((96-128))+rax]
+	vpaddd	ymm5,ymm5,YMMWORD[((352-256-128))+rbx]
+
+	vpsrld	ymm7,ymm6,3
+	vpsrld	ymm1,ymm6,7
+	vpslld	ymm2,ymm6,25
+	vpxor	ymm7,ymm7,ymm1
+	vpsrld	ymm1,ymm6,18
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm6,14
+	vmovdqu	ymm0,YMMWORD[((0-128))+rax]
+	vpsrld	ymm3,ymm0,10
+
+	vpxor	ymm7,ymm7,ymm1
+	vpsrld	ymm1,ymm0,17
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm0,15
+	vpaddd	ymm5,ymm5,ymm7
+	vpxor	ymm7,ymm3,ymm1
+	vpsrld	ymm1,ymm0,19
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm0,13
+	vpxor	ymm7,ymm7,ymm1
+	vpxor	ymm7,ymm7,ymm2
+	vpaddd	ymm5,ymm5,ymm7
+	vpsrld	ymm7,ymm10,6
+	vpslld	ymm2,ymm10,26
+	vmovdqu	YMMWORD[(64-128)+rax],ymm5
+	vpaddd	ymm5,ymm5,ymm13
+
+	vpsrld	ymm1,ymm10,11
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm10,21
+	vpaddd	ymm5,ymm5,YMMWORD[((-64))+rbp]
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm1,ymm10,25
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm10,7
+	vpandn	ymm0,ymm10,ymm12
+	vpand	ymm3,ymm10,ymm11
+
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm13,ymm14,2
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm1,ymm14,30
+	vpxor	ymm0,ymm0,ymm3
+	vpxor	ymm3,ymm15,ymm14
+
+	vpxor	ymm13,ymm13,ymm1
+	vpaddd	ymm5,ymm5,ymm7
+
+	vpsrld	ymm1,ymm14,13
+
+	vpslld	ymm2,ymm14,19
+	vpaddd	ymm5,ymm5,ymm0
+	vpand	ymm4,ymm4,ymm3
+
+	vpxor	ymm7,ymm13,ymm1
+
+	vpsrld	ymm1,ymm14,22
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm14,10
+	vpxor	ymm13,ymm15,ymm4
+	vpaddd	ymm9,ymm9,ymm5
+
+	vpxor	ymm7,ymm7,ymm1
+	vpxor	ymm7,ymm7,ymm2
+
+	vpaddd	ymm13,ymm13,ymm5
+	vpaddd	ymm13,ymm13,ymm7
+	vmovdqu	ymm5,YMMWORD[((128-128))+rax]
+	vpaddd	ymm6,ymm6,YMMWORD[((384-256-128))+rbx]
+
+	vpsrld	ymm7,ymm5,3
+	vpsrld	ymm1,ymm5,7
+	vpslld	ymm2,ymm5,25
+	vpxor	ymm7,ymm7,ymm1
+	vpsrld	ymm1,ymm5,18
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm5,14
+	vmovdqu	ymm0,YMMWORD[((32-128))+rax]
+	vpsrld	ymm4,ymm0,10
+
+	vpxor	ymm7,ymm7,ymm1
+	vpsrld	ymm1,ymm0,17
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm0,15
+	vpaddd	ymm6,ymm6,ymm7
+	vpxor	ymm7,ymm4,ymm1
+	vpsrld	ymm1,ymm0,19
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm0,13
+	vpxor	ymm7,ymm7,ymm1
+	vpxor	ymm7,ymm7,ymm2
+	vpaddd	ymm6,ymm6,ymm7
+	vpsrld	ymm7,ymm9,6
+	vpslld	ymm2,ymm9,26
+	vmovdqu	YMMWORD[(96-128)+rax],ymm6
+	vpaddd	ymm6,ymm6,ymm12
+
+	vpsrld	ymm1,ymm9,11
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm9,21
+	vpaddd	ymm6,ymm6,YMMWORD[((-32))+rbp]
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm1,ymm9,25
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm9,7
+	vpandn	ymm0,ymm9,ymm11
+	vpand	ymm4,ymm9,ymm10
+
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm12,ymm13,2
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm1,ymm13,30
+	vpxor	ymm0,ymm0,ymm4
+	vpxor	ymm4,ymm14,ymm13
+
+	vpxor	ymm12,ymm12,ymm1
+	vpaddd	ymm6,ymm6,ymm7
+
+	vpsrld	ymm1,ymm13,13
+
+	vpslld	ymm2,ymm13,19
+	vpaddd	ymm6,ymm6,ymm0
+	vpand	ymm3,ymm3,ymm4
+
+	vpxor	ymm7,ymm12,ymm1
+
+	vpsrld	ymm1,ymm13,22
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm13,10
+	vpxor	ymm12,ymm14,ymm3
+	vpaddd	ymm8,ymm8,ymm6
+
+	vpxor	ymm7,ymm7,ymm1
+	vpxor	ymm7,ymm7,ymm2
+
+	vpaddd	ymm12,ymm12,ymm6
+	vpaddd	ymm12,ymm12,ymm7
+	vmovdqu	ymm6,YMMWORD[((160-128))+rax]
+	vpaddd	ymm5,ymm5,YMMWORD[((416-256-128))+rbx]
+
+	vpsrld	ymm7,ymm6,3
+	vpsrld	ymm1,ymm6,7
+	vpslld	ymm2,ymm6,25
+	vpxor	ymm7,ymm7,ymm1
+	vpsrld	ymm1,ymm6,18
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm6,14
+	vmovdqu	ymm0,YMMWORD[((64-128))+rax]
+	vpsrld	ymm3,ymm0,10
+
+	vpxor	ymm7,ymm7,ymm1
+	vpsrld	ymm1,ymm0,17
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm0,15
+	vpaddd	ymm5,ymm5,ymm7
+	vpxor	ymm7,ymm3,ymm1
+	vpsrld	ymm1,ymm0,19
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm0,13
+	vpxor	ymm7,ymm7,ymm1
+	vpxor	ymm7,ymm7,ymm2
+	vpaddd	ymm5,ymm5,ymm7
+	vpsrld	ymm7,ymm8,6
+	vpslld	ymm2,ymm8,26
+	vmovdqu	YMMWORD[(128-128)+rax],ymm5
+	vpaddd	ymm5,ymm5,ymm11
+
+	vpsrld	ymm1,ymm8,11
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm8,21
+	vpaddd	ymm5,ymm5,YMMWORD[rbp]
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm1,ymm8,25
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm8,7
+	vpandn	ymm0,ymm8,ymm10
+	vpand	ymm3,ymm8,ymm9
+
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm11,ymm12,2
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm1,ymm12,30
+	vpxor	ymm0,ymm0,ymm3
+	vpxor	ymm3,ymm13,ymm12
+
+	vpxor	ymm11,ymm11,ymm1
+	vpaddd	ymm5,ymm5,ymm7
+
+	vpsrld	ymm1,ymm12,13
+
+	vpslld	ymm2,ymm12,19
+	vpaddd	ymm5,ymm5,ymm0
+	vpand	ymm4,ymm4,ymm3
+
+	vpxor	ymm7,ymm11,ymm1
+
+	vpsrld	ymm1,ymm12,22
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm12,10
+	vpxor	ymm11,ymm13,ymm4
+	vpaddd	ymm15,ymm15,ymm5
+
+	vpxor	ymm7,ymm7,ymm1
+	vpxor	ymm7,ymm7,ymm2
+
+	vpaddd	ymm11,ymm11,ymm5
+	vpaddd	ymm11,ymm11,ymm7
+	vmovdqu	ymm5,YMMWORD[((192-128))+rax]
+	vpaddd	ymm6,ymm6,YMMWORD[((448-256-128))+rbx]
+
+	vpsrld	ymm7,ymm5,3
+	vpsrld	ymm1,ymm5,7
+	vpslld	ymm2,ymm5,25
+	vpxor	ymm7,ymm7,ymm1
+	vpsrld	ymm1,ymm5,18
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm5,14
+	vmovdqu	ymm0,YMMWORD[((96-128))+rax]
+	vpsrld	ymm4,ymm0,10
+
+	vpxor	ymm7,ymm7,ymm1
+	vpsrld	ymm1,ymm0,17
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm0,15
+	vpaddd	ymm6,ymm6,ymm7
+	vpxor	ymm7,ymm4,ymm1
+	vpsrld	ymm1,ymm0,19
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm0,13
+	vpxor	ymm7,ymm7,ymm1
+	vpxor	ymm7,ymm7,ymm2
+	vpaddd	ymm6,ymm6,ymm7
+	vpsrld	ymm7,ymm15,6
+	vpslld	ymm2,ymm15,26
+	vmovdqu	YMMWORD[(160-128)+rax],ymm6
+	vpaddd	ymm6,ymm6,ymm10
+
+	vpsrld	ymm1,ymm15,11
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm15,21
+	vpaddd	ymm6,ymm6,YMMWORD[32+rbp]
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm1,ymm15,25
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm15,7
+	vpandn	ymm0,ymm15,ymm9
+	vpand	ymm4,ymm15,ymm8
+
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm10,ymm11,2
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm1,ymm11,30
+	vpxor	ymm0,ymm0,ymm4
+	vpxor	ymm4,ymm12,ymm11
+
+	vpxor	ymm10,ymm10,ymm1
+	vpaddd	ymm6,ymm6,ymm7
+
+	vpsrld	ymm1,ymm11,13
+
+	vpslld	ymm2,ymm11,19
+	vpaddd	ymm6,ymm6,ymm0
+	vpand	ymm3,ymm3,ymm4
+
+	vpxor	ymm7,ymm10,ymm1
+
+	vpsrld	ymm1,ymm11,22
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm11,10
+	vpxor	ymm10,ymm12,ymm3
+	vpaddd	ymm14,ymm14,ymm6
+
+	vpxor	ymm7,ymm7,ymm1
+	vpxor	ymm7,ymm7,ymm2
+
+	vpaddd	ymm10,ymm10,ymm6
+	vpaddd	ymm10,ymm10,ymm7
+	vmovdqu	ymm6,YMMWORD[((224-128))+rax]
+	vpaddd	ymm5,ymm5,YMMWORD[((480-256-128))+rbx]
+
+	vpsrld	ymm7,ymm6,3
+	vpsrld	ymm1,ymm6,7
+	vpslld	ymm2,ymm6,25
+	vpxor	ymm7,ymm7,ymm1
+	vpsrld	ymm1,ymm6,18
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm6,14
+	vmovdqu	ymm0,YMMWORD[((128-128))+rax]
+	vpsrld	ymm3,ymm0,10
+
+	vpxor	ymm7,ymm7,ymm1
+	vpsrld	ymm1,ymm0,17
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm0,15
+	vpaddd	ymm5,ymm5,ymm7
+	vpxor	ymm7,ymm3,ymm1
+	vpsrld	ymm1,ymm0,19
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm0,13
+	vpxor	ymm7,ymm7,ymm1
+	vpxor	ymm7,ymm7,ymm2
+	vpaddd	ymm5,ymm5,ymm7
+	vpsrld	ymm7,ymm14,6
+	vpslld	ymm2,ymm14,26
+	vmovdqu	YMMWORD[(192-128)+rax],ymm5
+	vpaddd	ymm5,ymm5,ymm9
+
+	vpsrld	ymm1,ymm14,11
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm14,21
+	vpaddd	ymm5,ymm5,YMMWORD[64+rbp]
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm1,ymm14,25
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm14,7
+	vpandn	ymm0,ymm14,ymm8
+	vpand	ymm3,ymm14,ymm15
+
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm9,ymm10,2
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm1,ymm10,30
+	vpxor	ymm0,ymm0,ymm3
+	vpxor	ymm3,ymm11,ymm10
+
+	vpxor	ymm9,ymm9,ymm1
+	vpaddd	ymm5,ymm5,ymm7
+
+	vpsrld	ymm1,ymm10,13
+
+	vpslld	ymm2,ymm10,19
+	vpaddd	ymm5,ymm5,ymm0
+	vpand	ymm4,ymm4,ymm3
+
+	vpxor	ymm7,ymm9,ymm1
+
+	vpsrld	ymm1,ymm10,22
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm10,10
+	vpxor	ymm9,ymm11,ymm4
+	vpaddd	ymm13,ymm13,ymm5
+
+	vpxor	ymm7,ymm7,ymm1
+	vpxor	ymm7,ymm7,ymm2
+
+	vpaddd	ymm9,ymm9,ymm5
+	vpaddd	ymm9,ymm9,ymm7
+	vmovdqu	ymm5,YMMWORD[((256-256-128))+rbx]
+	vpaddd	ymm6,ymm6,YMMWORD[((0-128))+rax]
+
+	vpsrld	ymm7,ymm5,3
+	vpsrld	ymm1,ymm5,7
+	vpslld	ymm2,ymm5,25
+	vpxor	ymm7,ymm7,ymm1
+	vpsrld	ymm1,ymm5,18
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm5,14
+	vmovdqu	ymm0,YMMWORD[((160-128))+rax]
+	vpsrld	ymm4,ymm0,10
+
+	vpxor	ymm7,ymm7,ymm1
+	vpsrld	ymm1,ymm0,17
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm0,15
+	vpaddd	ymm6,ymm6,ymm7
+	vpxor	ymm7,ymm4,ymm1
+	vpsrld	ymm1,ymm0,19
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm0,13
+	vpxor	ymm7,ymm7,ymm1
+	vpxor	ymm7,ymm7,ymm2
+	vpaddd	ymm6,ymm6,ymm7
+	vpsrld	ymm7,ymm13,6
+	vpslld	ymm2,ymm13,26
+	vmovdqu	YMMWORD[(224-128)+rax],ymm6
+	vpaddd	ymm6,ymm6,ymm8
+
+	vpsrld	ymm1,ymm13,11
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm13,21
+	vpaddd	ymm6,ymm6,YMMWORD[96+rbp]
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm1,ymm13,25
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm13,7
+	vpandn	ymm0,ymm13,ymm15
+	vpand	ymm4,ymm13,ymm14
+
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm8,ymm9,2
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm1,ymm9,30
+	vpxor	ymm0,ymm0,ymm4
+	vpxor	ymm4,ymm10,ymm9
+
+	vpxor	ymm8,ymm8,ymm1
+	vpaddd	ymm6,ymm6,ymm7
+
+	vpsrld	ymm1,ymm9,13
+
+	vpslld	ymm2,ymm9,19
+	vpaddd	ymm6,ymm6,ymm0
+	vpand	ymm3,ymm3,ymm4
+
+	vpxor	ymm7,ymm8,ymm1
+
+	vpsrld	ymm1,ymm9,22
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm9,10
+	vpxor	ymm8,ymm10,ymm3
+	vpaddd	ymm12,ymm12,ymm6
+
+	vpxor	ymm7,ymm7,ymm1
+	vpxor	ymm7,ymm7,ymm2
+
+	vpaddd	ymm8,ymm8,ymm6
+	vpaddd	ymm8,ymm8,ymm7
+	add	rbp,256
+	vmovdqu	ymm6,YMMWORD[((288-256-128))+rbx]
+	vpaddd	ymm5,ymm5,YMMWORD[((32-128))+rax]
+
+	vpsrld	ymm7,ymm6,3
+	vpsrld	ymm1,ymm6,7
+	vpslld	ymm2,ymm6,25
+	vpxor	ymm7,ymm7,ymm1
+	vpsrld	ymm1,ymm6,18
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm6,14
+	vmovdqu	ymm0,YMMWORD[((192-128))+rax]
+	vpsrld	ymm3,ymm0,10
+
+	vpxor	ymm7,ymm7,ymm1
+	vpsrld	ymm1,ymm0,17
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm0,15
+	vpaddd	ymm5,ymm5,ymm7
+	vpxor	ymm7,ymm3,ymm1
+	vpsrld	ymm1,ymm0,19
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm0,13
+	vpxor	ymm7,ymm7,ymm1
+	vpxor	ymm7,ymm7,ymm2
+	vpaddd	ymm5,ymm5,ymm7
+	vpsrld	ymm7,ymm12,6
+	vpslld	ymm2,ymm12,26
+	vmovdqu	YMMWORD[(256-256-128)+rbx],ymm5
+	vpaddd	ymm5,ymm5,ymm15
+
+	vpsrld	ymm1,ymm12,11
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm12,21
+	vpaddd	ymm5,ymm5,YMMWORD[((-128))+rbp]
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm1,ymm12,25
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm12,7
+	vpandn	ymm0,ymm12,ymm14
+	vpand	ymm3,ymm12,ymm13
+
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm15,ymm8,2
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm1,ymm8,30
+	vpxor	ymm0,ymm0,ymm3
+	vpxor	ymm3,ymm9,ymm8
+
+	vpxor	ymm15,ymm15,ymm1
+	vpaddd	ymm5,ymm5,ymm7
+
+	vpsrld	ymm1,ymm8,13
+
+	vpslld	ymm2,ymm8,19
+	vpaddd	ymm5,ymm5,ymm0
+	vpand	ymm4,ymm4,ymm3
+
+	vpxor	ymm7,ymm15,ymm1
+
+	vpsrld	ymm1,ymm8,22
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm8,10
+	vpxor	ymm15,ymm9,ymm4
+	vpaddd	ymm11,ymm11,ymm5
+
+	vpxor	ymm7,ymm7,ymm1
+	vpxor	ymm7,ymm7,ymm2
+
+	vpaddd	ymm15,ymm15,ymm5
+	vpaddd	ymm15,ymm15,ymm7
+	vmovdqu	ymm5,YMMWORD[((320-256-128))+rbx]
+	vpaddd	ymm6,ymm6,YMMWORD[((64-128))+rax]
+
+	vpsrld	ymm7,ymm5,3
+	vpsrld	ymm1,ymm5,7
+	vpslld	ymm2,ymm5,25
+	vpxor	ymm7,ymm7,ymm1
+	vpsrld	ymm1,ymm5,18
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm5,14
+	vmovdqu	ymm0,YMMWORD[((224-128))+rax]
+	vpsrld	ymm4,ymm0,10
+
+	vpxor	ymm7,ymm7,ymm1
+	vpsrld	ymm1,ymm0,17
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm0,15
+	vpaddd	ymm6,ymm6,ymm7
+	vpxor	ymm7,ymm4,ymm1
+	vpsrld	ymm1,ymm0,19
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm0,13
+	vpxor	ymm7,ymm7,ymm1
+	vpxor	ymm7,ymm7,ymm2
+	vpaddd	ymm6,ymm6,ymm7
+	vpsrld	ymm7,ymm11,6
+	vpslld	ymm2,ymm11,26
+	vmovdqu	YMMWORD[(288-256-128)+rbx],ymm6
+	vpaddd	ymm6,ymm6,ymm14
+
+	vpsrld	ymm1,ymm11,11
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm11,21
+	vpaddd	ymm6,ymm6,YMMWORD[((-96))+rbp]
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm1,ymm11,25
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm11,7
+	vpandn	ymm0,ymm11,ymm13
+	vpand	ymm4,ymm11,ymm12
+
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm14,ymm15,2
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm1,ymm15,30
+	vpxor	ymm0,ymm0,ymm4
+	vpxor	ymm4,ymm8,ymm15
+
+	vpxor	ymm14,ymm14,ymm1
+	vpaddd	ymm6,ymm6,ymm7
+
+	vpsrld	ymm1,ymm15,13
+
+	vpslld	ymm2,ymm15,19
+	vpaddd	ymm6,ymm6,ymm0
+	vpand	ymm3,ymm3,ymm4
+
+	vpxor	ymm7,ymm14,ymm1
+
+	vpsrld	ymm1,ymm15,22
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm15,10
+	vpxor	ymm14,ymm8,ymm3
+	vpaddd	ymm10,ymm10,ymm6
+
+	vpxor	ymm7,ymm7,ymm1
+	vpxor	ymm7,ymm7,ymm2
+
+	vpaddd	ymm14,ymm14,ymm6
+	vpaddd	ymm14,ymm14,ymm7
+	vmovdqu	ymm6,YMMWORD[((352-256-128))+rbx]
+	vpaddd	ymm5,ymm5,YMMWORD[((96-128))+rax]
+
+	vpsrld	ymm7,ymm6,3
+	vpsrld	ymm1,ymm6,7
+	vpslld	ymm2,ymm6,25
+	vpxor	ymm7,ymm7,ymm1
+	vpsrld	ymm1,ymm6,18
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm6,14
+	vmovdqu	ymm0,YMMWORD[((256-256-128))+rbx]
+	vpsrld	ymm3,ymm0,10
+
+	vpxor	ymm7,ymm7,ymm1
+	vpsrld	ymm1,ymm0,17
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm0,15
+	vpaddd	ymm5,ymm5,ymm7
+	vpxor	ymm7,ymm3,ymm1
+	vpsrld	ymm1,ymm0,19
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm0,13
+	vpxor	ymm7,ymm7,ymm1
+	vpxor	ymm7,ymm7,ymm2
+	vpaddd	ymm5,ymm5,ymm7
+	vpsrld	ymm7,ymm10,6
+	vpslld	ymm2,ymm10,26
+	vmovdqu	YMMWORD[(320-256-128)+rbx],ymm5
+	vpaddd	ymm5,ymm5,ymm13
+
+	vpsrld	ymm1,ymm10,11
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm10,21
+	vpaddd	ymm5,ymm5,YMMWORD[((-64))+rbp]
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm1,ymm10,25
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm10,7
+	vpandn	ymm0,ymm10,ymm12
+	vpand	ymm3,ymm10,ymm11
+
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm13,ymm14,2
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm1,ymm14,30
+	vpxor	ymm0,ymm0,ymm3
+	vpxor	ymm3,ymm15,ymm14
+
+	vpxor	ymm13,ymm13,ymm1
+	vpaddd	ymm5,ymm5,ymm7
+
+	vpsrld	ymm1,ymm14,13
+
+	vpslld	ymm2,ymm14,19
+	vpaddd	ymm5,ymm5,ymm0
+	vpand	ymm4,ymm4,ymm3
+
+	vpxor	ymm7,ymm13,ymm1
+
+	vpsrld	ymm1,ymm14,22
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm14,10
+	vpxor	ymm13,ymm15,ymm4
+	vpaddd	ymm9,ymm9,ymm5
+
+	vpxor	ymm7,ymm7,ymm1
+	vpxor	ymm7,ymm7,ymm2
+
+	vpaddd	ymm13,ymm13,ymm5
+	vpaddd	ymm13,ymm13,ymm7
+	vmovdqu	ymm5,YMMWORD[((384-256-128))+rbx]
+	vpaddd	ymm6,ymm6,YMMWORD[((128-128))+rax]
+
+	vpsrld	ymm7,ymm5,3
+	vpsrld	ymm1,ymm5,7
+	vpslld	ymm2,ymm5,25
+	vpxor	ymm7,ymm7,ymm1
+	vpsrld	ymm1,ymm5,18
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm5,14
+	vmovdqu	ymm0,YMMWORD[((288-256-128))+rbx]
+	vpsrld	ymm4,ymm0,10
+
+	vpxor	ymm7,ymm7,ymm1
+	vpsrld	ymm1,ymm0,17
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm0,15
+	vpaddd	ymm6,ymm6,ymm7
+	vpxor	ymm7,ymm4,ymm1
+	vpsrld	ymm1,ymm0,19
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm0,13
+	vpxor	ymm7,ymm7,ymm1
+	vpxor	ymm7,ymm7,ymm2
+	vpaddd	ymm6,ymm6,ymm7
+	vpsrld	ymm7,ymm9,6
+	vpslld	ymm2,ymm9,26
+	vmovdqu	YMMWORD[(352-256-128)+rbx],ymm6
+	vpaddd	ymm6,ymm6,ymm12
+
+	vpsrld	ymm1,ymm9,11
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm9,21
+	vpaddd	ymm6,ymm6,YMMWORD[((-32))+rbp]
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm1,ymm9,25
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm9,7
+	vpandn	ymm0,ymm9,ymm11
+	vpand	ymm4,ymm9,ymm10
+
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm12,ymm13,2
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm1,ymm13,30
+	vpxor	ymm0,ymm0,ymm4
+	vpxor	ymm4,ymm14,ymm13
+
+	vpxor	ymm12,ymm12,ymm1
+	vpaddd	ymm6,ymm6,ymm7
+
+	vpsrld	ymm1,ymm13,13
+
+	vpslld	ymm2,ymm13,19
+	vpaddd	ymm6,ymm6,ymm0
+	vpand	ymm3,ymm3,ymm4
+
+	vpxor	ymm7,ymm12,ymm1
+
+	vpsrld	ymm1,ymm13,22
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm13,10
+	vpxor	ymm12,ymm14,ymm3
+	vpaddd	ymm8,ymm8,ymm6
+
+	vpxor	ymm7,ymm7,ymm1
+	vpxor	ymm7,ymm7,ymm2
+
+	vpaddd	ymm12,ymm12,ymm6
+	vpaddd	ymm12,ymm12,ymm7
+	vmovdqu	ymm6,YMMWORD[((416-256-128))+rbx]
+	vpaddd	ymm5,ymm5,YMMWORD[((160-128))+rax]
+
+	vpsrld	ymm7,ymm6,3
+	vpsrld	ymm1,ymm6,7
+	vpslld	ymm2,ymm6,25
+	vpxor	ymm7,ymm7,ymm1
+	vpsrld	ymm1,ymm6,18
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm6,14
+	vmovdqu	ymm0,YMMWORD[((320-256-128))+rbx]
+	vpsrld	ymm3,ymm0,10
+
+	vpxor	ymm7,ymm7,ymm1
+	vpsrld	ymm1,ymm0,17
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm0,15
+	vpaddd	ymm5,ymm5,ymm7
+	vpxor	ymm7,ymm3,ymm1
+	vpsrld	ymm1,ymm0,19
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm0,13
+	vpxor	ymm7,ymm7,ymm1
+	vpxor	ymm7,ymm7,ymm2
+	vpaddd	ymm5,ymm5,ymm7
+	vpsrld	ymm7,ymm8,6
+	vpslld	ymm2,ymm8,26
+	vmovdqu	YMMWORD[(384-256-128)+rbx],ymm5
+	vpaddd	ymm5,ymm5,ymm11
+
+	vpsrld	ymm1,ymm8,11
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm8,21
+	vpaddd	ymm5,ymm5,YMMWORD[rbp]
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm1,ymm8,25
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm8,7
+	vpandn	ymm0,ymm8,ymm10
+	vpand	ymm3,ymm8,ymm9
+
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm11,ymm12,2
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm1,ymm12,30
+	vpxor	ymm0,ymm0,ymm3
+	vpxor	ymm3,ymm13,ymm12
+
+	vpxor	ymm11,ymm11,ymm1
+	vpaddd	ymm5,ymm5,ymm7
+
+	vpsrld	ymm1,ymm12,13
+
+	vpslld	ymm2,ymm12,19
+	vpaddd	ymm5,ymm5,ymm0
+	vpand	ymm4,ymm4,ymm3
+
+	vpxor	ymm7,ymm11,ymm1
+
+	vpsrld	ymm1,ymm12,22
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm12,10
+	vpxor	ymm11,ymm13,ymm4
+	vpaddd	ymm15,ymm15,ymm5
+
+	vpxor	ymm7,ymm7,ymm1
+	vpxor	ymm7,ymm7,ymm2
+
+	vpaddd	ymm11,ymm11,ymm5
+	vpaddd	ymm11,ymm11,ymm7
+	vmovdqu	ymm5,YMMWORD[((448-256-128))+rbx]
+	vpaddd	ymm6,ymm6,YMMWORD[((192-128))+rax]
+
+	vpsrld	ymm7,ymm5,3
+	vpsrld	ymm1,ymm5,7
+	vpslld	ymm2,ymm5,25
+	vpxor	ymm7,ymm7,ymm1
+	vpsrld	ymm1,ymm5,18
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm5,14
+	vmovdqu	ymm0,YMMWORD[((352-256-128))+rbx]
+	vpsrld	ymm4,ymm0,10
+
+	vpxor	ymm7,ymm7,ymm1
+	vpsrld	ymm1,ymm0,17
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm0,15
+	vpaddd	ymm6,ymm6,ymm7
+	vpxor	ymm7,ymm4,ymm1
+	vpsrld	ymm1,ymm0,19
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm0,13
+	vpxor	ymm7,ymm7,ymm1
+	vpxor	ymm7,ymm7,ymm2
+	vpaddd	ymm6,ymm6,ymm7
+	vpsrld	ymm7,ymm15,6
+	vpslld	ymm2,ymm15,26
+	vmovdqu	YMMWORD[(416-256-128)+rbx],ymm6
+	vpaddd	ymm6,ymm6,ymm10
+
+	vpsrld	ymm1,ymm15,11
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm15,21
+	vpaddd	ymm6,ymm6,YMMWORD[32+rbp]
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm1,ymm15,25
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm15,7
+	vpandn	ymm0,ymm15,ymm9
+	vpand	ymm4,ymm15,ymm8
+
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm10,ymm11,2
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm1,ymm11,30
+	vpxor	ymm0,ymm0,ymm4
+	vpxor	ymm4,ymm12,ymm11
+
+	vpxor	ymm10,ymm10,ymm1
+	vpaddd	ymm6,ymm6,ymm7
+
+	vpsrld	ymm1,ymm11,13
+
+	vpslld	ymm2,ymm11,19
+	vpaddd	ymm6,ymm6,ymm0
+	vpand	ymm3,ymm3,ymm4
+
+	vpxor	ymm7,ymm10,ymm1
+
+	vpsrld	ymm1,ymm11,22
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm11,10
+	vpxor	ymm10,ymm12,ymm3
+	vpaddd	ymm14,ymm14,ymm6
+
+	vpxor	ymm7,ymm7,ymm1
+	vpxor	ymm7,ymm7,ymm2
+
+	vpaddd	ymm10,ymm10,ymm6
+	vpaddd	ymm10,ymm10,ymm7
+	vmovdqu	ymm6,YMMWORD[((480-256-128))+rbx]
+	vpaddd	ymm5,ymm5,YMMWORD[((224-128))+rax]
+
+	vpsrld	ymm7,ymm6,3
+	vpsrld	ymm1,ymm6,7
+	vpslld	ymm2,ymm6,25
+	vpxor	ymm7,ymm7,ymm1
+	vpsrld	ymm1,ymm6,18
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm6,14
+	vmovdqu	ymm0,YMMWORD[((384-256-128))+rbx]
+	vpsrld	ymm3,ymm0,10
+
+	vpxor	ymm7,ymm7,ymm1
+	vpsrld	ymm1,ymm0,17
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm0,15
+	vpaddd	ymm5,ymm5,ymm7
+	vpxor	ymm7,ymm3,ymm1
+	vpsrld	ymm1,ymm0,19
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm0,13
+	vpxor	ymm7,ymm7,ymm1
+	vpxor	ymm7,ymm7,ymm2
+	vpaddd	ymm5,ymm5,ymm7
+	vpsrld	ymm7,ymm14,6
+	vpslld	ymm2,ymm14,26
+	vmovdqu	YMMWORD[(448-256-128)+rbx],ymm5
+	vpaddd	ymm5,ymm5,ymm9
+
+	vpsrld	ymm1,ymm14,11
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm14,21
+	vpaddd	ymm5,ymm5,YMMWORD[64+rbp]
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm1,ymm14,25
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm14,7
+	vpandn	ymm0,ymm14,ymm8
+	vpand	ymm3,ymm14,ymm15
+
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm9,ymm10,2
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm1,ymm10,30
+	vpxor	ymm0,ymm0,ymm3
+	vpxor	ymm3,ymm11,ymm10
+
+	vpxor	ymm9,ymm9,ymm1
+	vpaddd	ymm5,ymm5,ymm7
+
+	vpsrld	ymm1,ymm10,13
+
+	vpslld	ymm2,ymm10,19
+	vpaddd	ymm5,ymm5,ymm0
+	vpand	ymm4,ymm4,ymm3
+
+	vpxor	ymm7,ymm9,ymm1
+
+	vpsrld	ymm1,ymm10,22
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm10,10
+	vpxor	ymm9,ymm11,ymm4
+	vpaddd	ymm13,ymm13,ymm5
+
+	vpxor	ymm7,ymm7,ymm1
+	vpxor	ymm7,ymm7,ymm2
+
+	vpaddd	ymm9,ymm9,ymm5
+	vpaddd	ymm9,ymm9,ymm7
+	vmovdqu	ymm5,YMMWORD[((0-128))+rax]
+	vpaddd	ymm6,ymm6,YMMWORD[((256-256-128))+rbx]
+
+	vpsrld	ymm7,ymm5,3
+	vpsrld	ymm1,ymm5,7
+	vpslld	ymm2,ymm5,25
+	vpxor	ymm7,ymm7,ymm1
+	vpsrld	ymm1,ymm5,18
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm5,14
+	vmovdqu	ymm0,YMMWORD[((416-256-128))+rbx]
+	vpsrld	ymm4,ymm0,10
+
+	vpxor	ymm7,ymm7,ymm1
+	vpsrld	ymm1,ymm0,17
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm0,15
+	vpaddd	ymm6,ymm6,ymm7
+	vpxor	ymm7,ymm4,ymm1
+	vpsrld	ymm1,ymm0,19
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm0,13
+	vpxor	ymm7,ymm7,ymm1
+	vpxor	ymm7,ymm7,ymm2
+	vpaddd	ymm6,ymm6,ymm7
+	vpsrld	ymm7,ymm13,6
+	vpslld	ymm2,ymm13,26
+	vmovdqu	YMMWORD[(480-256-128)+rbx],ymm6
+	vpaddd	ymm6,ymm6,ymm8
+
+	vpsrld	ymm1,ymm13,11
+	vpxor	ymm7,ymm7,ymm2
+	vpslld	ymm2,ymm13,21
+	vpaddd	ymm6,ymm6,YMMWORD[96+rbp]
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm1,ymm13,25
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm13,7
+	vpandn	ymm0,ymm13,ymm15
+	vpand	ymm4,ymm13,ymm14
+
+	vpxor	ymm7,ymm7,ymm1
+
+	vpsrld	ymm8,ymm9,2
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm1,ymm9,30
+	vpxor	ymm0,ymm0,ymm4
+	vpxor	ymm4,ymm10,ymm9
+
+	vpxor	ymm8,ymm8,ymm1
+	vpaddd	ymm6,ymm6,ymm7
+
+	vpsrld	ymm1,ymm9,13
+
+	vpslld	ymm2,ymm9,19
+	vpaddd	ymm6,ymm6,ymm0
+	vpand	ymm3,ymm3,ymm4
+
+	vpxor	ymm7,ymm8,ymm1
+
+	vpsrld	ymm1,ymm9,22
+	vpxor	ymm7,ymm7,ymm2
+
+	vpslld	ymm2,ymm9,10
+	vpxor	ymm8,ymm10,ymm3
+	vpaddd	ymm12,ymm12,ymm6
+
+	vpxor	ymm7,ymm7,ymm1
+	vpxor	ymm7,ymm7,ymm2
+
+	vpaddd	ymm8,ymm8,ymm6
+	vpaddd	ymm8,ymm8,ymm7
+	add	rbp,256
+	dec	ecx
+	jnz	NEAR $L$oop_16_xx_avx2
+
+	mov	ecx,1
+	lea	rbx,[512+rsp]
+	lea	rbp,[((K256+128))]
+	cmp	ecx,DWORD[rbx]
+	cmovge	r12,rbp
+	cmp	ecx,DWORD[4+rbx]
+	cmovge	r13,rbp
+	cmp	ecx,DWORD[8+rbx]
+	cmovge	r14,rbp
+	cmp	ecx,DWORD[12+rbx]
+	cmovge	r15,rbp
+	cmp	ecx,DWORD[16+rbx]
+	cmovge	r8,rbp
+	cmp	ecx,DWORD[20+rbx]
+	cmovge	r9,rbp
+	cmp	ecx,DWORD[24+rbx]
+	cmovge	r10,rbp
+	cmp	ecx,DWORD[28+rbx]
+	cmovge	r11,rbp
+	vmovdqa	ymm7,YMMWORD[rbx]
+	vpxor	ymm0,ymm0,ymm0
+	vmovdqa	ymm6,ymm7
+	vpcmpgtd	ymm6,ymm6,ymm0
+	vpaddd	ymm7,ymm7,ymm6
+
+	vmovdqu	ymm0,YMMWORD[((0-128))+rdi]
+	vpand	ymm8,ymm8,ymm6
+	vmovdqu	ymm1,YMMWORD[((32-128))+rdi]
+	vpand	ymm9,ymm9,ymm6
+	vmovdqu	ymm2,YMMWORD[((64-128))+rdi]
+	vpand	ymm10,ymm10,ymm6
+	vmovdqu	ymm5,YMMWORD[((96-128))+rdi]
+	vpand	ymm11,ymm11,ymm6
+	vpaddd	ymm8,ymm8,ymm0
+	vmovdqu	ymm0,YMMWORD[((128-128))+rdi]
+	vpand	ymm12,ymm12,ymm6
+	vpaddd	ymm9,ymm9,ymm1
+	vmovdqu	ymm1,YMMWORD[((160-128))+rdi]
+	vpand	ymm13,ymm13,ymm6
+	vpaddd	ymm10,ymm10,ymm2
+	vmovdqu	ymm2,YMMWORD[((192-128))+rdi]
+	vpand	ymm14,ymm14,ymm6
+	vpaddd	ymm11,ymm11,ymm5
+	vmovdqu	ymm5,YMMWORD[((224-128))+rdi]
+	vpand	ymm15,ymm15,ymm6
+	vpaddd	ymm12,ymm12,ymm0
+	vpaddd	ymm13,ymm13,ymm1
+	vmovdqu	YMMWORD[(0-128)+rdi],ymm8
+	vpaddd	ymm14,ymm14,ymm2
+	vmovdqu	YMMWORD[(32-128)+rdi],ymm9
+	vpaddd	ymm15,ymm15,ymm5
+	vmovdqu	YMMWORD[(64-128)+rdi],ymm10
+	vmovdqu	YMMWORD[(96-128)+rdi],ymm11
+	vmovdqu	YMMWORD[(128-128)+rdi],ymm12
+	vmovdqu	YMMWORD[(160-128)+rdi],ymm13
+	vmovdqu	YMMWORD[(192-128)+rdi],ymm14
+	vmovdqu	YMMWORD[(224-128)+rdi],ymm15
+
+	vmovdqu	YMMWORD[rbx],ymm7
+	lea	rbx,[((256+128))+rsp]
+	vmovdqu	ymm6,YMMWORD[$L$pbswap]
+	dec	edx
+	jnz	NEAR $L$oop_avx2
+
+
+
+
+
+
+
+$L$done_avx2:
+	mov	rax,QWORD[544+rsp]
+
+	vzeroupper
+	movaps	xmm6,XMMWORD[((-216))+rax]
+	movaps	xmm7,XMMWORD[((-200))+rax]
+	movaps	xmm8,XMMWORD[((-184))+rax]
+	movaps	xmm9,XMMWORD[((-168))+rax]
+	movaps	xmm10,XMMWORD[((-152))+rax]
+	movaps	xmm11,XMMWORD[((-136))+rax]
+	movaps	xmm12,XMMWORD[((-120))+rax]
+	movaps	xmm13,XMMWORD[((-104))+rax]
+	movaps	xmm14,XMMWORD[((-88))+rax]
+	movaps	xmm15,XMMWORD[((-72))+rax]
+	mov	r15,QWORD[((-48))+rax]
+
+	mov	r14,QWORD[((-40))+rax]
+
+	mov	r13,QWORD[((-32))+rax]
+
+	mov	r12,QWORD[((-24))+rax]
+
+	mov	rbp,QWORD[((-16))+rax]
+
+	mov	rbx,QWORD[((-8))+rax]
+
+	lea	rsp,[rax]
+
+	mov	rdi,QWORD[8+rsp]	;WIN64 epilogue
+	mov	rsi,QWORD[16+rsp]
+	DB	0F3h,0C3h		;repret
+SEH64_ENDPROC_FRAME	sha256_multi_block_avx2
+$L$SEH_end_sha256_multi_block_avx2:
 section	.rdata rdata align=256
 ALIGN	256
 K256:
@@ -3361,105 +8426,3 @@ DB	32,120,56,54,95,54,52,44,32,67,82,89,80,84,79,71
 DB	65,77,83,32,98,121,32,60,97,112,112,114,111,64,111,112
 DB	101,110,115,115,108,46,111,114,103,62,0
 section .text
-EXTERN	__imp_RtlVirtualUnwind
-
-ALIGN	16
-se_handler:
-	push	rsi
-	push	rdi
-	push	rbx
-	push	rbp
-	push	r12
-	push	r13
-	push	r14
-	push	r15
-	pushfq
-	sub	rsp,64
-
-	mov	rax,QWORD[120+r8]
-	mov	rbx,QWORD[248+r8]
-
-	mov	rsi,QWORD[8+r9]
-	mov	r11,QWORD[56+r9]
-
-	mov	r10d,DWORD[r11]
-	lea	r10,[r10*1+rsi]
-	cmp	rbx,r10
-	jb	NEAR $L$in_prologue
-
-	mov	rax,QWORD[152+r8]
-
-	mov	r10d,DWORD[4+r11]
-	lea	r10,[r10*1+rsi]
-	cmp	rbx,r10
-	jae	NEAR $L$in_prologue
-
-	mov	rax,QWORD[272+rax]
-
-	mov	rbx,QWORD[((-8))+rax]
-	mov	rbp,QWORD[((-16))+rax]
-	mov	QWORD[144+r8],rbx
-	mov	QWORD[160+r8],rbp
-
-	lea	rsi,[((-24-160))+rax]
-	lea	rdi,[512+r8]
-	mov	ecx,20
-	DD	0xa548f3fc
-
-$L$in_prologue:
-	mov	rdi,QWORD[8+rax]
-	mov	rsi,QWORD[16+rax]
-	mov	QWORD[152+r8],rax
-	mov	QWORD[168+r8],rsi
-	mov	QWORD[176+r8],rdi
-
-	mov	rdi,QWORD[40+r9]
-	mov	rsi,r8
-	mov	ecx,154
-	DD	0xa548f3fc
-
-	mov	rsi,r9
-	xor	rcx,rcx
-	mov	rdx,QWORD[8+rsi]
-	mov	r8,QWORD[rsi]
-	mov	r9,QWORD[16+rsi]
-	mov	r10,QWORD[40+rsi]
-	lea	r11,[56+rsi]
-	lea	r12,[24+rsi]
-	mov	QWORD[32+rsp],r10
-	mov	QWORD[40+rsp],r11
-	mov	QWORD[48+rsp],r12
-	mov	QWORD[56+rsp],rcx
-	call	QWORD[__imp_RtlVirtualUnwind]
-
-	mov	eax,1
-	add	rsp,64
-	popfq
-	pop	r15
-	pop	r14
-	pop	r13
-	pop	r12
-	pop	rbp
-	pop	rbx
-	pop	rdi
-	pop	rsi
-	DB	0F3h,0C3h		;repret
-
-section	.pdata rdata align=4
-ALIGN	4
-	DD	$L$SEH_begin_sha256_multi_block wrt ..imagebase
-	DD	$L$SEH_end_sha256_multi_block wrt ..imagebase
-	DD	$L$SEH_info_sha256_multi_block wrt ..imagebase
-	DD	$L$SEH_begin_sha256_multi_block_shaext wrt ..imagebase
-	DD	$L$SEH_end_sha256_multi_block_shaext wrt ..imagebase
-	DD	$L$SEH_info_sha256_multi_block_shaext wrt ..imagebase
-section	.xdata rdata align=8
-ALIGN	8
-$L$SEH_info_sha256_multi_block:
-DB	9,0,0,0
-	DD	se_handler wrt ..imagebase
-	DD	$L$body wrt ..imagebase,$L$epilogue wrt ..imagebase
-$L$SEH_info_sha256_multi_block_shaext:
-DB	9,0,0,0
-	DD	se_handler wrt ..imagebase
-	DD	$L$body_shaext wrt ..imagebase,$L$epilogue_shaext wrt ..imagebase

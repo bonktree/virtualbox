@@ -2,6 +2,250 @@ default	rel
 %define XMMWORD
 %define YMMWORD
 %define ZMMWORD
+;; For concatenation.
+%define SEH64_CONCAT(a,b) a %+ b
+
+%ifndef __YASM_MAJOR__
+ ;; @name Register numbers.
+ ;; @{
+ %define SEH64_PE_GREG_rax     0
+ %define SEH64_PE_GREG_rcx     1
+ %define SEH64_PE_GREG_rdx     2
+ %define SEH64_PE_GREG_rbx     3
+ %define SEH64_PE_GREG_rsp     4
+ %define SEH64_PE_GREG_rbp     5
+ %define SEH64_PE_GREG_rsi     6
+ %define SEH64_PE_GREG_rdi     7
+ %define SEH64_PE_GREG_r8      8
+ %define SEH64_PE_GREG_r9      9
+ %define SEH64_PE_GREG_r10     10
+ %define SEH64_PE_GREG_r11     11
+ %define SEH64_PE_GREG_r12     12
+ %define SEH64_PE_GREG_r13     13
+ %define SEH64_PE_GREG_r14     14
+ %define SEH64_PE_GREG_r15     15
+
+ %define SEH64_PE_XREG_xmm0     0
+ %define SEH64_PE_XREG_xmm1     1
+ %define SEH64_PE_XREG_xmm2     2
+ %define SEH64_PE_XREG_xmm3     3
+ %define SEH64_PE_XREG_xmm4     4
+ %define SEH64_PE_XREG_xmm5     5
+ %define SEH64_PE_XREG_xmm6     6
+ %define SEH64_PE_XREG_xmm7     7
+ %define SEH64_PE_XREG_xmm8     8
+ %define SEH64_PE_XREG_xmm9     9
+ %define SEH64_PE_XREG_xmm10    10
+ %define SEH64_PE_XREG_xmm11    11
+ %define SEH64_PE_XREG_xmm12    12
+ %define SEH64_PE_XREG_xmm13    13
+ %define SEH64_PE_XREG_xmm14    14
+ %define SEH64_PE_XREG_xmm15    15
+ ;; @}
+
+ ;; @name PE unwind operations.
+ ;; @{
+ %define SEH64_PE_PUSH_NONVOL      0
+ %define SEH64_PE_ALLOC_LARGE      1
+ %define SEH64_PE_ALLOC_SMALL      2
+ %define SEH64_PE_SET_FPREG        3
+ %define SEH64_PE_SAVE_NONVOL      4
+ %define SEH64_PE_SAVE_NONVOL_FAR  5
+ %define SEH64_PE_SAVE_XMM128      8
+ %define SEH64_PE_SAVE_XMM128_FAR  9
+ ;; @}
+
+ ;; We keep the unwind bytes in the seh64_slot_bytes (x)define, in reverse order as per spec.
+ %macro SEH64_APPEND_SLOT_PAIR 2
+  %ifdef seh64_slot_bytes
+   %xdefine seh64_slot_bytes %1, %2, seh64_slot_bytes
+  %else
+   %xdefine seh64_slot_bytes %1, %2
+  %endif
+ %endmacro
+
+ ;; For multi-slot unwind info.
+ %macro SEH64_APPEND_SLOT_BYTES 2+
+  %rep %0
+   %rotate -1
+   %ifdef seh64_slot_bytes
+    %xdefine seh64_slot_bytes %1, seh64_slot_bytes
+   %else
+    %xdefine seh64_slot_bytes %1
+   %endif
+  %endrep
+ %endmacro
+
+ ;; For generating labels.
+ %define SEH64_OP_LABEL(a_idx) asm_seh64_proc %+ .seh64_op_label %+ a_idx
+%endif ; !__YASM__
+
+;; For producing proper .labels despite .Lxxxx labels messing up the prefixing.
+%define SEH64_DOT_LABEL(a_DotLabel) SEH64_CONCAT(asm_seh64_proc,a_DotLabel)
+
+%macro SEH64_PROC_FRAME 2
+ %define asm_seh64_proc %1
+ %ifdef __YASM_MAJOR__
+        proc_frame %1
+ %else
+  %assign seh64_idxOps   0
+  ;%assign seh64_FrameReg SEH64_PE_GREG_rsp
+  %assign seh64_FrameReg 0
+  %assign seh64_offFrame 0
+  %undef  seh64_slot_bytes
+%1:
+.start_of_prologue:
+ %endif
+%endmacro
+
+%macro SEH64_ENDPROC_FRAME 1
+SEH64_DOT_LABEL(.end_proc):
+ %ifdef __YASM_MAJOR__
+	[endproc_frame]
+ %else
+        ; Emit the RUNTIME_FUNCTION entry.  The linker is picky here, no label.
+  %ifndef ASM_DEFINED_PDATA_SECTION
+   %define ASM_DEFINED_PDATA_SECTION
+        section .pdata rdata align=4
+  %else
+        section .pdata
+  %endif
+        dd      %1                              wrt ..imagebase
+        dd      SEH64_DOT_LABEL(.end_proc)      wrt ..imagebase
+        dd      SEH64_DOT_LABEL(.unwind_info)   wrt ..imagebase
+
+        ; Restore code section.
+        section .text
+ %endif
+%endmacro
+
+%macro SEH64_ENDPROLOG 0
+SEH64_DOT_LABEL(.end_of_prologue):
+ %ifdef __YASM_MAJOR__
+        [endprolog]
+ %else
+        ; Emit the unwind info now.
+  %ifndef ASM_DEFINED_XDATA_SECTION
+   %define ASM_DEFINED_XDATA_SECTION
+        section .xdata rdata align=4
+  %else
+        section .xdata
+        align   4, db 0
+  %endif
+SEH64_DOT_LABEL(.unwind_info):
+        db      1                       ; version 1 (3 bit), no flags (5 bits)
+        db      SEH64_DOT_LABEL(.end_of_prologue) - SEH64_DOT_LABEL(.start_of_prologue)
+
+        db      (SEH64_DOT_LABEL(.unwind_info_array_end) - SEH64_DOT_LABEL(.unwind_info_array)) / 2
+        db      seh64_FrameReg | (seh64_offFrame & 0xf0) ; framereg and offset/16.
+SEH64_DOT_LABEL(.unwind_info_array):
+   %ifdef seh64_slot_bytes
+        db      seh64_slot_bytes
+    %undef seh64_slot_bytes
+   %endif
+SEH64_DOT_LABEL(.unwind_info_array_end):
+
+        ; Reset the segment
+        section .text
+ %endif
+%endmacro
+
+%macro SEH64_ALLOCSTACK 1
+ %ifdef __YASM_MAJOR__
+        [allocstack %1]
+ %else
+SEH64_OP_LABEL(seh64_idxOps):
+  %if (%1) & 7
+   %error "SEH64_ALLOCSTACK must be a multiple of 8"
+  %endif
+  %if (%1) < 8
+   %error "SEH64_ALLOCSTACK must have an argument that's 8 or higher."
+  %elif (%1) <= 128
+   SEH64_APPEND_SLOT_PAIR \
+	SEH64_OP_LABEL(seh64_idxOps) - SEH64_DOT_LABEL(.start_of_prologue), \
+        SEH64_PE_ALLOC_SMALL | ((((%1) / 8) - 1) << 4)
+  %elif (%1) < 512
+   SEH64_APPEND_SLOT_BYTES \
+	SEH64_OP_LABEL(seh64_idxOps) - SEH64_DOT_LABEL(.start_of_prologue), \
+	SEH64_PE_ALLOC_LARGE | 0, \
+	((%1) / 8) & 0xff, ((%1) / 8) >> 8
+  %else
+   SEH64_APPEND_SLOT_BYTES \
+	SEH64_OP_LABEL(seh64_idxOps) - SEH64_DOT_LABEL(.start_of_prologue), \
+	SEH64_PE_ALLOC_LARGE | 1, \
+	(%1) & 0xff, ((%1) >> 8) & 0xff, ((%1) >> 16) & 0xff, ((%1) >> 24) & 0xff
+  %endif
+  %assign seh64_idxOps seh64_idxOps + 1
+ %endif
+%endmacro
+
+%macro SEH64_PUSHREG 1
+ %ifdef __YASM_MAJOR__
+        [pushreg %1]
+ %else
+SEH64_OP_LABEL(seh64_idxOps):
+  SEH64_APPEND_SLOT_PAIR \
+	SEH64_OP_LABEL(seh64_idxOps) - SEH64_DOT_LABEL(.start_of_prologue), \
+	SEH64_PE_PUSH_NONVOL | (SEH64_PE_GREG_ %+ %1 << 4)
+  %assign seh64_idxOps seh64_idxOps + 1
+ %endif
+%endmacro
+
+%macro SEH64_SAVEREG 2
+ %ifdef __YASM_MAJOR__
+        [savereg %1, %2]
+ %else
+  %if (%2) & 7
+   %error "SEH64_SAVEREG offset must be a multiple of 8"
+  %endif
+  %if (%2) <= (65535*8)
+SEH64_OP_LABEL(seh64_idxOps):
+   SEH64_APPEND_SLOT_BYTES \
+	SEH64_OP_LABEL(seh64_idxOps) - SEH64_DOT_LABEL(.start_of_prologue), \
+	SEH64_PE_SAVE_NONVOL | (SEH64_PE_GREG_ %+ %1 << 4), \
+	((%2) / 8) & 0xff, \
+	((%2) / 8) >> 8
+  %else
+   %error "SEH64_SAVEREG implement far offsets"
+  %endif
+  %assign seh64_idxOps seh64_idxOps + 1
+ %endif
+%endmacro
+
+%macro SEH64_SAVEXMM128 2
+ %ifdef __YASM_MAJOR__
+        [savexmm128 %1, %2]
+ %else
+SEH64_OP_LABEL(seh64_idxOps):
+  %if (%2) & 15
+   %error "SEH64_SAVE_XMM128 offset must be a multiple of 16"
+  %endif
+  %if (%2) <= (65535*16)
+   SEH64_APPEND_SLOT_BYTES \
+	SEH64_OP_LABEL(seh64_idxOps) - SEH64_DOT_LABEL(.start_of_prologue), \
+        SEH64_PE_SAVE_XMM128 | (SEH64_PE_XREG_ %+ %1 << 4), \
+        ((%2) / 16) & 0xff, \
+        ((%2) / 16) >> 8
+  %else
+   %error "SEH64_SAVE_XMM128 implement far offsets"
+  %endif
+  %assign seh64_idxOps seh64_idxOps + 1
+ %endif
+%endmacro
+
+%macro SEH64_SETFRAME 2
+ %ifdef __YASM_MAJOR__
+        [setframe %1, %2]
+ %else
+SEH64_OP_LABEL(seh64_idxOps):
+  SEH64_APPEND_SLOT_PAIR \
+	SEH64_OP_LABEL(seh64_idxOps) - SEH64_DOT_LABEL(.start_of_prologue), \
+        SEH64_PE_SET_FPREG | 0
+  %assign seh64_FrameReg SEH64_PE_GREG_ %+ %1
+  %assign seh64_offFrame %2
+  %assign seh64_idxOps seh64_idxOps + 1
+ %endif
+%endmacro
 section	.text code align=64
 
 EXTERN	OPENSSL_ia32cap_P
@@ -9,24 +253,32 @@ EXTERN	OPENSSL_ia32cap_P
 global	aesni_cbc_sha1_enc
 
 ALIGN	32
-aesni_cbc_sha1_enc:
+SEH64_PROC_FRAME aesni_cbc_sha1_enc,PUBLIC
 
+	; cfa_rsp=-8
+SEH64_ENDPROLOG	; cfa_reg=%rsp cfa_reg_offset=8 cfa_rsp=-8
 
 	mov	r10d,DWORD[((OPENSSL_ia32cap_P+0))]
 	mov	r11,QWORD[((OPENSSL_ia32cap_P+4))]
 	bt	r11,61
 	jc	NEAR aesni_cbc_sha1_enc_shaext
+	and	r11d,268435456
+	and	r10d,1073741824
+	or	r10d,r11d
+	cmp	r10d,1342177280
+	je	NEAR aesni_cbc_sha1_enc_avx
 	jmp	NEAR aesni_cbc_sha1_enc_ssse3
 	DB	0F3h,0C3h		;repret
-
+SEH64_ENDPROC_FRAME	aesni_cbc_sha1_enc
 
 
 ALIGN	32
-aesni_cbc_sha1_enc_ssse3:
+SEH64_PROC_FRAME aesni_cbc_sha1_enc_ssse3,PRIVATE
 	mov	QWORD[8+rsp],rdi	;WIN64 prologue
+SEH64_SAVEREG rdi, 8
 	mov	QWORD[16+rsp],rsi
+SEH64_SAVEREG rsi, 16
 	mov	rax,rsp
-$L$SEH_begin_aesni_cbc_sha1_enc_ssse3:
 	mov	rdi,rcx
 	mov	rsi,rdx
 	mov	rdx,r8
@@ -40,32 +292,44 @@ $L$SEH_begin_aesni_cbc_sha1_enc_ssse3:
 
 
 	push	rbx
-
+SEH64_PUSHREG	rbx	; cfa_rsp,cfa_reg_offset => -16,16 cfa_reg=%rsp
 	push	rbp
-
+SEH64_PUSHREG	rbp	; cfa_rsp,cfa_reg_offset => -24,24 cfa_reg=%rsp
 	push	r12
-
+SEH64_PUSHREG	r12	; cfa_rsp,cfa_reg_offset => -32,32 cfa_reg=%rsp
 	push	r13
-
+SEH64_PUSHREG	r13	; cfa_rsp,cfa_reg_offset => -40,40 cfa_reg=%rsp
 	push	r14
-
+SEH64_PUSHREG	r14	; cfa_rsp,cfa_reg_offset => -48,48 cfa_reg=%rsp
 	push	r15
-
+SEH64_PUSHREG	r15	; cfa_rsp,cfa_reg_offset => -56,56 cfa_reg=%rsp
 	lea	rsp,[((-264))+rsp]
-
+SEH64_ALLOCSTACK 264
 
 
 	movaps	XMMWORD[(96+0)+rsp],xmm6
+SEH64_SAVEXMM128 xmm6, 96	; .cfi_offset xmm6, -224 cfa_reg_offset=320 cfa_rsp=-320
 	movaps	XMMWORD[(96+16)+rsp],xmm7
+SEH64_SAVEXMM128 xmm7, 112	; .cfi_offset xmm7, -208 cfa_reg_offset=320 cfa_rsp=-320
 	movaps	XMMWORD[(96+32)+rsp],xmm8
+SEH64_SAVEXMM128 xmm8, 128	; .cfi_offset xmm8, -192 cfa_reg_offset=320 cfa_rsp=-320
 	movaps	XMMWORD[(96+48)+rsp],xmm9
+SEH64_SAVEXMM128 xmm9, 144	; .cfi_offset xmm9, -176 cfa_reg_offset=320 cfa_rsp=-320
 	movaps	XMMWORD[(96+64)+rsp],xmm10
+SEH64_SAVEXMM128 xmm10, 160	; .cfi_offset xmm10, -160 cfa_reg_offset=320 cfa_rsp=-320
 	movaps	XMMWORD[(96+80)+rsp],xmm11
+SEH64_SAVEXMM128 xmm11, 176	; .cfi_offset xmm11, -144 cfa_reg_offset=320 cfa_rsp=-320
 	movaps	XMMWORD[(96+96)+rsp],xmm12
+SEH64_SAVEXMM128 xmm12, 192	; .cfi_offset xmm12, -128 cfa_reg_offset=320 cfa_rsp=-320
 	movaps	XMMWORD[(96+112)+rsp],xmm13
+SEH64_SAVEXMM128 xmm13, 208	; .cfi_offset xmm13, -112 cfa_reg_offset=320 cfa_rsp=-320
 	movaps	XMMWORD[(96+128)+rsp],xmm14
+SEH64_SAVEXMM128 xmm14, 224	; .cfi_offset xmm14, -96 cfa_reg_offset=320 cfa_rsp=-320
 	movaps	XMMWORD[(96+144)+rsp],xmm15
+SEH64_SAVEXMM128 xmm15, 240	; .cfi_offset xmm15, -80 cfa_reg_offset=320 cfa_rsp=-320
 $L$prologue_ssse3:
+	; cfa_rsp=-320
+SEH64_ENDPROLOG	; cfa_reg=%rsp cfa_reg_offset=320 cfa_rsp=-320
 	mov	r12,rdi
 	mov	r13,rsi
 	mov	r14,rdx
@@ -1420,12 +1684,1373 @@ DB	102,15,56,221,209
 
 	lea	rsp,[48+rsi]
 
-$L$epilogue_ssse3:
 	mov	rdi,QWORD[8+rsp]	;WIN64 epilogue
 	mov	rsi,QWORD[16+rsp]
 	DB	0F3h,0C3h		;repret
-
+SEH64_ENDPROC_FRAME	aesni_cbc_sha1_enc_ssse3
 $L$SEH_end_aesni_cbc_sha1_enc_ssse3:
+
+ALIGN	32
+SEH64_PROC_FRAME aesni_cbc_sha1_enc_avx,PRIVATE
+	mov	QWORD[8+rsp],rdi	;WIN64 prologue
+SEH64_SAVEREG rdi, 8
+	mov	QWORD[16+rsp],rsi
+SEH64_SAVEREG rsi, 16
+	mov	rax,rsp
+	mov	rdi,rcx
+	mov	rsi,rdx
+	mov	rdx,r8
+	mov	rcx,r9
+	mov	r8,QWORD[40+rsp]
+	mov	r9,QWORD[48+rsp]
+
+
+
+	mov	r10,QWORD[56+rsp]
+
+
+	push	rbx
+SEH64_PUSHREG	rbx	; cfa_rsp,cfa_reg_offset => -16,16 cfa_reg=%rsp
+	push	rbp
+SEH64_PUSHREG	rbp	; cfa_rsp,cfa_reg_offset => -24,24 cfa_reg=%rsp
+	push	r12
+SEH64_PUSHREG	r12	; cfa_rsp,cfa_reg_offset => -32,32 cfa_reg=%rsp
+	push	r13
+SEH64_PUSHREG	r13	; cfa_rsp,cfa_reg_offset => -40,40 cfa_reg=%rsp
+	push	r14
+SEH64_PUSHREG	r14	; cfa_rsp,cfa_reg_offset => -48,48 cfa_reg=%rsp
+	push	r15
+SEH64_PUSHREG	r15	; cfa_rsp,cfa_reg_offset => -56,56 cfa_reg=%rsp
+	lea	rsp,[((-264))+rsp]
+SEH64_ALLOCSTACK 264
+
+
+	movaps	XMMWORD[(96+0)+rsp],xmm6
+SEH64_SAVEXMM128 xmm6, 96	; .cfi_offset xmm6, -224 cfa_reg_offset=320 cfa_rsp=-320
+	movaps	XMMWORD[(96+16)+rsp],xmm7
+SEH64_SAVEXMM128 xmm7, 112	; .cfi_offset xmm7, -208 cfa_reg_offset=320 cfa_rsp=-320
+	movaps	XMMWORD[(96+32)+rsp],xmm8
+SEH64_SAVEXMM128 xmm8, 128	; .cfi_offset xmm8, -192 cfa_reg_offset=320 cfa_rsp=-320
+	movaps	XMMWORD[(96+48)+rsp],xmm9
+SEH64_SAVEXMM128 xmm9, 144	; .cfi_offset xmm9, -176 cfa_reg_offset=320 cfa_rsp=-320
+	movaps	XMMWORD[(96+64)+rsp],xmm10
+SEH64_SAVEXMM128 xmm10, 160	; .cfi_offset xmm10, -160 cfa_reg_offset=320 cfa_rsp=-320
+	movaps	XMMWORD[(96+80)+rsp],xmm11
+SEH64_SAVEXMM128 xmm11, 176	; .cfi_offset xmm11, -144 cfa_reg_offset=320 cfa_rsp=-320
+	movaps	XMMWORD[(96+96)+rsp],xmm12
+SEH64_SAVEXMM128 xmm12, 192	; .cfi_offset xmm12, -128 cfa_reg_offset=320 cfa_rsp=-320
+	movaps	XMMWORD[(96+112)+rsp],xmm13
+SEH64_SAVEXMM128 xmm13, 208	; .cfi_offset xmm13, -112 cfa_reg_offset=320 cfa_rsp=-320
+	movaps	XMMWORD[(96+128)+rsp],xmm14
+SEH64_SAVEXMM128 xmm14, 224	; .cfi_offset xmm14, -96 cfa_reg_offset=320 cfa_rsp=-320
+	movaps	XMMWORD[(96+144)+rsp],xmm15
+SEH64_SAVEXMM128 xmm15, 240	; .cfi_offset xmm15, -80 cfa_reg_offset=320 cfa_rsp=-320
+$L$prologue_avx:
+	; cfa_rsp=-320
+SEH64_ENDPROLOG	; cfa_reg=%rsp cfa_reg_offset=320 cfa_rsp=-320
+	vzeroall
+	mov	r12,rdi
+	mov	r13,rsi
+	mov	r14,rdx
+	lea	r15,[112+rcx]
+	vmovdqu	xmm12,XMMWORD[r8]
+	mov	QWORD[88+rsp],r8
+	shl	r14,6
+	sub	r13,r12
+	mov	r8d,DWORD[((240-112))+r15]
+	add	r14,r10
+
+	lea	r11,[K_XX_XX]
+	mov	eax,DWORD[r9]
+	mov	ebx,DWORD[4+r9]
+	mov	ecx,DWORD[8+r9]
+	mov	edx,DWORD[12+r9]
+	mov	esi,ebx
+	mov	ebp,DWORD[16+r9]
+	mov	edi,ecx
+	xor	edi,edx
+	and	esi,edi
+
+	vmovdqa	xmm6,XMMWORD[64+r11]
+	vmovdqa	xmm10,XMMWORD[r11]
+	vmovdqu	xmm0,XMMWORD[r10]
+	vmovdqu	xmm1,XMMWORD[16+r10]
+	vmovdqu	xmm2,XMMWORD[32+r10]
+	vmovdqu	xmm3,XMMWORD[48+r10]
+	vpshufb	xmm0,xmm0,xmm6
+	add	r10,64
+	vpshufb	xmm1,xmm1,xmm6
+	vpshufb	xmm2,xmm2,xmm6
+	vpshufb	xmm3,xmm3,xmm6
+	vpaddd	xmm4,xmm0,xmm10
+	vpaddd	xmm5,xmm1,xmm10
+	vpaddd	xmm6,xmm2,xmm10
+	vmovdqa	XMMWORD[rsp],xmm4
+	vmovdqa	XMMWORD[16+rsp],xmm5
+	vmovdqa	XMMWORD[32+rsp],xmm6
+	vmovups	xmm15,XMMWORD[((-112))+r15]
+	vmovups	xmm14,XMMWORD[((16-112))+r15]
+	jmp	NEAR $L$oop_avx
+ALIGN	32
+$L$oop_avx:
+	shrd	ebx,ebx,2
+	vmovdqu	xmm13,XMMWORD[r12]
+	vpxor	xmm13,xmm13,xmm15
+	vpxor	xmm12,xmm12,xmm13
+	vaesenc	xmm12,xmm12,xmm14
+	vmovups	xmm15,XMMWORD[((-80))+r15]
+	xor	esi,edx
+	vpalignr	xmm4,xmm1,xmm0,8
+	mov	edi,eax
+	add	ebp,DWORD[rsp]
+	vpaddd	xmm9,xmm10,xmm3
+	xor	ebx,ecx
+	shld	eax,eax,5
+	vpsrldq	xmm8,xmm3,4
+	add	ebp,esi
+	and	edi,ebx
+	vpxor	xmm4,xmm4,xmm0
+	xor	ebx,ecx
+	add	ebp,eax
+	vpxor	xmm8,xmm8,xmm2
+	shrd	eax,eax,7
+	xor	edi,ecx
+	mov	esi,ebp
+	add	edx,DWORD[4+rsp]
+	vpxor	xmm4,xmm4,xmm8
+	xor	eax,ebx
+	shld	ebp,ebp,5
+	vmovdqa	XMMWORD[48+rsp],xmm9
+	add	edx,edi
+	vaesenc	xmm12,xmm12,xmm15
+	vmovups	xmm14,XMMWORD[((-64))+r15]
+	and	esi,eax
+	vpsrld	xmm8,xmm4,31
+	xor	eax,ebx
+	add	edx,ebp
+	shrd	ebp,ebp,7
+	xor	esi,ebx
+	vpslldq	xmm9,xmm4,12
+	vpaddd	xmm4,xmm4,xmm4
+	mov	edi,edx
+	add	ecx,DWORD[8+rsp]
+	xor	ebp,eax
+	shld	edx,edx,5
+	vpor	xmm4,xmm4,xmm8
+	vpsrld	xmm8,xmm9,30
+	add	ecx,esi
+	and	edi,ebp
+	xor	ebp,eax
+	add	ecx,edx
+	vpslld	xmm9,xmm9,2
+	vpxor	xmm4,xmm4,xmm8
+	shrd	edx,edx,7
+	xor	edi,eax
+	mov	esi,ecx
+	add	ebx,DWORD[12+rsp]
+	vaesenc	xmm12,xmm12,xmm14
+	vmovups	xmm15,XMMWORD[((-48))+r15]
+	vpxor	xmm4,xmm4,xmm9
+	xor	edx,ebp
+	shld	ecx,ecx,5
+	add	ebx,edi
+	and	esi,edx
+	xor	edx,ebp
+	add	ebx,ecx
+	shrd	ecx,ecx,7
+	xor	esi,ebp
+	vpalignr	xmm5,xmm2,xmm1,8
+	mov	edi,ebx
+	add	eax,DWORD[16+rsp]
+	vpaddd	xmm9,xmm10,xmm4
+	xor	ecx,edx
+	shld	ebx,ebx,5
+	vpsrldq	xmm8,xmm4,4
+	add	eax,esi
+	and	edi,ecx
+	vpxor	xmm5,xmm5,xmm1
+	xor	ecx,edx
+	add	eax,ebx
+	vpxor	xmm8,xmm8,xmm3
+	shrd	ebx,ebx,7
+	vaesenc	xmm12,xmm12,xmm15
+	vmovups	xmm14,XMMWORD[((-32))+r15]
+	xor	edi,edx
+	mov	esi,eax
+	add	ebp,DWORD[20+rsp]
+	vpxor	xmm5,xmm5,xmm8
+	xor	ebx,ecx
+	shld	eax,eax,5
+	vmovdqa	XMMWORD[rsp],xmm9
+	add	ebp,edi
+	and	esi,ebx
+	vpsrld	xmm8,xmm5,31
+	xor	ebx,ecx
+	add	ebp,eax
+	shrd	eax,eax,7
+	xor	esi,ecx
+	vpslldq	xmm9,xmm5,12
+	vpaddd	xmm5,xmm5,xmm5
+	mov	edi,ebp
+	add	edx,DWORD[24+rsp]
+	xor	eax,ebx
+	shld	ebp,ebp,5
+	vpor	xmm5,xmm5,xmm8
+	vpsrld	xmm8,xmm9,30
+	add	edx,esi
+	vaesenc	xmm12,xmm12,xmm14
+	vmovups	xmm15,XMMWORD[((-16))+r15]
+	and	edi,eax
+	xor	eax,ebx
+	add	edx,ebp
+	vpslld	xmm9,xmm9,2
+	vpxor	xmm5,xmm5,xmm8
+	shrd	ebp,ebp,7
+	xor	edi,ebx
+	mov	esi,edx
+	add	ecx,DWORD[28+rsp]
+	vpxor	xmm5,xmm5,xmm9
+	xor	ebp,eax
+	shld	edx,edx,5
+	vmovdqa	xmm10,XMMWORD[16+r11]
+	add	ecx,edi
+	and	esi,ebp
+	xor	ebp,eax
+	add	ecx,edx
+	shrd	edx,edx,7
+	xor	esi,eax
+	vpalignr	xmm6,xmm3,xmm2,8
+	mov	edi,ecx
+	add	ebx,DWORD[32+rsp]
+	vaesenc	xmm12,xmm12,xmm15
+	vmovups	xmm14,XMMWORD[r15]
+	vpaddd	xmm9,xmm10,xmm5
+	xor	edx,ebp
+	shld	ecx,ecx,5
+	vpsrldq	xmm8,xmm5,4
+	add	ebx,esi
+	and	edi,edx
+	vpxor	xmm6,xmm6,xmm2
+	xor	edx,ebp
+	add	ebx,ecx
+	vpxor	xmm8,xmm8,xmm4
+	shrd	ecx,ecx,7
+	xor	edi,ebp
+	mov	esi,ebx
+	add	eax,DWORD[36+rsp]
+	vpxor	xmm6,xmm6,xmm8
+	xor	ecx,edx
+	shld	ebx,ebx,5
+	vmovdqa	XMMWORD[16+rsp],xmm9
+	add	eax,edi
+	and	esi,ecx
+	vpsrld	xmm8,xmm6,31
+	xor	ecx,edx
+	add	eax,ebx
+	shrd	ebx,ebx,7
+	vaesenc	xmm12,xmm12,xmm14
+	vmovups	xmm15,XMMWORD[16+r15]
+	xor	esi,edx
+	vpslldq	xmm9,xmm6,12
+	vpaddd	xmm6,xmm6,xmm6
+	mov	edi,eax
+	add	ebp,DWORD[40+rsp]
+	xor	ebx,ecx
+	shld	eax,eax,5
+	vpor	xmm6,xmm6,xmm8
+	vpsrld	xmm8,xmm9,30
+	add	ebp,esi
+	and	edi,ebx
+	xor	ebx,ecx
+	add	ebp,eax
+	vpslld	xmm9,xmm9,2
+	vpxor	xmm6,xmm6,xmm8
+	shrd	eax,eax,7
+	xor	edi,ecx
+	mov	esi,ebp
+	add	edx,DWORD[44+rsp]
+	vpxor	xmm6,xmm6,xmm9
+	xor	eax,ebx
+	shld	ebp,ebp,5
+	add	edx,edi
+	vaesenc	xmm12,xmm12,xmm15
+	vmovups	xmm14,XMMWORD[32+r15]
+	and	esi,eax
+	xor	eax,ebx
+	add	edx,ebp
+	shrd	ebp,ebp,7
+	xor	esi,ebx
+	vpalignr	xmm7,xmm4,xmm3,8
+	mov	edi,edx
+	add	ecx,DWORD[48+rsp]
+	vpaddd	xmm9,xmm10,xmm6
+	xor	ebp,eax
+	shld	edx,edx,5
+	vpsrldq	xmm8,xmm6,4
+	add	ecx,esi
+	and	edi,ebp
+	vpxor	xmm7,xmm7,xmm3
+	xor	ebp,eax
+	add	ecx,edx
+	vpxor	xmm8,xmm8,xmm5
+	shrd	edx,edx,7
+	xor	edi,eax
+	mov	esi,ecx
+	add	ebx,DWORD[52+rsp]
+	vaesenc	xmm12,xmm12,xmm14
+	vmovups	xmm15,XMMWORD[48+r15]
+	vpxor	xmm7,xmm7,xmm8
+	xor	edx,ebp
+	shld	ecx,ecx,5
+	vmovdqa	XMMWORD[32+rsp],xmm9
+	add	ebx,edi
+	and	esi,edx
+	vpsrld	xmm8,xmm7,31
+	xor	edx,ebp
+	add	ebx,ecx
+	shrd	ecx,ecx,7
+	xor	esi,ebp
+	vpslldq	xmm9,xmm7,12
+	vpaddd	xmm7,xmm7,xmm7
+	mov	edi,ebx
+	add	eax,DWORD[56+rsp]
+	xor	ecx,edx
+	shld	ebx,ebx,5
+	vpor	xmm7,xmm7,xmm8
+	vpsrld	xmm8,xmm9,30
+	add	eax,esi
+	and	edi,ecx
+	xor	ecx,edx
+	add	eax,ebx
+	vpslld	xmm9,xmm9,2
+	vpxor	xmm7,xmm7,xmm8
+	shrd	ebx,ebx,7
+	cmp	r8d,11
+	jb	NEAR $L$vaesenclast6
+	vaesenc	xmm12,xmm12,xmm15
+	vmovups	xmm14,XMMWORD[64+r15]
+	vaesenc	xmm12,xmm12,xmm14
+	vmovups	xmm15,XMMWORD[80+r15]
+	je	NEAR $L$vaesenclast6
+	vaesenc	xmm12,xmm12,xmm15
+	vmovups	xmm14,XMMWORD[96+r15]
+	vaesenc	xmm12,xmm12,xmm14
+	vmovups	xmm15,XMMWORD[112+r15]
+$L$vaesenclast6:
+	vaesenclast	xmm12,xmm12,xmm15
+	vmovups	xmm15,XMMWORD[((-112))+r15]
+	vmovups	xmm14,XMMWORD[((16-112))+r15]
+	xor	edi,edx
+	mov	esi,eax
+	add	ebp,DWORD[60+rsp]
+	vpxor	xmm7,xmm7,xmm9
+	xor	ebx,ecx
+	shld	eax,eax,5
+	add	ebp,edi
+	and	esi,ebx
+	xor	ebx,ecx
+	add	ebp,eax
+	vpalignr	xmm8,xmm7,xmm6,8
+	vpxor	xmm0,xmm0,xmm4
+	shrd	eax,eax,7
+	xor	esi,ecx
+	mov	edi,ebp
+	add	edx,DWORD[rsp]
+	vpxor	xmm0,xmm0,xmm1
+	xor	eax,ebx
+	shld	ebp,ebp,5
+	vpaddd	xmm9,xmm10,xmm7
+	add	edx,esi
+	vmovdqu	xmm13,XMMWORD[16+r12]
+	vpxor	xmm13,xmm13,xmm15
+	vmovups	XMMWORD[r13*1+r12],xmm12
+	vpxor	xmm12,xmm12,xmm13
+	vaesenc	xmm12,xmm12,xmm14
+	vmovups	xmm15,XMMWORD[((-80))+r15]
+	and	edi,eax
+	vpxor	xmm0,xmm0,xmm8
+	xor	eax,ebx
+	add	edx,ebp
+	shrd	ebp,ebp,7
+	xor	edi,ebx
+	vpsrld	xmm8,xmm0,30
+	vmovdqa	XMMWORD[48+rsp],xmm9
+	mov	esi,edx
+	add	ecx,DWORD[4+rsp]
+	xor	ebp,eax
+	shld	edx,edx,5
+	vpslld	xmm0,xmm0,2
+	add	ecx,edi
+	and	esi,ebp
+	xor	ebp,eax
+	add	ecx,edx
+	shrd	edx,edx,7
+	xor	esi,eax
+	mov	edi,ecx
+	add	ebx,DWORD[8+rsp]
+	vaesenc	xmm12,xmm12,xmm15
+	vmovups	xmm14,XMMWORD[((-64))+r15]
+	vpor	xmm0,xmm0,xmm8
+	xor	edx,ebp
+	shld	ecx,ecx,5
+	add	ebx,esi
+	and	edi,edx
+	xor	edx,ebp
+	add	ebx,ecx
+	add	eax,DWORD[12+rsp]
+	xor	edi,ebp
+	mov	esi,ebx
+	shld	ebx,ebx,5
+	add	eax,edi
+	xor	esi,edx
+	shrd	ecx,ecx,7
+	add	eax,ebx
+	vpalignr	xmm8,xmm0,xmm7,8
+	vpxor	xmm1,xmm1,xmm5
+	add	ebp,DWORD[16+rsp]
+	vaesenc	xmm12,xmm12,xmm14
+	vmovups	xmm15,XMMWORD[((-48))+r15]
+	xor	esi,ecx
+	mov	edi,eax
+	shld	eax,eax,5
+	vpxor	xmm1,xmm1,xmm2
+	add	ebp,esi
+	xor	edi,ecx
+	vpaddd	xmm9,xmm10,xmm0
+	shrd	ebx,ebx,7
+	add	ebp,eax
+	vpxor	xmm1,xmm1,xmm8
+	add	edx,DWORD[20+rsp]
+	xor	edi,ebx
+	mov	esi,ebp
+	shld	ebp,ebp,5
+	vpsrld	xmm8,xmm1,30
+	vmovdqa	XMMWORD[rsp],xmm9
+	add	edx,edi
+	xor	esi,ebx
+	shrd	eax,eax,7
+	add	edx,ebp
+	vpslld	xmm1,xmm1,2
+	add	ecx,DWORD[24+rsp]
+	xor	esi,eax
+	mov	edi,edx
+	shld	edx,edx,5
+	add	ecx,esi
+	vaesenc	xmm12,xmm12,xmm15
+	vmovups	xmm14,XMMWORD[((-32))+r15]
+	xor	edi,eax
+	shrd	ebp,ebp,7
+	add	ecx,edx
+	vpor	xmm1,xmm1,xmm8
+	add	ebx,DWORD[28+rsp]
+	xor	edi,ebp
+	mov	esi,ecx
+	shld	ecx,ecx,5
+	add	ebx,edi
+	xor	esi,ebp
+	shrd	edx,edx,7
+	add	ebx,ecx
+	vpalignr	xmm8,xmm1,xmm0,8
+	vpxor	xmm2,xmm2,xmm6
+	add	eax,DWORD[32+rsp]
+	xor	esi,edx
+	mov	edi,ebx
+	shld	ebx,ebx,5
+	vpxor	xmm2,xmm2,xmm3
+	add	eax,esi
+	xor	edi,edx
+	vpaddd	xmm9,xmm10,xmm1
+	vmovdqa	xmm10,XMMWORD[32+r11]
+	shrd	ecx,ecx,7
+	add	eax,ebx
+	vpxor	xmm2,xmm2,xmm8
+	add	ebp,DWORD[36+rsp]
+	vaesenc	xmm12,xmm12,xmm14
+	vmovups	xmm15,XMMWORD[((-16))+r15]
+	xor	edi,ecx
+	mov	esi,eax
+	shld	eax,eax,5
+	vpsrld	xmm8,xmm2,30
+	vmovdqa	XMMWORD[16+rsp],xmm9
+	add	ebp,edi
+	xor	esi,ecx
+	shrd	ebx,ebx,7
+	add	ebp,eax
+	vpslld	xmm2,xmm2,2
+	add	edx,DWORD[40+rsp]
+	xor	esi,ebx
+	mov	edi,ebp
+	shld	ebp,ebp,5
+	add	edx,esi
+	xor	edi,ebx
+	shrd	eax,eax,7
+	add	edx,ebp
+	vpor	xmm2,xmm2,xmm8
+	add	ecx,DWORD[44+rsp]
+	xor	edi,eax
+	mov	esi,edx
+	shld	edx,edx,5
+	add	ecx,edi
+	vaesenc	xmm12,xmm12,xmm15
+	vmovups	xmm14,XMMWORD[r15]
+	xor	esi,eax
+	shrd	ebp,ebp,7
+	add	ecx,edx
+	vpalignr	xmm8,xmm2,xmm1,8
+	vpxor	xmm3,xmm3,xmm7
+	add	ebx,DWORD[48+rsp]
+	xor	esi,ebp
+	mov	edi,ecx
+	shld	ecx,ecx,5
+	vpxor	xmm3,xmm3,xmm4
+	add	ebx,esi
+	xor	edi,ebp
+	vpaddd	xmm9,xmm10,xmm2
+	shrd	edx,edx,7
+	add	ebx,ecx
+	vpxor	xmm3,xmm3,xmm8
+	add	eax,DWORD[52+rsp]
+	xor	edi,edx
+	mov	esi,ebx
+	shld	ebx,ebx,5
+	vpsrld	xmm8,xmm3,30
+	vmovdqa	XMMWORD[32+rsp],xmm9
+	add	eax,edi
+	xor	esi,edx
+	shrd	ecx,ecx,7
+	add	eax,ebx
+	vpslld	xmm3,xmm3,2
+	add	ebp,DWORD[56+rsp]
+	vaesenc	xmm12,xmm12,xmm14
+	vmovups	xmm15,XMMWORD[16+r15]
+	xor	esi,ecx
+	mov	edi,eax
+	shld	eax,eax,5
+	add	ebp,esi
+	xor	edi,ecx
+	shrd	ebx,ebx,7
+	add	ebp,eax
+	vpor	xmm3,xmm3,xmm8
+	add	edx,DWORD[60+rsp]
+	xor	edi,ebx
+	mov	esi,ebp
+	shld	ebp,ebp,5
+	add	edx,edi
+	xor	esi,ebx
+	shrd	eax,eax,7
+	add	edx,ebp
+	vpalignr	xmm8,xmm3,xmm2,8
+	vpxor	xmm4,xmm4,xmm0
+	add	ecx,DWORD[rsp]
+	xor	esi,eax
+	mov	edi,edx
+	shld	edx,edx,5
+	vpxor	xmm4,xmm4,xmm5
+	add	ecx,esi
+	vaesenc	xmm12,xmm12,xmm15
+	vmovups	xmm14,XMMWORD[32+r15]
+	xor	edi,eax
+	vpaddd	xmm9,xmm10,xmm3
+	shrd	ebp,ebp,7
+	add	ecx,edx
+	vpxor	xmm4,xmm4,xmm8
+	add	ebx,DWORD[4+rsp]
+	xor	edi,ebp
+	mov	esi,ecx
+	shld	ecx,ecx,5
+	vpsrld	xmm8,xmm4,30
+	vmovdqa	XMMWORD[48+rsp],xmm9
+	add	ebx,edi
+	xor	esi,ebp
+	shrd	edx,edx,7
+	add	ebx,ecx
+	vpslld	xmm4,xmm4,2
+	add	eax,DWORD[8+rsp]
+	xor	esi,edx
+	mov	edi,ebx
+	shld	ebx,ebx,5
+	add	eax,esi
+	xor	edi,edx
+	shrd	ecx,ecx,7
+	add	eax,ebx
+	vpor	xmm4,xmm4,xmm8
+	add	ebp,DWORD[12+rsp]
+	vaesenc	xmm12,xmm12,xmm14
+	vmovups	xmm15,XMMWORD[48+r15]
+	xor	edi,ecx
+	mov	esi,eax
+	shld	eax,eax,5
+	add	ebp,edi
+	xor	esi,ecx
+	shrd	ebx,ebx,7
+	add	ebp,eax
+	vpalignr	xmm8,xmm4,xmm3,8
+	vpxor	xmm5,xmm5,xmm1
+	add	edx,DWORD[16+rsp]
+	xor	esi,ebx
+	mov	edi,ebp
+	shld	ebp,ebp,5
+	vpxor	xmm5,xmm5,xmm6
+	add	edx,esi
+	xor	edi,ebx
+	vpaddd	xmm9,xmm10,xmm4
+	shrd	eax,eax,7
+	add	edx,ebp
+	vpxor	xmm5,xmm5,xmm8
+	add	ecx,DWORD[20+rsp]
+	xor	edi,eax
+	mov	esi,edx
+	shld	edx,edx,5
+	vpsrld	xmm8,xmm5,30
+	vmovdqa	XMMWORD[rsp],xmm9
+	add	ecx,edi
+	cmp	r8d,11
+	jb	NEAR $L$vaesenclast7
+	vaesenc	xmm12,xmm12,xmm15
+	vmovups	xmm14,XMMWORD[64+r15]
+	vaesenc	xmm12,xmm12,xmm14
+	vmovups	xmm15,XMMWORD[80+r15]
+	je	NEAR $L$vaesenclast7
+	vaesenc	xmm12,xmm12,xmm15
+	vmovups	xmm14,XMMWORD[96+r15]
+	vaesenc	xmm12,xmm12,xmm14
+	vmovups	xmm15,XMMWORD[112+r15]
+$L$vaesenclast7:
+	vaesenclast	xmm12,xmm12,xmm15
+	vmovups	xmm15,XMMWORD[((-112))+r15]
+	vmovups	xmm14,XMMWORD[((16-112))+r15]
+	xor	esi,eax
+	shrd	ebp,ebp,7
+	add	ecx,edx
+	vpslld	xmm5,xmm5,2
+	add	ebx,DWORD[24+rsp]
+	xor	esi,ebp
+	mov	edi,ecx
+	shld	ecx,ecx,5
+	add	ebx,esi
+	xor	edi,ebp
+	shrd	edx,edx,7
+	add	ebx,ecx
+	vpor	xmm5,xmm5,xmm8
+	add	eax,DWORD[28+rsp]
+	shrd	ecx,ecx,7
+	mov	esi,ebx
+	xor	edi,edx
+	shld	ebx,ebx,5
+	add	eax,edi
+	xor	esi,ecx
+	xor	ecx,edx
+	add	eax,ebx
+	vpalignr	xmm8,xmm5,xmm4,8
+	vpxor	xmm6,xmm6,xmm2
+	add	ebp,DWORD[32+rsp]
+	vmovdqu	xmm13,XMMWORD[32+r12]
+	vpxor	xmm13,xmm13,xmm15
+	vmovups	XMMWORD[16+r12*1+r13],xmm12
+	vpxor	xmm12,xmm12,xmm13
+	vaesenc	xmm12,xmm12,xmm14
+	vmovups	xmm15,XMMWORD[((-80))+r15]
+	and	esi,ecx
+	xor	ecx,edx
+	shrd	ebx,ebx,7
+	vpxor	xmm6,xmm6,xmm7
+	mov	edi,eax
+	xor	esi,ecx
+	vpaddd	xmm9,xmm10,xmm5
+	shld	eax,eax,5
+	add	ebp,esi
+	vpxor	xmm6,xmm6,xmm8
+	xor	edi,ebx
+	xor	ebx,ecx
+	add	ebp,eax
+	add	edx,DWORD[36+rsp]
+	vpsrld	xmm8,xmm6,30
+	vmovdqa	XMMWORD[16+rsp],xmm9
+	and	edi,ebx
+	xor	ebx,ecx
+	shrd	eax,eax,7
+	mov	esi,ebp
+	vpslld	xmm6,xmm6,2
+	xor	edi,ebx
+	shld	ebp,ebp,5
+	add	edx,edi
+	vaesenc	xmm12,xmm12,xmm15
+	vmovups	xmm14,XMMWORD[((-64))+r15]
+	xor	esi,eax
+	xor	eax,ebx
+	add	edx,ebp
+	add	ecx,DWORD[40+rsp]
+	and	esi,eax
+	vpor	xmm6,xmm6,xmm8
+	xor	eax,ebx
+	shrd	ebp,ebp,7
+	mov	edi,edx
+	xor	esi,eax
+	shld	edx,edx,5
+	add	ecx,esi
+	xor	edi,ebp
+	xor	ebp,eax
+	add	ecx,edx
+	add	ebx,DWORD[44+rsp]
+	and	edi,ebp
+	xor	ebp,eax
+	shrd	edx,edx,7
+	vaesenc	xmm12,xmm12,xmm14
+	vmovups	xmm15,XMMWORD[((-48))+r15]
+	mov	esi,ecx
+	xor	edi,ebp
+	shld	ecx,ecx,5
+	add	ebx,edi
+	xor	esi,edx
+	xor	edx,ebp
+	add	ebx,ecx
+	vpalignr	xmm8,xmm6,xmm5,8
+	vpxor	xmm7,xmm7,xmm3
+	add	eax,DWORD[48+rsp]
+	and	esi,edx
+	xor	edx,ebp
+	shrd	ecx,ecx,7
+	vpxor	xmm7,xmm7,xmm0
+	mov	edi,ebx
+	xor	esi,edx
+	vpaddd	xmm9,xmm10,xmm6
+	vmovdqa	xmm10,XMMWORD[48+r11]
+	shld	ebx,ebx,5
+	add	eax,esi
+	vpxor	xmm7,xmm7,xmm8
+	xor	edi,ecx
+	xor	ecx,edx
+	add	eax,ebx
+	add	ebp,DWORD[52+rsp]
+	vaesenc	xmm12,xmm12,xmm15
+	vmovups	xmm14,XMMWORD[((-32))+r15]
+	vpsrld	xmm8,xmm7,30
+	vmovdqa	XMMWORD[32+rsp],xmm9
+	and	edi,ecx
+	xor	ecx,edx
+	shrd	ebx,ebx,7
+	mov	esi,eax
+	vpslld	xmm7,xmm7,2
+	xor	edi,ecx
+	shld	eax,eax,5
+	add	ebp,edi
+	xor	esi,ebx
+	xor	ebx,ecx
+	add	ebp,eax
+	add	edx,DWORD[56+rsp]
+	and	esi,ebx
+	vpor	xmm7,xmm7,xmm8
+	xor	ebx,ecx
+	shrd	eax,eax,7
+	mov	edi,ebp
+	xor	esi,ebx
+	shld	ebp,ebp,5
+	add	edx,esi
+	vaesenc	xmm12,xmm12,xmm14
+	vmovups	xmm15,XMMWORD[((-16))+r15]
+	xor	edi,eax
+	xor	eax,ebx
+	add	edx,ebp
+	add	ecx,DWORD[60+rsp]
+	and	edi,eax
+	xor	eax,ebx
+	shrd	ebp,ebp,7
+	mov	esi,edx
+	xor	edi,eax
+	shld	edx,edx,5
+	add	ecx,edi
+	xor	esi,ebp
+	xor	ebp,eax
+	add	ecx,edx
+	vpalignr	xmm8,xmm7,xmm6,8
+	vpxor	xmm0,xmm0,xmm4
+	add	ebx,DWORD[rsp]
+	and	esi,ebp
+	xor	ebp,eax
+	shrd	edx,edx,7
+	vaesenc	xmm12,xmm12,xmm15
+	vmovups	xmm14,XMMWORD[r15]
+	vpxor	xmm0,xmm0,xmm1
+	mov	edi,ecx
+	xor	esi,ebp
+	vpaddd	xmm9,xmm10,xmm7
+	shld	ecx,ecx,5
+	add	ebx,esi
+	vpxor	xmm0,xmm0,xmm8
+	xor	edi,edx
+	xor	edx,ebp
+	add	ebx,ecx
+	add	eax,DWORD[4+rsp]
+	vpsrld	xmm8,xmm0,30
+	vmovdqa	XMMWORD[48+rsp],xmm9
+	and	edi,edx
+	xor	edx,ebp
+	shrd	ecx,ecx,7
+	mov	esi,ebx
+	vpslld	xmm0,xmm0,2
+	xor	edi,edx
+	shld	ebx,ebx,5
+	add	eax,edi
+	xor	esi,ecx
+	xor	ecx,edx
+	add	eax,ebx
+	add	ebp,DWORD[8+rsp]
+	vaesenc	xmm12,xmm12,xmm14
+	vmovups	xmm15,XMMWORD[16+r15]
+	and	esi,ecx
+	vpor	xmm0,xmm0,xmm8
+	xor	ecx,edx
+	shrd	ebx,ebx,7
+	mov	edi,eax
+	xor	esi,ecx
+	shld	eax,eax,5
+	add	ebp,esi
+	xor	edi,ebx
+	xor	ebx,ecx
+	add	ebp,eax
+	add	edx,DWORD[12+rsp]
+	and	edi,ebx
+	xor	ebx,ecx
+	shrd	eax,eax,7
+	mov	esi,ebp
+	xor	edi,ebx
+	shld	ebp,ebp,5
+	add	edx,edi
+	vaesenc	xmm12,xmm12,xmm15
+	vmovups	xmm14,XMMWORD[32+r15]
+	xor	esi,eax
+	xor	eax,ebx
+	add	edx,ebp
+	vpalignr	xmm8,xmm0,xmm7,8
+	vpxor	xmm1,xmm1,xmm5
+	add	ecx,DWORD[16+rsp]
+	and	esi,eax
+	xor	eax,ebx
+	shrd	ebp,ebp,7
+	vpxor	xmm1,xmm1,xmm2
+	mov	edi,edx
+	xor	esi,eax
+	vpaddd	xmm9,xmm10,xmm0
+	shld	edx,edx,5
+	add	ecx,esi
+	vpxor	xmm1,xmm1,xmm8
+	xor	edi,ebp
+	xor	ebp,eax
+	add	ecx,edx
+	add	ebx,DWORD[20+rsp]
+	vpsrld	xmm8,xmm1,30
+	vmovdqa	XMMWORD[rsp],xmm9
+	and	edi,ebp
+	xor	ebp,eax
+	shrd	edx,edx,7
+	vaesenc	xmm12,xmm12,xmm14
+	vmovups	xmm15,XMMWORD[48+r15]
+	mov	esi,ecx
+	vpslld	xmm1,xmm1,2
+	xor	edi,ebp
+	shld	ecx,ecx,5
+	add	ebx,edi
+	xor	esi,edx
+	xor	edx,ebp
+	add	ebx,ecx
+	add	eax,DWORD[24+rsp]
+	and	esi,edx
+	vpor	xmm1,xmm1,xmm8
+	xor	edx,ebp
+	shrd	ecx,ecx,7
+	mov	edi,ebx
+	xor	esi,edx
+	shld	ebx,ebx,5
+	add	eax,esi
+	xor	edi,ecx
+	xor	ecx,edx
+	add	eax,ebx
+	add	ebp,DWORD[28+rsp]
+	cmp	r8d,11
+	jb	NEAR $L$vaesenclast8
+	vaesenc	xmm12,xmm12,xmm15
+	vmovups	xmm14,XMMWORD[64+r15]
+	vaesenc	xmm12,xmm12,xmm14
+	vmovups	xmm15,XMMWORD[80+r15]
+	je	NEAR $L$vaesenclast8
+	vaesenc	xmm12,xmm12,xmm15
+	vmovups	xmm14,XMMWORD[96+r15]
+	vaesenc	xmm12,xmm12,xmm14
+	vmovups	xmm15,XMMWORD[112+r15]
+$L$vaesenclast8:
+	vaesenclast	xmm12,xmm12,xmm15
+	vmovups	xmm15,XMMWORD[((-112))+r15]
+	vmovups	xmm14,XMMWORD[((16-112))+r15]
+	and	edi,ecx
+	xor	ecx,edx
+	shrd	ebx,ebx,7
+	mov	esi,eax
+	xor	edi,ecx
+	shld	eax,eax,5
+	add	ebp,edi
+	xor	esi,ebx
+	xor	ebx,ecx
+	add	ebp,eax
+	vpalignr	xmm8,xmm1,xmm0,8
+	vpxor	xmm2,xmm2,xmm6
+	add	edx,DWORD[32+rsp]
+	and	esi,ebx
+	xor	ebx,ecx
+	shrd	eax,eax,7
+	vpxor	xmm2,xmm2,xmm3
+	mov	edi,ebp
+	xor	esi,ebx
+	vpaddd	xmm9,xmm10,xmm1
+	shld	ebp,ebp,5
+	add	edx,esi
+	vmovdqu	xmm13,XMMWORD[48+r12]
+	vpxor	xmm13,xmm13,xmm15
+	vmovups	XMMWORD[32+r12*1+r13],xmm12
+	vpxor	xmm12,xmm12,xmm13
+	vaesenc	xmm12,xmm12,xmm14
+	vmovups	xmm15,XMMWORD[((-80))+r15]
+	vpxor	xmm2,xmm2,xmm8
+	xor	edi,eax
+	xor	eax,ebx
+	add	edx,ebp
+	add	ecx,DWORD[36+rsp]
+	vpsrld	xmm8,xmm2,30
+	vmovdqa	XMMWORD[16+rsp],xmm9
+	and	edi,eax
+	xor	eax,ebx
+	shrd	ebp,ebp,7
+	mov	esi,edx
+	vpslld	xmm2,xmm2,2
+	xor	edi,eax
+	shld	edx,edx,5
+	add	ecx,edi
+	xor	esi,ebp
+	xor	ebp,eax
+	add	ecx,edx
+	add	ebx,DWORD[40+rsp]
+	and	esi,ebp
+	vpor	xmm2,xmm2,xmm8
+	xor	ebp,eax
+	shrd	edx,edx,7
+	vaesenc	xmm12,xmm12,xmm15
+	vmovups	xmm14,XMMWORD[((-64))+r15]
+	mov	edi,ecx
+	xor	esi,ebp
+	shld	ecx,ecx,5
+	add	ebx,esi
+	xor	edi,edx
+	xor	edx,ebp
+	add	ebx,ecx
+	add	eax,DWORD[44+rsp]
+	and	edi,edx
+	xor	edx,ebp
+	shrd	ecx,ecx,7
+	mov	esi,ebx
+	xor	edi,edx
+	shld	ebx,ebx,5
+	add	eax,edi
+	xor	esi,edx
+	add	eax,ebx
+	vpalignr	xmm8,xmm2,xmm1,8
+	vpxor	xmm3,xmm3,xmm7
+	add	ebp,DWORD[48+rsp]
+	vaesenc	xmm12,xmm12,xmm14
+	vmovups	xmm15,XMMWORD[((-48))+r15]
+	xor	esi,ecx
+	mov	edi,eax
+	shld	eax,eax,5
+	vpxor	xmm3,xmm3,xmm4
+	add	ebp,esi
+	xor	edi,ecx
+	vpaddd	xmm9,xmm10,xmm2
+	shrd	ebx,ebx,7
+	add	ebp,eax
+	vpxor	xmm3,xmm3,xmm8
+	add	edx,DWORD[52+rsp]
+	xor	edi,ebx
+	mov	esi,ebp
+	shld	ebp,ebp,5
+	vpsrld	xmm8,xmm3,30
+	vmovdqa	XMMWORD[32+rsp],xmm9
+	add	edx,edi
+	xor	esi,ebx
+	shrd	eax,eax,7
+	add	edx,ebp
+	vpslld	xmm3,xmm3,2
+	add	ecx,DWORD[56+rsp]
+	xor	esi,eax
+	mov	edi,edx
+	shld	edx,edx,5
+	add	ecx,esi
+	vaesenc	xmm12,xmm12,xmm15
+	vmovups	xmm14,XMMWORD[((-32))+r15]
+	xor	edi,eax
+	shrd	ebp,ebp,7
+	add	ecx,edx
+	vpor	xmm3,xmm3,xmm8
+	add	ebx,DWORD[60+rsp]
+	xor	edi,ebp
+	mov	esi,ecx
+	shld	ecx,ecx,5
+	add	ebx,edi
+	xor	esi,ebp
+	shrd	edx,edx,7
+	add	ebx,ecx
+	add	eax,DWORD[rsp]
+	vpaddd	xmm9,xmm10,xmm3
+	xor	esi,edx
+	mov	edi,ebx
+	shld	ebx,ebx,5
+	add	eax,esi
+	vmovdqa	XMMWORD[48+rsp],xmm9
+	xor	edi,edx
+	shrd	ecx,ecx,7
+	add	eax,ebx
+	add	ebp,DWORD[4+rsp]
+	vaesenc	xmm12,xmm12,xmm14
+	vmovups	xmm15,XMMWORD[((-16))+r15]
+	xor	edi,ecx
+	mov	esi,eax
+	shld	eax,eax,5
+	add	ebp,edi
+	xor	esi,ecx
+	shrd	ebx,ebx,7
+	add	ebp,eax
+	add	edx,DWORD[8+rsp]
+	xor	esi,ebx
+	mov	edi,ebp
+	shld	ebp,ebp,5
+	add	edx,esi
+	xor	edi,ebx
+	shrd	eax,eax,7
+	add	edx,ebp
+	add	ecx,DWORD[12+rsp]
+	xor	edi,eax
+	mov	esi,edx
+	shld	edx,edx,5
+	add	ecx,edi
+	vaesenc	xmm12,xmm12,xmm15
+	vmovups	xmm14,XMMWORD[r15]
+	xor	esi,eax
+	shrd	ebp,ebp,7
+	add	ecx,edx
+	cmp	r10,r14
+	je	NEAR $L$done_avx
+	vmovdqa	xmm9,XMMWORD[64+r11]
+	vmovdqa	xmm10,XMMWORD[r11]
+	vmovdqu	xmm0,XMMWORD[r10]
+	vmovdqu	xmm1,XMMWORD[16+r10]
+	vmovdqu	xmm2,XMMWORD[32+r10]
+	vmovdqu	xmm3,XMMWORD[48+r10]
+	vpshufb	xmm0,xmm0,xmm9
+	add	r10,64
+	add	ebx,DWORD[16+rsp]
+	xor	esi,ebp
+	vpshufb	xmm1,xmm1,xmm9
+	mov	edi,ecx
+	shld	ecx,ecx,5
+	vpaddd	xmm8,xmm0,xmm10
+	add	ebx,esi
+	xor	edi,ebp
+	shrd	edx,edx,7
+	add	ebx,ecx
+	vmovdqa	XMMWORD[rsp],xmm8
+	add	eax,DWORD[20+rsp]
+	xor	edi,edx
+	mov	esi,ebx
+	shld	ebx,ebx,5
+	add	eax,edi
+	xor	esi,edx
+	shrd	ecx,ecx,7
+	add	eax,ebx
+	add	ebp,DWORD[24+rsp]
+	vaesenc	xmm12,xmm12,xmm14
+	vmovups	xmm15,XMMWORD[16+r15]
+	xor	esi,ecx
+	mov	edi,eax
+	shld	eax,eax,5
+	add	ebp,esi
+	xor	edi,ecx
+	shrd	ebx,ebx,7
+	add	ebp,eax
+	add	edx,DWORD[28+rsp]
+	xor	edi,ebx
+	mov	esi,ebp
+	shld	ebp,ebp,5
+	add	edx,edi
+	xor	esi,ebx
+	shrd	eax,eax,7
+	add	edx,ebp
+	add	ecx,DWORD[32+rsp]
+	xor	esi,eax
+	vpshufb	xmm2,xmm2,xmm9
+	mov	edi,edx
+	shld	edx,edx,5
+	vpaddd	xmm8,xmm1,xmm10
+	add	ecx,esi
+	vaesenc	xmm12,xmm12,xmm15
+	vmovups	xmm14,XMMWORD[32+r15]
+	xor	edi,eax
+	shrd	ebp,ebp,7
+	add	ecx,edx
+	vmovdqa	XMMWORD[16+rsp],xmm8
+	add	ebx,DWORD[36+rsp]
+	xor	edi,ebp
+	mov	esi,ecx
+	shld	ecx,ecx,5
+	add	ebx,edi
+	xor	esi,ebp
+	shrd	edx,edx,7
+	add	ebx,ecx
+	add	eax,DWORD[40+rsp]
+	xor	esi,edx
+	mov	edi,ebx
+	shld	ebx,ebx,5
+	add	eax,esi
+	xor	edi,edx
+	shrd	ecx,ecx,7
+	add	eax,ebx
+	add	ebp,DWORD[44+rsp]
+	vaesenc	xmm12,xmm12,xmm14
+	vmovups	xmm15,XMMWORD[48+r15]
+	xor	edi,ecx
+	mov	esi,eax
+	shld	eax,eax,5
+	add	ebp,edi
+	xor	esi,ecx
+	shrd	ebx,ebx,7
+	add	ebp,eax
+	add	edx,DWORD[48+rsp]
+	xor	esi,ebx
+	vpshufb	xmm3,xmm3,xmm9
+	mov	edi,ebp
+	shld	ebp,ebp,5
+	vpaddd	xmm8,xmm2,xmm10
+	add	edx,esi
+	xor	edi,ebx
+	shrd	eax,eax,7
+	add	edx,ebp
+	vmovdqa	XMMWORD[32+rsp],xmm8
+	add	ecx,DWORD[52+rsp]
+	xor	edi,eax
+	mov	esi,edx
+	shld	edx,edx,5
+	add	ecx,edi
+	cmp	r8d,11
+	jb	NEAR $L$vaesenclast9
+	vaesenc	xmm12,xmm12,xmm15
+	vmovups	xmm14,XMMWORD[64+r15]
+	vaesenc	xmm12,xmm12,xmm14
+	vmovups	xmm15,XMMWORD[80+r15]
+	je	NEAR $L$vaesenclast9
+	vaesenc	xmm12,xmm12,xmm15
+	vmovups	xmm14,XMMWORD[96+r15]
+	vaesenc	xmm12,xmm12,xmm14
+	vmovups	xmm15,XMMWORD[112+r15]
+$L$vaesenclast9:
+	vaesenclast	xmm12,xmm12,xmm15
+	vmovups	xmm15,XMMWORD[((-112))+r15]
+	vmovups	xmm14,XMMWORD[((16-112))+r15]
+	xor	esi,eax
+	shrd	ebp,ebp,7
+	add	ecx,edx
+	add	ebx,DWORD[56+rsp]
+	xor	esi,ebp
+	mov	edi,ecx
+	shld	ecx,ecx,5
+	add	ebx,esi
+	xor	edi,ebp
+	shrd	edx,edx,7
+	add	ebx,ecx
+	add	eax,DWORD[60+rsp]
+	xor	edi,edx
+	mov	esi,ebx
+	shld	ebx,ebx,5
+	add	eax,edi
+	shrd	ecx,ecx,7
+	add	eax,ebx
+	vmovups	XMMWORD[48+r12*1+r13],xmm12
+	lea	r12,[64+r12]
+
+	add	eax,DWORD[r9]
+	add	esi,DWORD[4+r9]
+	add	ecx,DWORD[8+r9]
+	add	edx,DWORD[12+r9]
+	mov	DWORD[r9],eax
+	add	ebp,DWORD[16+r9]
+	mov	DWORD[4+r9],esi
+	mov	ebx,esi
+	mov	DWORD[8+r9],ecx
+	mov	edi,ecx
+	mov	DWORD[12+r9],edx
+	xor	edi,edx
+	mov	DWORD[16+r9],ebp
+	and	esi,edi
+	jmp	NEAR $L$oop_avx
+
+$L$done_avx:
+	add	ebx,DWORD[16+rsp]
+	xor	esi,ebp
+	mov	edi,ecx
+	shld	ecx,ecx,5
+	add	ebx,esi
+	xor	edi,ebp
+	shrd	edx,edx,7
+	add	ebx,ecx
+	add	eax,DWORD[20+rsp]
+	xor	edi,edx
+	mov	esi,ebx
+	shld	ebx,ebx,5
+	add	eax,edi
+	xor	esi,edx
+	shrd	ecx,ecx,7
+	add	eax,ebx
+	add	ebp,DWORD[24+rsp]
+	vaesenc	xmm12,xmm12,xmm14
+	vmovups	xmm15,XMMWORD[16+r15]
+	xor	esi,ecx
+	mov	edi,eax
+	shld	eax,eax,5
+	add	ebp,esi
+	xor	edi,ecx
+	shrd	ebx,ebx,7
+	add	ebp,eax
+	add	edx,DWORD[28+rsp]
+	xor	edi,ebx
+	mov	esi,ebp
+	shld	ebp,ebp,5
+	add	edx,edi
+	xor	esi,ebx
+	shrd	eax,eax,7
+	add	edx,ebp
+	add	ecx,DWORD[32+rsp]
+	xor	esi,eax
+	mov	edi,edx
+	shld	edx,edx,5
+	add	ecx,esi
+	vaesenc	xmm12,xmm12,xmm15
+	vmovups	xmm14,XMMWORD[32+r15]
+	xor	edi,eax
+	shrd	ebp,ebp,7
+	add	ecx,edx
+	add	ebx,DWORD[36+rsp]
+	xor	edi,ebp
+	mov	esi,ecx
+	shld	ecx,ecx,5
+	add	ebx,edi
+	xor	esi,ebp
+	shrd	edx,edx,7
+	add	ebx,ecx
+	add	eax,DWORD[40+rsp]
+	xor	esi,edx
+	mov	edi,ebx
+	shld	ebx,ebx,5
+	add	eax,esi
+	xor	edi,edx
+	shrd	ecx,ecx,7
+	add	eax,ebx
+	add	ebp,DWORD[44+rsp]
+	vaesenc	xmm12,xmm12,xmm14
+	vmovups	xmm15,XMMWORD[48+r15]
+	xor	edi,ecx
+	mov	esi,eax
+	shld	eax,eax,5
+	add	ebp,edi
+	xor	esi,ecx
+	shrd	ebx,ebx,7
+	add	ebp,eax
+	add	edx,DWORD[48+rsp]
+	xor	esi,ebx
+	mov	edi,ebp
+	shld	ebp,ebp,5
+	add	edx,esi
+	xor	edi,ebx
+	shrd	eax,eax,7
+	add	edx,ebp
+	add	ecx,DWORD[52+rsp]
+	xor	edi,eax
+	mov	esi,edx
+	shld	edx,edx,5
+	add	ecx,edi
+	cmp	r8d,11
+	jb	NEAR $L$vaesenclast10
+	vaesenc	xmm12,xmm12,xmm15
+	vmovups	xmm14,XMMWORD[64+r15]
+	vaesenc	xmm12,xmm12,xmm14
+	vmovups	xmm15,XMMWORD[80+r15]
+	je	NEAR $L$vaesenclast10
+	vaesenc	xmm12,xmm12,xmm15
+	vmovups	xmm14,XMMWORD[96+r15]
+	vaesenc	xmm12,xmm12,xmm14
+	vmovups	xmm15,XMMWORD[112+r15]
+$L$vaesenclast10:
+	vaesenclast	xmm12,xmm12,xmm15
+	vmovups	xmm15,XMMWORD[((-112))+r15]
+	vmovups	xmm14,XMMWORD[((16-112))+r15]
+	xor	esi,eax
+	shrd	ebp,ebp,7
+	add	ecx,edx
+	add	ebx,DWORD[56+rsp]
+	xor	esi,ebp
+	mov	edi,ecx
+	shld	ecx,ecx,5
+	add	ebx,esi
+	xor	edi,ebp
+	shrd	edx,edx,7
+	add	ebx,ecx
+	add	eax,DWORD[60+rsp]
+	xor	edi,edx
+	mov	esi,ebx
+	shld	ebx,ebx,5
+	add	eax,edi
+	shrd	ecx,ecx,7
+	add	eax,ebx
+	vmovups	XMMWORD[48+r12*1+r13],xmm12
+	mov	r8,QWORD[88+rsp]
+
+	add	eax,DWORD[r9]
+	add	esi,DWORD[4+r9]
+	add	ecx,DWORD[8+r9]
+	mov	DWORD[r9],eax
+	add	edx,DWORD[12+r9]
+	mov	DWORD[4+r9],esi
+	add	ebp,DWORD[16+r9]
+	mov	DWORD[8+r9],ecx
+	mov	DWORD[12+r9],edx
+	mov	DWORD[16+r9],ebp
+	vmovups	XMMWORD[r8],xmm12
+	vzeroall
+	movaps	xmm6,XMMWORD[((96+0))+rsp]
+	movaps	xmm7,XMMWORD[((96+16))+rsp]
+	movaps	xmm8,XMMWORD[((96+32))+rsp]
+	movaps	xmm9,XMMWORD[((96+48))+rsp]
+	movaps	xmm10,XMMWORD[((96+64))+rsp]
+	movaps	xmm11,XMMWORD[((96+80))+rsp]
+	movaps	xmm12,XMMWORD[((96+96))+rsp]
+	movaps	xmm13,XMMWORD[((96+112))+rsp]
+	movaps	xmm14,XMMWORD[((96+128))+rsp]
+	movaps	xmm15,XMMWORD[((96+144))+rsp]
+	lea	rsi,[264+rsp]
+
+	mov	r15,QWORD[rsi]
+
+	mov	r14,QWORD[8+rsi]
+
+	mov	r13,QWORD[16+rsi]
+
+	mov	r12,QWORD[24+rsi]
+
+	mov	rbp,QWORD[32+rsi]
+
+	mov	rbx,QWORD[40+rsi]
+
+	lea	rsp,[48+rsi]
+
+	mov	rdi,QWORD[8+rsp]	;WIN64 epilogue
+	mov	rsi,QWORD[16+rsp]
+	DB	0F3h,0C3h		;repret
+SEH64_ENDPROC_FRAME	aesni_cbc_sha1_enc_avx
+$L$SEH_end_aesni_cbc_sha1_enc_avx:
 section	.rdata rdata align=64
 ALIGN	64
 K_XX_XX:
@@ -1445,11 +3070,12 @@ ALIGN	64
 section .text
 
 ALIGN	32
-aesni_cbc_sha1_enc_shaext:
+SEH64_PROC_FRAME aesni_cbc_sha1_enc_shaext,PRIVATE
 	mov	QWORD[8+rsp],rdi	;WIN64 prologue
+SEH64_SAVEREG rdi, 8
 	mov	QWORD[16+rsp],rsi
+SEH64_SAVEREG rsi, 16
 	mov	rax,rsp
-$L$SEH_begin_aesni_cbc_sha1_enc_shaext:
 	mov	rdi,rcx
 	mov	rsi,rdx
 	mov	rdx,r8
@@ -1461,17 +3087,29 @@ $L$SEH_begin_aesni_cbc_sha1_enc_shaext:
 
 	mov	r10,QWORD[56+rsp]
 	lea	rsp,[((-168))+rsp]
+SEH64_ALLOCSTACK 168
 	movaps	XMMWORD[(-8-160)+rax],xmm6
+SEH64_SAVEXMM128 xmm6, 0	; .cfi_offset xmm6, -8-10*16-8 cfa_reg_offset=176 cfa_rsp=-176
 	movaps	XMMWORD[(-8-144)+rax],xmm7
+SEH64_SAVEXMM128 xmm7, 16	; .cfi_offset xmm7, -8-9*16-8 cfa_reg_offset=176 cfa_rsp=-176
 	movaps	XMMWORD[(-8-128)+rax],xmm8
+SEH64_SAVEXMM128 xmm8, 32	; .cfi_offset xmm8, -8-8*16-8 cfa_reg_offset=176 cfa_rsp=-176
 	movaps	XMMWORD[(-8-112)+rax],xmm9
+SEH64_SAVEXMM128 xmm9, 48	; .cfi_offset xmm9, -8-7*16-8 cfa_reg_offset=176 cfa_rsp=-176
 	movaps	XMMWORD[(-8-96)+rax],xmm10
+SEH64_SAVEXMM128 xmm10, 64	; .cfi_offset xmm10, -8-6*16-8 cfa_reg_offset=176 cfa_rsp=-176
 	movaps	XMMWORD[(-8-80)+rax],xmm11
+SEH64_SAVEXMM128 xmm11, 80	; .cfi_offset xmm11, -8-5*16-8 cfa_reg_offset=176 cfa_rsp=-176
 	movaps	XMMWORD[(-8-64)+rax],xmm12
+SEH64_SAVEXMM128 xmm12, 96	; .cfi_offset xmm12, -8-4*16-8 cfa_reg_offset=176 cfa_rsp=-176
 	movaps	XMMWORD[(-8-48)+rax],xmm13
+SEH64_SAVEXMM128 xmm13, 112	; .cfi_offset xmm13, -8-3*16-8 cfa_reg_offset=176 cfa_rsp=-176
 	movaps	XMMWORD[(-8-32)+rax],xmm14
+SEH64_SAVEXMM128 xmm14, 128	; .cfi_offset xmm14, -8-2*16-8 cfa_reg_offset=176 cfa_rsp=-176
 	movaps	XMMWORD[(-8-16)+rax],xmm15
-$L$prologue_shaext:
+SEH64_SAVEXMM128 xmm15, 144	; .cfi_offset xmm15, -8-1*16-8 cfa_reg_offset=176 cfa_rsp=-176
+	; cfa_rsp=-176
+SEH64_ENDPROLOG	; cfa_reg=%rsp cfa_reg_offset=176 cfa_rsp=-176
 	movdqu	xmm8,XMMWORD[r9]
 	movd	xmm9,DWORD[16+r9]
 	movdqa	xmm7,XMMWORD[((K_XX_XX+80))]
@@ -1547,17 +3185,17 @@ DB	15,56,202,227
 	pxor	xmm5,xmm3
 DB	15,56,201,243
 	cmp	r11d,11
-	jb	NEAR $L$aesenclast6
+	jb	NEAR $L$aesenclast11
 	movups	xmm0,XMMWORD[64+rcx]
 DB	102,15,56,220,209
 	movups	xmm1,XMMWORD[80+rcx]
 DB	102,15,56,220,208
-	je	NEAR $L$aesenclast6
+	je	NEAR $L$aesenclast11
 	movups	xmm0,XMMWORD[96+rcx]
 DB	102,15,56,220,209
 	movups	xmm1,XMMWORD[112+rcx]
 DB	102,15,56,220,208
-$L$aesenclast6:
+$L$aesenclast11:
 DB	102,15,56,221,209
 	movups	xmm0,XMMWORD[((16-112))+rcx]
 	movdqa	xmm10,xmm8
@@ -1613,17 +3251,17 @@ DB	15,56,202,236
 	pxor	xmm6,xmm4
 DB	15,56,201,220
 	cmp	r11d,11
-	jb	NEAR $L$aesenclast7
+	jb	NEAR $L$aesenclast12
 	movups	xmm0,XMMWORD[64+rcx]
 DB	102,15,56,220,209
 	movups	xmm1,XMMWORD[80+rcx]
 DB	102,15,56,220,208
-	je	NEAR $L$aesenclast7
+	je	NEAR $L$aesenclast12
 	movups	xmm0,XMMWORD[96+rcx]
 DB	102,15,56,220,209
 	movups	xmm1,XMMWORD[112+rcx]
 DB	102,15,56,220,208
-$L$aesenclast7:
+$L$aesenclast12:
 DB	102,15,56,221,209
 	movups	xmm0,XMMWORD[((16-112))+rcx]
 	movdqa	xmm9,xmm8
@@ -1679,17 +3317,17 @@ DB	15,56,202,245
 	pxor	xmm3,xmm5
 DB	15,56,201,229
 	cmp	r11d,11
-	jb	NEAR $L$aesenclast8
+	jb	NEAR $L$aesenclast13
 	movups	xmm0,XMMWORD[64+rcx]
 DB	102,15,56,220,209
 	movups	xmm1,XMMWORD[80+rcx]
 DB	102,15,56,220,208
-	je	NEAR $L$aesenclast8
+	je	NEAR $L$aesenclast13
 	movups	xmm0,XMMWORD[96+rcx]
 DB	102,15,56,220,209
 	movups	xmm1,XMMWORD[112+rcx]
 DB	102,15,56,220,208
-$L$aesenclast8:
+$L$aesenclast13:
 DB	102,15,56,221,209
 	movups	xmm0,XMMWORD[((16-112))+rcx]
 	movdqa	xmm10,xmm8
@@ -1743,17 +3381,17 @@ DB	102,15,56,220,209
 	movups	xmm1,XMMWORD[48+rcx]
 DB	102,15,56,220,208
 	cmp	r11d,11
-	jb	NEAR $L$aesenclast9
+	jb	NEAR $L$aesenclast14
 	movups	xmm0,XMMWORD[64+rcx]
 DB	102,15,56,220,209
 	movups	xmm1,XMMWORD[80+rcx]
 DB	102,15,56,220,208
-	je	NEAR $L$aesenclast9
+	je	NEAR $L$aesenclast14
 	movups	xmm0,XMMWORD[96+rcx]
 DB	102,15,56,220,209
 	movups	xmm1,XMMWORD[112+rcx]
 DB	102,15,56,220,208
-$L$aesenclast9:
+$L$aesenclast14:
 DB	102,15,56,221,209
 	movups	xmm0,XMMWORD[((16-112))+rcx]
 	dec	rdx
@@ -1779,130 +3417,8 @@ DB	102,15,56,221,209
 	movaps	xmm14,XMMWORD[((-8-32))+rax]
 	movaps	xmm15,XMMWORD[((-8-16))+rax]
 	mov	rsp,rax
-$L$epilogue_shaext:
 	mov	rdi,QWORD[8+rsp]	;WIN64 epilogue
 	mov	rsi,QWORD[16+rsp]
 	DB	0F3h,0C3h		;repret
-
+SEH64_ENDPROC_FRAME	aesni_cbc_sha1_enc_shaext
 $L$SEH_end_aesni_cbc_sha1_enc_shaext:
-EXTERN	__imp_RtlVirtualUnwind
-
-ALIGN	16
-ssse3_handler:
-	push	rsi
-	push	rdi
-	push	rbx
-	push	rbp
-	push	r12
-	push	r13
-	push	r14
-	push	r15
-	pushfq
-	sub	rsp,64
-
-	mov	rax,QWORD[120+r8]
-	mov	rbx,QWORD[248+r8]
-
-	mov	rsi,QWORD[8+r9]
-	mov	r11,QWORD[56+r9]
-
-	mov	r10d,DWORD[r11]
-	lea	r10,[r10*1+rsi]
-	cmp	rbx,r10
-	jb	NEAR $L$common_seh_tail
-
-	mov	rax,QWORD[152+r8]
-
-	mov	r10d,DWORD[4+r11]
-	lea	r10,[r10*1+rsi]
-	cmp	rbx,r10
-	jae	NEAR $L$common_seh_tail
-	lea	r10,[aesni_cbc_sha1_enc_shaext]
-	cmp	rbx,r10
-	jb	NEAR $L$seh_no_shaext
-
-	lea	rsi,[rax]
-	lea	rdi,[512+r8]
-	mov	ecx,20
-	DD	0xa548f3fc
-	lea	rax,[168+rax]
-	jmp	NEAR $L$common_seh_tail
-$L$seh_no_shaext:
-	lea	rsi,[96+rax]
-	lea	rdi,[512+r8]
-	mov	ecx,20
-	DD	0xa548f3fc
-	lea	rax,[264+rax]
-
-	mov	r15,QWORD[rax]
-	mov	r14,QWORD[8+rax]
-	mov	r13,QWORD[16+rax]
-	mov	r12,QWORD[24+rax]
-	mov	rbp,QWORD[32+rax]
-	mov	rbx,QWORD[40+rax]
-	lea	rax,[48+rax]
-	mov	QWORD[144+r8],rbx
-	mov	QWORD[160+r8],rbp
-	mov	QWORD[216+r8],r12
-	mov	QWORD[224+r8],r13
-	mov	QWORD[232+r8],r14
-	mov	QWORD[240+r8],r15
-
-$L$common_seh_tail:
-	mov	rdi,QWORD[8+rax]
-	mov	rsi,QWORD[16+rax]
-	mov	QWORD[152+r8],rax
-	mov	QWORD[168+r8],rsi
-	mov	QWORD[176+r8],rdi
-
-	mov	rdi,QWORD[40+r9]
-	mov	rsi,r8
-	mov	ecx,154
-	DD	0xa548f3fc
-
-	mov	rsi,r9
-	xor	rcx,rcx
-	mov	rdx,QWORD[8+rsi]
-	mov	r8,QWORD[rsi]
-	mov	r9,QWORD[16+rsi]
-	mov	r10,QWORD[40+rsi]
-	lea	r11,[56+rsi]
-	lea	r12,[24+rsi]
-	mov	QWORD[32+rsp],r10
-	mov	QWORD[40+rsp],r11
-	mov	QWORD[48+rsp],r12
-	mov	QWORD[56+rsp],rcx
-	call	QWORD[__imp_RtlVirtualUnwind]
-
-	mov	eax,1
-	add	rsp,64
-	popfq
-	pop	r15
-	pop	r14
-	pop	r13
-	pop	r12
-	pop	rbp
-	pop	rbx
-	pop	rdi
-	pop	rsi
-	DB	0F3h,0C3h		;repret
-
-
-section	.pdata rdata align=4
-ALIGN	4
-	DD	$L$SEH_begin_aesni_cbc_sha1_enc_ssse3 wrt ..imagebase
-	DD	$L$SEH_end_aesni_cbc_sha1_enc_ssse3 wrt ..imagebase
-	DD	$L$SEH_info_aesni_cbc_sha1_enc_ssse3 wrt ..imagebase
-	DD	$L$SEH_begin_aesni_cbc_sha1_enc_shaext wrt ..imagebase
-	DD	$L$SEH_end_aesni_cbc_sha1_enc_shaext wrt ..imagebase
-	DD	$L$SEH_info_aesni_cbc_sha1_enc_shaext wrt ..imagebase
-section	.xdata rdata align=8
-ALIGN	8
-$L$SEH_info_aesni_cbc_sha1_enc_ssse3:
-DB	9,0,0,0
-	DD	ssse3_handler wrt ..imagebase
-	DD	$L$prologue_ssse3 wrt ..imagebase,$L$epilogue_ssse3 wrt ..imagebase
-$L$SEH_info_aesni_cbc_sha1_enc_shaext:
-DB	9,0,0,0
-	DD	ssse3_handler wrt ..imagebase
-	DD	$L$prologue_shaext wrt ..imagebase,$L$epilogue_shaext wrt ..imagebase
