@@ -54,6 +54,8 @@ $code.=<<___;
 .type	padlock_capability,\@abi-omnipotent
 .align	16
 padlock_capability:
+.cfi_startproc
+.cfi_endprolog # Not true..
 	mov	%rbx,%r8
 	xor	%eax,%eax
 	cpuid
@@ -87,12 +89,15 @@ padlock_capability:
 .Lnoluck:
 	mov	%r8,%rbx
 	ret
+.cfi_endproc
 .size	padlock_capability,.-padlock_capability
 
 .globl	padlock_key_bswap
 .type	padlock_key_bswap,\@abi-omnipotent,0
 .align	16
 padlock_key_bswap:
+.cfi_startproc
+.cfi_endprolog
 	mov	240($arg1),%edx
 	inc	%edx
 	shl	\$2,%edx
@@ -104,23 +109,29 @@ padlock_key_bswap:
 	sub	\$1,%edx
 	jnz	.Lbswap_loop
 	ret
+.cfi_endproc
 .size	padlock_key_bswap,.-padlock_key_bswap
 
 .globl	padlock_verify_context
 .type	padlock_verify_context,\@abi-omnipotent
 .align	16
 padlock_verify_context:
+.cfi_startproc
+.cfi_endprolog
 	mov	$arg1,$ctx
 	pushf
 	lea	.Lpadlock_saved_context(%rip),%rax
 	call	_padlock_verify_ctx
 	lea	8(%rsp),%rsp
 	ret
+.cfi_endproc
 .size	padlock_verify_context,.-padlock_verify_context
 
 .type	_padlock_verify_ctx,\@abi-omnipotent
 .align	16
 _padlock_verify_ctx:
+.cfi_startproc
+.cfi_endprolog
 	mov	8(%rsp),%r8
 	bt	\$30,%r8
 	jnc	.Lverified
@@ -131,21 +142,27 @@ _padlock_verify_ctx:
 .Lverified:
 	mov	$ctx,(%rax)
 	ret
+.cfi_endproc
 .size	_padlock_verify_ctx,.-_padlock_verify_ctx
 
 .globl	padlock_reload_key
 .type	padlock_reload_key,\@abi-omnipotent
 .align	16
 padlock_reload_key:
+.cfi_startproc
+.cfi_endprolog
 	pushf
 	popf
 	ret
+.cfi_endproc
 .size	padlock_reload_key,.-padlock_reload_key
 
 .globl	padlock_aes_block
 .type	padlock_aes_block,\@function,3
 .align	16
 padlock_aes_block:
+.cfi_startproc
+.cfi_endprolog # Not true..
 	mov	%rbx,%r8
 	mov	\$1,$len
 	lea	32($ctx),%rbx		# key
@@ -153,25 +170,32 @@ padlock_aes_block:
 	.byte	0xf3,0x0f,0xa7,0xc8	# rep xcryptecb
 	mov	%r8,%rbx
 	ret
+.cfi_endproc
 .size	padlock_aes_block,.-padlock_aes_block
 
 .globl	padlock_xstore
 .type	padlock_xstore,\@function,2
 .align	16
 padlock_xstore:
+.cfi_startproc
+.cfi_endprolog
 	mov	%esi,%edx
 	.byte	0x0f,0xa7,0xc0		# xstore
 	ret
+.cfi_endproc
 .size	padlock_xstore,.-padlock_xstore
 
 .globl	padlock_sha1_oneshot
 .type	padlock_sha1_oneshot,\@function,3
 .align	16
 padlock_sha1_oneshot:
+.cfi_startproc
 	mov	%rdx,%rcx
 	mov	%rdi,%rdx		# put aside %rdi
 	movups	(%rdi),%xmm0		# copy-in context
 	sub	\$128+8,%rsp
+.cfi_stackalloc 128+8
+.cfi_endprolog
 	mov	16(%rdi),%eax
 	movaps	%xmm0,(%rsp)
 	mov	%rsp,%rdi
@@ -184,16 +208,20 @@ padlock_sha1_oneshot:
 	movups	%xmm0,(%rdx)		# copy-out context
 	mov	%eax,16(%rdx)
 	ret
+.cfi_endproc
 .size	padlock_sha1_oneshot,.-padlock_sha1_oneshot
 
 .globl	padlock_sha1_blocks
 .type	padlock_sha1_blocks,\@function,3
 .align	16
 padlock_sha1_blocks:
+.cfi_startproc
 	mov	%rdx,%rcx
 	mov	%rdi,%rdx		# put aside %rdi
 	movups	(%rdi),%xmm0		# copy-in context
 	sub	\$128+8,%rsp
+.cfi_stackalloc 128+8
+.cfi_endprolog
 	mov	16(%rdi),%eax
 	movaps	%xmm0,(%rsp)
 	mov	%rsp,%rdi
@@ -206,16 +234,20 @@ padlock_sha1_blocks:
 	movups	%xmm0,(%rdx)		# copy-out context
 	mov	%eax,16(%rdx)
 	ret
+.cfi_endproc
 .size	padlock_sha1_blocks,.-padlock_sha1_blocks
 
 .globl	padlock_sha256_oneshot
 .type	padlock_sha256_oneshot,\@function,3
 .align	16
 padlock_sha256_oneshot:
+.cfi_startproc
 	mov	%rdx,%rcx
 	mov	%rdi,%rdx		# put aside %rdi
 	movups	(%rdi),%xmm0		# copy-in context
 	sub	\$128+8,%rsp
+.cfi_stackalloc 128+8
+.cfi_endprolog
 	movups	16(%rdi),%xmm1
 	movaps	%xmm0,(%rsp)
 	mov	%rsp,%rdi
@@ -228,16 +260,20 @@ padlock_sha256_oneshot:
 	movups	%xmm0,(%rdx)		# copy-out context
 	movups	%xmm1,16(%rdx)
 	ret
+.cfi_endproc
 .size	padlock_sha256_oneshot,.-padlock_sha256_oneshot
 
 .globl	padlock_sha256_blocks
 .type	padlock_sha256_blocks,\@function,3
 .align	16
 padlock_sha256_blocks:
+.cfi_startproc
 	mov	%rdx,%rcx
 	mov	%rdi,%rdx		# put aside %rdi
 	movups	(%rdi),%xmm0		# copy-in context
 	sub	\$128+8,%rsp
+.cfi_stackalloc 128+8
+.cfi_endprolog
 	movups	16(%rdi),%xmm1
 	movaps	%xmm0,(%rsp)
 	mov	%rsp,%rdi
@@ -250,16 +286,20 @@ padlock_sha256_blocks:
 	movups	%xmm0,(%rdx)		# copy-out context
 	movups	%xmm1,16(%rdx)
 	ret
+.cfi_endproc
 .size	padlock_sha256_blocks,.-padlock_sha256_blocks
 
 .globl	padlock_sha512_blocks
 .type	padlock_sha512_blocks,\@function,3
 .align	16
 padlock_sha512_blocks:
+.cfi_startproc
 	mov	%rdx,%rcx
 	mov	%rdi,%rdx		# put aside %rdi
 	movups	(%rdi),%xmm0		# copy-in context
 	sub	\$128+8,%rsp
+.cfi_stackalloc 128+8
+.cfi_endprolog
 	movups	16(%rdi),%xmm1
 	movups	32(%rdi),%xmm2
 	movups	48(%rdi),%xmm3
@@ -279,6 +319,7 @@ padlock_sha512_blocks:
 	movups	%xmm2,32(%rdx)
 	movups	%xmm3,48(%rdx)
 	ret
+.cfi_endproc
 .size	padlock_sha512_blocks,.-padlock_sha512_blocks
 ___
 
@@ -291,8 +332,11 @@ $code.=<<___;
 .type	padlock_${mode}_encrypt,\@function,4
 .align	16
 padlock_${mode}_encrypt:
+.cfi_startproc
 	push	%rbp
+.cfi_push	%rbp
 	push	%rbx
+.cfi_push	%rbx
 
 	xor	%eax,%eax
 	test	\$15,$ctx
@@ -301,6 +345,7 @@ padlock_${mode}_encrypt:
 	jnz	.L${mode}_abort
 	lea	.Lpadlock_saved_context(%rip),%rax
 	pushf
+.cfi_stackalloc	8
 	cld
 	call	_padlock_verify_ctx
 	lea	16($ctx),$ctx		# control word
@@ -318,6 +363,8 @@ padlock_${mode}_encrypt:
 	mov	\$$PADLOCK_CHUNK,$chunk
 	not	%rax			# out_misaligned?-1:0
 	lea	(%rsp),%rbp
+.cfi_def_cfa_register	%rbp
+.cfi_endprolog
 	cmp	$chunk,$len
 	cmovc	$len,$chunk		# chunk=len>PADLOCK_CHUNK?PADLOCK_CHUNK:len
 	and	$chunk,%rax		# out_misaligned?chunk:0
@@ -562,6 +609,7 @@ $code.=<<___;
 	pop	%rbx
 	pop	%rbp
 	ret
+.cfi_endproc
 .size	padlock_${mode}_encrypt,.-padlock_${mode}_encrypt
 ___
 }
