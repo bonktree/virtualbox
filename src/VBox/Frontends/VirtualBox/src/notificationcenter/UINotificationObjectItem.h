@@ -1,4 +1,4 @@
-/* $Id: UINotificationObjectItem.h 113288 2026-03-09 09:20:25Z sergey.dubov@oracle.com $ */
+/* $Id: UINotificationObjectItem.h 113301 2026-03-10 11:21:14Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - UINotificationObjectItem class declaration.
  */
@@ -154,6 +154,8 @@ protected:
 
     /** Prepares widgets. */
     virtual void prepareWidgets() RT_OVERRIDE RT_FINAL;
+    /** Prepares connections. */
+    virtual void prepareConnections() RT_OVERRIDE RT_FINAL;
 
     /** Returns forget-control width-hint. */
     virtual int widthHintForgetControl() const RT_OVERRIDE RT_FINAL;

@@ -1,4 +1,4 @@
-/* $Id: UINotificationObjectItem.cpp 113288 2026-03-09 09:20:25Z sergey.dubov@oracle.com $ */
+/* $Id: UINotificationObjectItem.cpp 113301 2026-03-10 11:21:14Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - UINotificationObjectItem class implementation.
  */
@@ -347,14 +347,23 @@ void UINotificationMessageItem::prepareWidgets()
                 m_pButtonForget->setFont(myFont);
                 m_pButtonForget->setIcon(UIIconPool::iconSet(":/close_popup_16px.png"));
                 m_pButtonForget->setIconSize(QSize(10, 10));
-                connect(m_pButtonForget, &QIToolButton::clicked,
-                        m_pObject, &UINotificationObject::dismiss,
-                        Qt::QueuedConnection);
 
                 m_pLayoutMain->addWidget(m_pButtonForget);
             }
         }
     }
+}
+
+void UINotificationMessageItem::prepareConnections()
+{
+    /* Call to base-class: */
+    UINotificationObjectItem::prepareConnections();
+
+    /* Connect buttons: */
+    AssertPtrReturnVoid(m_pButtonForget);
+    connect(m_pButtonForget, &QIToolButton::clicked,
+            m_pObject, &UINotificationObject::dismiss,
+            Qt::QueuedConnection);
 }
 
 int UINotificationMessageItem::widthHintForgetControl() const
