@@ -378,14 +378,16 @@ ___
 .cfi_def_cfa_register %rbp
 ___
   if ($win64) {
+    $code .= <<___;
+.cfi_adjust_cfa_offset `-$XMM_STORAGE`
+___
 
     # ; xmm6:xmm15 need to be preserved on Windows
     foreach my $reg_idx (6 .. 15) {
       my $xmm_reg_offset = ($reg_idx - 6) * 16;
-      my $xmm_cfa_offset = 8 + 8*8 + $XMM_STORAGE+8;
       $code .= <<___;
         vmovdqu           %xmm${reg_idx},$xmm_reg_offset(%rsp)
-.cfi_offset %xmm${reg_idx},$xmm_cfa_offset
+.cfi_sp_offset %xmm${reg_idx},$xmm_reg_offset
 ___
     }
   }

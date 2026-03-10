@@ -811,8 +811,7 @@ my %globals;
 				$cfa_reg_offset += $diff;
 				$cfa_rsp -= $diff if ($cfa_reg eq "%rsp");
 				$last_cfa_expression = undef;
-				if ($win64 && $cfi_state eq 'prologue') {
-				    die ".cfi_$dir: cfa_reg=$cfa_reg" if ($cfa_reg ne '%rsp');
+				if ($win64 && $cfi_state eq 'prologue' && $cfa_reg eq '%rsp') {
 				    $self->{value} = "SEH64_ALLOCSTACK $diff";
 				}
 				last;
