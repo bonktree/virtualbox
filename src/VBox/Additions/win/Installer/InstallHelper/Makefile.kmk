@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 113315 2026-03-10 22:40:40Z knut.osmundsen@oracle.com $
+# $Id: Makefile.kmk 113318 2026-03-10 22:52:47Z knut.osmundsen@oracle.com $
 ## @file
 # Sub-Makefile for the Windows Guest Additions Installer Helper DLL.
 #
@@ -51,7 +51,9 @@ endif
 VBoxGuestInstallHelper_DEPS     = $(VBOX_SVN_REV_KMK)
 VBoxGuestInstallHelper_SDKS     = ReorderCompilerIncs $(VBOX_WINPSDK_GST) $(VBOX_WINDDK_GST)
 VBoxGuestInstallHelper_INCS     = ../../include
-VBoxGuestInstallHelper_LDFLAGS = -SubSystem:console -Entry:CustomMainEntrypoint
+VBoxGuestInstallHelper_LDFLAGS  = -SubSystem:console ## @todo arm64 -Entry:CustomMainEntrypoint (NOCRT for arm64)
+VBoxGuestInstallHelper_LDFLAGS.x86   = -Entry:CustomMainEntrypoint
+VBoxGuestInstallHelper_LDFLAGS.amd64 = -Entry:CustomMainEntrypoint
 VBoxGuestInstallHelper_SOURCES = \
 	VBoxGuestInstallHelper.cpp \
 	VBoxGuestInstallHelper.rc \
