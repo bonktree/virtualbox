@@ -1,4 +1,4 @@
-/* $Id: NATNetworkImpl.h 112403 2026-01-11 19:29:08Z knut.osmundsen@oracle.com $ */
+/* $Id: NATNetworkImpl.h 113369 2026-03-11 22:46:08Z jack.doherty@oracle.com $ */
 /** @file
  * INATNetwork implementation header, lives in VBoxSVC.
  */
@@ -143,6 +143,7 @@ private:
     void i_updateDnsOptions();
     void i_updateDomainNameOption(ComPtr<IHost> &host);
     void i_updateDomainNameServerOption(ComPtr<IHost> &host);
+    void i_updateDomainSearchOption(ComPtr<IHost> &host);
 
     struct Data;
     Data *m;
