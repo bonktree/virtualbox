@@ -1195,8 +1195,8 @@ DECLINLINE(RTR3PTR) ASMAtomicXchgR3Ptr(RTR3PTR volatile RT_FAR *ppvR3, RTR3PTR p
  * @param   uNew    The value to assign to *pu.
  * @todo This is busted as its missing the result argument.
  */
-#define ASMAtomicXchgSize(pu, uNew) \
-    do { \
+#if !RT_CPLUSPLUS_PREREQ(201700)
+# define ASMAtomicXchgSize(pu, uNew) do { \
         switch (sizeof(*(pu))) { \
             case 1: ASMAtomicXchgU8( (volatile uint8_t  RT_FAR *)(void RT_FAR *)(pu), (uint8_t)(uNew)); break; \
             case 2: ASMAtomicXchgU16((volatile uint16_t RT_FAR *)(void RT_FAR *)(pu), (uint16_t)(uNew)); break; \
@@ -1205,6 +1205,20 @@ DECLINLINE(RTR3PTR) ASMAtomicXchgR3Ptr(RTR3PTR volatile RT_FAR *ppvR3, RTR3PTR p
             default: AssertMsgFailed(("ASMAtomicXchgSize: size %d is not supported\n", sizeof(*(pu)))); \
         } \
     } while (0)
+#else
+# define ASMAtomicXchgSize(pu, uNew) do { \
+        if RT_CONSTEXPR_IF(sizeof(*(pu)) == 1) \
+            ASMAtomicXchgU8( (volatile uint8_t  RT_FAR *)(void RT_FAR *)(pu), (uint8_t)(uNew)); \
+        else if RT_CONSTEXPR_IF(sizeof(*(pu)) == 2) \
+            ASMAtomicXchgU16((volatile uint16_t RT_FAR *)(void RT_FAR *)(pu), (uint16_t)(uNew)); \
+        else if RT_CONSTEXPR_IF(sizeof(*(pu)) == 4) \
+            ASMAtomicXchgU32((volatile uint32_t RT_FAR *)(void RT_FAR *)(pu), (uint32_t)(uNew)); \
+        else if RT_CONSTEXPR_IF(sizeof(*(pu)) == 8) \
+            ASMAtomicXchgU64((volatile uint64_t RT_FAR *)(void RT_FAR *)(pu), (uint64_t)(uNew)); \
+        else \
+            AssertMsgFailed(("ASMAtomicXchgSize: size %d is not supported\n", sizeof(*(pu)))); \
+    } while (0)
+#endif
 
 /**
  * Atomically Exchange a value which size might differ
@@ -1214,8 +1228,8 @@ DECLINLINE(RTR3PTR) ASMAtomicXchgR3Ptr(RTR3PTR volatile RT_FAR *ppvR3, RTR3PTR p
  * @param   uNew    The value to assign to *pu.
  * @param   puRes   Where to store the current *pu value.
  */
-#define ASMAtomicXchgSizeCorrect(pu, uNew, puRes) \
-    do { \
+#if !RT_CPLUSPLUS_PREREQ(201700)
+# define ASMAtomicXchgSizeCorrect(pu, uNew, puRes) do { \
         switch (sizeof(*(pu))) { \
             case 1: *(uint8_t  RT_FAR *)(puRes) = ASMAtomicXchgU8( (volatile uint8_t  RT_FAR *)(void RT_FAR *)(pu), (uint8_t)(uNew)); break; \
             case 2: *(uint16_t RT_FAR *)(puRes) = ASMAtomicXchgU16((volatile uint16_t RT_FAR *)(void RT_FAR *)(pu), (uint16_t)(uNew)); break; \
@@ -1224,7 +1238,20 @@ DECLINLINE(RTR3PTR) ASMAtomicXchgR3Ptr(RTR3PTR volatile RT_FAR *ppvR3, RTR3PTR p
             default: AssertMsgFailed(("ASMAtomicXchgSize: size %d is not supported\n", sizeof(*(pu)))); \
         } \
     } while (0)
-
+#else
+# define ASMAtomicXchgSizeCorrect(pu, uNew, puRes) do { \
+        if RT_CONSTEXPR_IF(sizeof(*(pu)) == 1) \
+            *(uint8_t  RT_FAR *)(puRes) = ASMAtomicXchgU8( (volatile uint8_t  RT_FAR *)(void RT_FAR *)(pu), (uint8_t)(uNew)); \
+        else if RT_CONSTEXPR_IF(sizeof(*(pu)) == 2) \
+            *(uint16_t RT_FAR *)(puRes) = ASMAtomicXchgU16((volatile uint16_t RT_FAR *)(void RT_FAR *)(pu), (uint16_t)(uNew)); \
+        else if RT_CONSTEXPR_IF(sizeof(*(pu)) == 4) \
+            *(uint32_t RT_FAR *)(puRes) = ASMAtomicXchgU32((volatile uint32_t RT_FAR *)(void RT_FAR *)(pu), (uint32_t)(uNew)); \
+        else if RT_CONSTEXPR_IF(sizeof(*(pu)) == 8) \
+            *(uint64_t RT_FAR *)(puRes) = ASMAtomicXchgU64((volatile uint64_t RT_FAR *)(void RT_FAR *)(pu), (uint64_t)(uNew)); \
+        else \
+            AssertMsgFailed(("ASMAtomicXchgSize: size %d is not supported\n", sizeof(*(pu)))); \
+    } while (0)
+#endif
 
 
 /**
@@ -1916,8 +1943,8 @@ DECLINLINE(bool) ASMAtomicCmpXchgPtrVoid(void RT_FAR * volatile RT_FAR *ppv, con
  * @remarks x86: Requires a 486 or later.
  * @todo Rename ASMAtomicCmpWriteSize
  */
-#define ASMAtomicCmpXchgSize(pu, uNew, uOld, fRc) \
-    do { \
+#if !RT_CPLUSPLUS_PREREQ(201700)
+# define ASMAtomicCmpXchgSize(pu, uNew, uOld, fRc) do { \
         switch (sizeof(*(pu))) { \
             case 4: (fRc) = ASMAtomicCmpXchgU32((volatile uint32_t RT_FAR *)(void RT_FAR *)(pu), (uint32_t)(uNew), (uint32_t)(uOld)); \
                 break; \
@@ -1928,7 +1955,19 @@ DECLINLINE(bool) ASMAtomicCmpXchgPtrVoid(void RT_FAR * volatile RT_FAR *ppv, con
                 break; \
         } \
     } while (0)
-
+#else
+# define ASMAtomicCmpXchgSize(pu, uNew, uOld, fRc) do { \
+        if RT_CONSTEXPR_IF(sizeof(*(pu)) == 4) \
+            (fRc) = ASMAtomicCmpXchgU32((volatile uint32_t RT_FAR *)(void RT_FAR *)(pu), (uint32_t)(uNew), (uint32_t)(uOld)); \
+        else if RT_CONSTEXPR_IF(sizeof(*(pu)) == 8) \
+            (fRc) = ASMAtomicCmpXchgU64((volatile uint64_t RT_FAR *)(void RT_FAR *)(pu), (uint64_t)(uNew), (uint64_t)(uOld)); \
+        else \
+        { \
+            AssertMsgFailed(("ASMAtomicCmpXchgSize: size %d is not supported\n", sizeof(*(pu)))); \
+            (fRc) = false; \
+        } \
+    } while (0)
+#endif
 
 /**
  * Atomically Compare and Exchange an unsigned 8-bit value, additionally passes
@@ -2789,8 +2828,8 @@ DECLINLINE(bool) ASMAtomicCmpXchgU128U(volatile RTUINT128U *pu128, const RTUINT1
  *
  * @remarks x86: Requires a 486 or later.
  */
-#define ASMAtomicCmpXchgExSize(pu, uNew, uOld, fRc, puOldVal) \
-    do { \
+#if !RT_CPLUSPLUS_PREREQ(201700)
+# define ASMAtomicCmpXchgExSize(pu, uNew, uOld, fRc, puOldVal) do { \
         switch (sizeof(*(pu))) { \
             case 4: (fRc) = ASMAtomicCmpXchgExU32((volatile uint32_t RT_FAR *)(void RT_FAR *)(pu), (uint32_t)(uNew), (uint32_t)(uOld), (uint32_t RT_FAR *)(uOldVal)); \
                 break; \
@@ -2802,7 +2841,20 @@ DECLINLINE(bool) ASMAtomicCmpXchgU128U(volatile RTUINT128U *pu128, const RTUINT1
                 break; \
         } \
     } while (0)
-
+#else
+# define ASMAtomicCmpXchgExSize(pu, uNew, uOld, fRc, puOldVal) do { \
+        if RT_CONSTEXPR_IF(sizeof(*(pu)) == 4) \
+            (fRc) = ASMAtomicCmpXchgExU32((volatile uint32_t RT_FAR *)(void RT_FAR *)(pu), (uint32_t)(uNew), (uint32_t)(uOld), (uint32_t RT_FAR *)(uOldVal)); \
+        else if RT_CONSTEXPR_IF(sizeof(*(pu)) == 8) \
+            (fRc) = ASMAtomicCmpXchgExU64((volatile uint64_t RT_FAR *)(void RT_FAR *)(pu), (uint64_t)(uNew), (uint64_t)(uOld), (uint64_t RT_FAR *)(uOldVal)); \
+        else \
+        { \
+            AssertMsgFailed(("ASMAtomicCmpXchgSize: size %d is not supported\n", sizeof(*(pu)))); \
+            (fRc) = false; \
+            (uOldVal) = 0; \
+        } \
+    } while (0)
+#endif
 
 /**
  * Atomically Compare and Exchange a pointer value, additionally
@@ -4143,8 +4195,8 @@ DECLINLINE(bool) ASMAtomicUoReadBool(volatile bool RT_FAR *pf) RT_NOTHROW_DEF
  * @param   pu      Pointer to the variable to read.
  * @param   puRes   Where to store the result.
  */
-#define ASMAtomicReadSize(pu, puRes) \
-    do { \
+#if !RT_CPLUSPLUS_PREREQ(201700)
+# define ASMAtomicReadSize(pu, puRes) do { \
         switch (sizeof(*(pu))) { \
             case 1: *(uint8_t  RT_FAR *)(puRes) = ASMAtomicReadU8( (volatile uint8_t  RT_FAR *)(void RT_FAR *)(pu)); break; \
             case 2: *(uint16_t RT_FAR *)(puRes) = ASMAtomicReadU16((volatile uint16_t RT_FAR *)(void RT_FAR *)(pu)); break; \
@@ -4153,6 +4205,20 @@ DECLINLINE(bool) ASMAtomicUoReadBool(volatile bool RT_FAR *pf) RT_NOTHROW_DEF
             default: AssertMsgFailed(("ASMAtomicReadSize: size %d is not supported\n", sizeof(*(pu)))); \
         } \
     } while (0)
+#else
+# define ASMAtomicReadSize(pu, puRes) do { \
+        if RT_CONSTEXPR_IF(sizeof(*(pu)) == 1) \
+            *(uint8_t  RT_FAR *)(puRes) = ASMAtomicReadU8( (volatile uint8_t  RT_FAR *)(void RT_FAR *)(pu)); \
+        else if RT_CONSTEXPR_IF(sizeof(*(pu)) == 2) \
+            *(uint16_t RT_FAR *)(puRes) = ASMAtomicReadU16((volatile uint16_t RT_FAR *)(void RT_FAR *)(pu)); \
+        else if RT_CONSTEXPR_IF(sizeof(*(pu)) == 4) \
+            *(uint32_t RT_FAR *)(puRes) = ASMAtomicReadU32((volatile uint32_t RT_FAR *)(void RT_FAR *)(pu)); \
+        else if RT_CONSTEXPR_IF(sizeof(*(pu)) == 8) \
+            *(uint64_t RT_FAR *)(puRes) = ASMAtomicReadU64((volatile uint64_t RT_FAR *)(void RT_FAR *)(pu)); \
+        else \
+            AssertMsgFailed(("ASMAtomicReadSize: size %d is not supported\n", sizeof(*(pu)))); \
+    } while (0)
+#endif
 
 
 /**
@@ -4162,8 +4228,8 @@ DECLINLINE(bool) ASMAtomicUoReadBool(volatile bool RT_FAR *pf) RT_NOTHROW_DEF
  * @param   pu      Pointer to the variable to read.
  * @param   puRes   Where to store the result.
  */
-#define ASMAtomicUoReadSize(pu, puRes) \
-    do { \
+#if !RT_CPLUSPLUS_PREREQ(201700)
+# define ASMAtomicUoReadSize(pu, puRes) do { \
         switch (sizeof(*(pu))) { \
             case 1: *(uint8_t  RT_FAR *)(puRes) = ASMAtomicUoReadU8( (volatile uint8_t  RT_FAR *)(void RT_FAR *)(pu)); break; \
             case 2: *(uint16_t RT_FAR *)(puRes) = ASMAtomicUoReadU16((volatile uint16_t RT_FAR *)(void RT_FAR *)(pu)); break; \
@@ -4172,6 +4238,20 @@ DECLINLINE(bool) ASMAtomicUoReadBool(volatile bool RT_FAR *pf) RT_NOTHROW_DEF
             default: AssertMsgFailed(("ASMAtomicReadSize: size %d is not supported\n", sizeof(*(pu)))); \
         } \
     } while (0)
+#else
+# define ASMAtomicUoReadSize(pu, puRes) do { \
+        if RT_CONSTEXPR_IF(sizeof(*(pu)) == 1) \
+            *(uint8_t  RT_FAR *)(puRes) = ASMAtomicUoReadU8( (volatile uint8_t  RT_FAR *)(void RT_FAR *)(pu)); \
+        else if RT_CONSTEXPR_IF(sizeof(*(pu)) == 2) \
+            *(uint16_t RT_FAR *)(puRes) = ASMAtomicUoReadU16((volatile uint16_t RT_FAR *)(void RT_FAR *)(pu)); \
+        else if RT_CONSTEXPR_IF(sizeof(*(pu)) == 4) \
+            *(uint32_t RT_FAR *)(puRes) = ASMAtomicUoReadU32((volatile uint32_t RT_FAR *)(void RT_FAR *)(pu)); \
+        else if RT_CONSTEXPR_IF(sizeof(*(pu)) == 8) \
+            *(uint64_t RT_FAR *)(puRes) = ASMAtomicUoReadU64((volatile uint64_t RT_FAR *)(void RT_FAR *)(pu)); \
+        else \
+            AssertMsgFailed(("ASMAtomicReadSize: size %d is not supported\n", sizeof(*(pu)))); \
+    } while (0)
+#endif
 
 
 /**
@@ -4933,8 +5013,8 @@ DECLINLINE(void) ASMAtomicUoWritePtrVoid(void RT_FAR * volatile RT_FAR *ppv, con
  * @param   pu      Pointer to the variable to update.
  * @param   uNew    The value to assign to *pu.
  */
-#define ASMAtomicWriteSize(pu, uNew) \
-    do { \
+#if !RT_CPLUSPLUS_PREREQ(201700)
+# define ASMAtomicWriteSize(pu, uNew) do { \
         switch (sizeof(*(pu))) { \
             case 1: ASMAtomicWriteU8( (volatile uint8_t  RT_FAR *)(void RT_FAR *)(pu), (uint8_t )(uNew)); break; \
             case 2: ASMAtomicWriteU16((volatile uint16_t RT_FAR *)(void RT_FAR *)(pu), (uint16_t)(uNew)); break; \
@@ -4943,6 +5023,20 @@ DECLINLINE(void) ASMAtomicUoWritePtrVoid(void RT_FAR * volatile RT_FAR *ppv, con
             default: AssertMsgFailed(("ASMAtomicWriteSize: size %d is not supported\n", sizeof(*(pu)))); \
         } \
     } while (0)
+#else
+# define ASMAtomicWriteSize(pu, uNew) do { \
+        if RT_CONSTEXPR_IF(sizeof(*(pu)) == 1) \
+            ASMAtomicWriteU8( (volatile uint8_t  RT_FAR *)(void RT_FAR *)(pu), (uint8_t )(uNew)); \
+        else if RT_CONSTEXPR_IF(sizeof(*(pu)) == 2) \
+            ASMAtomicWriteU16((volatile uint16_t RT_FAR *)(void RT_FAR *)(pu), (uint16_t)(uNew)); \
+        else if RT_CONSTEXPR_IF(sizeof(*(pu)) == 4) \
+            ASMAtomicWriteU32((volatile uint32_t RT_FAR *)(void RT_FAR *)(pu), (uint32_t)(uNew)); \
+        else if RT_CONSTEXPR_IF(sizeof(*(pu)) == 8) \
+            ASMAtomicWriteU64((volatile uint64_t RT_FAR *)(void RT_FAR *)(pu), (uint64_t)(uNew)); \
+        else \
+            AssertMsgFailed(("ASMAtomicWriteSize: size %d is not supported\n", sizeof(*(pu)))); \
+    } while (0)
+#endif
 
 /**
  * Atomically write a value which size might differ
@@ -4951,8 +5045,8 @@ DECLINLINE(void) ASMAtomicUoWritePtrVoid(void RT_FAR * volatile RT_FAR *ppv, con
  * @param   pu      Pointer to the variable to update.
  * @param   uNew    The value to assign to *pu.
  */
-#define ASMAtomicUoWriteSize(pu, uNew) \
-    do { \
+#if !RT_CPLUSPLUS_PREREQ(201700)
+# define ASMAtomicUoWriteSize(pu, uNew) do { \
         switch (sizeof(*(pu))) { \
             case 1: ASMAtomicUoWriteU8( (volatile uint8_t  RT_FAR *)(void RT_FAR *)(pu), (uint8_t )(uNew)); break; \
             case 2: ASMAtomicUoWriteU16((volatile uint16_t RT_FAR *)(void RT_FAR *)(pu), (uint16_t)(uNew)); break; \
@@ -4961,7 +5055,20 @@ DECLINLINE(void) ASMAtomicUoWritePtrVoid(void RT_FAR * volatile RT_FAR *ppv, con
             default: AssertMsgFailed(("ASMAtomicWriteSize: size %d is not supported\n", sizeof(*(pu)))); \
         } \
     } while (0)
-
+#else
+# define ASMAtomicUoWriteSize(pu, uNew) do { \
+        if RT_CONSTEXPR_IF(sizeof(*(pu)) == 1) \
+            ASMAtomicUoWriteU8( (volatile uint8_t  RT_FAR *)(void RT_FAR *)(pu), (uint8_t )(uNew)); \
+        else if RT_CONSTEXPR_IF(sizeof(*(pu)) == 2) \
+            ASMAtomicUoWriteU16((volatile uint16_t RT_FAR *)(void RT_FAR *)(pu), (uint16_t)(uNew)); \
+        else if RT_CONSTEXPR_IF(sizeof(*(pu)) == 4) \
+            ASMAtomicUoWriteU32((volatile uint32_t RT_FAR *)(void RT_FAR *)(pu), (uint32_t)(uNew)); \
+        else if RT_CONSTEXPR_IF(sizeof(*(pu)) == 8) \
+            ASMAtomicUoWriteU64((volatile uint64_t RT_FAR *)(void RT_FAR *)(pu), (uint64_t)(uNew)); \
+        else \
+            AssertMsgFailed(("ASMAtomicWriteSize: size %d is not supported\n", sizeof(*(pu)))); \
+    } while (0)
+#endif
 
 
 /**
@@ -5182,14 +5289,24 @@ DECLINLINE(size_t) ASMAtomicAddZ(size_t volatile RT_FAR *pcb, size_t cb) RT_NOTH
  * @param   uNew    The value to add to *pu.
  * @param   puOld   Where to store the old value.
  */
-#define ASMAtomicAddSize(pu, uNew, puOld) \
-    do { \
+#if !RT_CPLUSPLUS_PREREQ(201700)
+# define ASMAtomicAddSize(pu, uNew, puOld) do { \
         switch (sizeof(*(pu))) { \
             case 4: *(uint32_t  *)(puOld) = ASMAtomicAddU32((volatile uint32_t RT_FAR *)(void RT_FAR *)(pu), (uint32_t)(uNew)); break; \
             case 8: *(uint64_t  *)(puOld) = ASMAtomicAddU64((volatile uint64_t RT_FAR *)(void RT_FAR *)(pu), (uint64_t)(uNew)); break; \
             default: AssertMsgFailed(("ASMAtomicAddSize: size %d is not supported\n", sizeof(*(pu)))); \
         } \
     } while (0)
+#else
+# define ASMAtomicAddSize(pu, uNew, puOld) do { \
+        if RT_CONSTEXPR_IF(sizeof(*(pu)) == 4) \
+            *(uint32_t  *)(puOld) = ASMAtomicAddU32((volatile uint32_t RT_FAR *)(void RT_FAR *)(pu), (uint32_t)(uNew)); \
+        else if RT_CONSTEXPR_IF(sizeof(*(pu)) == 8) \
+            *(uint64_t  *)(puOld) = ASMAtomicAddU64((volatile uint64_t RT_FAR *)(void RT_FAR *)(pu), (uint64_t)(uNew)); \
+        else \
+            AssertMsgFailed(("ASMAtomicAddSize: size %d is not supported\n", sizeof(*(pu)))); \
+    } while (0)
+#endif
 
 
 
@@ -5317,15 +5434,24 @@ DECLINLINE(size_t) ASMAtomicSubZ(size_t volatile RT_FAR *pcb, size_t cb) RT_NOTH
  *
  * @remarks x86: Requires a 486 or later.
  */
-#define ASMAtomicSubSize(pu, uNew, puOld) \
-    do { \
+#if !RT_CPLUSPLUS_PREREQ(201700)
+# define ASMAtomicSubSize(pu, uNew, puOld) do { \
         switch (sizeof(*(pu))) { \
             case 4: *(uint32_t RT_FAR *)(puOld) = ASMAtomicSubU32((volatile uint32_t RT_FAR *)(void RT_FAR *)(pu), (uint32_t)(uNew)); break; \
             case 8: *(uint64_t RT_FAR *)(puOld) = ASMAtomicSubU64((volatile uint64_t RT_FAR *)(void RT_FAR *)(pu), (uint64_t)(uNew)); break; \
             default: AssertMsgFailed(("ASMAtomicSubSize: size %d is not supported\n", sizeof(*(pu)))); \
         } \
     } while (0)
-
+#else
+# define ASMAtomicSubSize(pu, uNew, puOld) do { \
+        if RT_CONSTEXPR_IF(sizeof(*(pu)) == 4) \
+            *(uint32_t RT_FAR *)(puOld) = ASMAtomicSubU32((volatile uint32_t RT_FAR *)(void RT_FAR *)(pu), (uint32_t)(uNew)); \
+        else if RT_CONSTEXPR_IF(sizeof(*(pu)) == 8) \
+            *(uint64_t RT_FAR *)(puOld) = ASMAtomicSubU64((volatile uint64_t RT_FAR *)(void RT_FAR *)(pu), (uint64_t)(uNew)); \
+        else \
+            AssertMsgFailed(("ASMAtomicSubSize: size %d is not supported\n", sizeof(*(pu)))); \
+    } while (0)
+#endif
 
 
 /**
