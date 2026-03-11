@@ -1,4 +1,4 @@
-/* $Id: Settings.cpp 112403 2026-01-11 19:29:08Z knut.osmundsen@oracle.com $ */
+/* $Id: Settings.cpp 113332 2026-03-11 12:34:02Z knut.osmundsen@oracle.com $ */
 /** @file
  * Settings File Manipulation API.
  *
@@ -4039,7 +4039,7 @@ PlatformX86::PlatformX86() :
     fAPIC(true),
     fX2APIC(false),
     fHPETEnabled(false),
-    enmLongMode(HC_ARCH_BITS == 64 ? PlatformX86::LongMode_Enabled : PlatformX86::LongMode_Disabled),
+    enmLongMode(PlatformX86::LongMode_Enabled),
     fTripleFaultReset(false),
     fIBPBOnVMExit(false),
     fIBPBOnVMEntry(false),
@@ -4058,6 +4058,7 @@ PlatformX86::PlatformX86() :
     fHWVirtExVirtVmsaveVmload(true),
     fNestedHWVirt(false)
 {
+    AssertCompile(HC_ARCH_BITS == 64);
     /* The default value for PAE depends on the host:
      * - 64 bits host -> always true
      * - 32 bits host -> true for Windows & Darwin (masked off if the host cpu doesn't support it anyway)
