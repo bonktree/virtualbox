@@ -1,4 +1,4 @@
-/* $Id: UINotificationQuestion.cpp 113325 2026-03-11 12:14:08Z sergey.dubov@oracle.com $ */
+/* $Id: UINotificationQuestion.cpp 113350 2026-03-11 13:34:02Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - Various UINotificationQuestion implementations.
  */
@@ -57,6 +57,7 @@ bool UINotificationQuestion::confirmCheckingInaccessibleMedia()
         QStringList() << QApplication::translate("UIMessageCenter", "Ignore", "message") /* cancel button text */
                       << QApplication::translate("UIMessageCenter", "Check", "inaccessible media") /* ok button text */,
         true /* Ok by default? */,
+        QString() /* option */,
         "confirmCheckingInaccessibleMedia" /* internal name */);
 }
 
@@ -120,6 +121,7 @@ bool UINotificationQuestion::confirmStartMultipleMachines(const QString &strName
         QStringList() << QString() /* cancel button text */
                       << QApplication::translate("UIMessageCenter", "Start", "machine") /* ok button text */,
         true /* Ok by default? */,
+        QString() /* option */,
         "confirmStartMultipleMachines" /* internal name */);
 }
 
@@ -134,6 +136,7 @@ bool UINotificationQuestion::confirmResetMachine(const QString &strNames)
         QStringList() << QString() /* cancel button text */
                       << QApplication::translate("UIMessageCenter", "Reset", "machine") /* ok button text */,
         true /* Ok by default? */,
+        QString() /* option */,
         "confirmResetMachine" /* internal name */);
 }
 
@@ -147,6 +150,7 @@ bool UINotificationQuestion::confirmACPIShutdownMachine(const QString &strNames)
         QStringList() << QString() /* cancel button text */
                       << QApplication::translate("UIMessageCenter", "Shut Down", "machine") /* ok button text */,
         true /* Ok by default? */,
+        QString() /* option */,
         "confirmACPIShutdownMachine" /* internal name */);
 }
 
@@ -160,6 +164,7 @@ bool UINotificationQuestion::confirmPowerOffMachine(const QString &strNames)
         QStringList() << QString() /* cancel button text */
                       << QApplication::translate("UIMessageCenter", "Power Off", "machine") /* ok button text */,
         true /* Ok by default? */,
+        QString() /* option */,
         "confirmPowerOffMachine" /* internal name */);
 }
 
@@ -198,6 +203,7 @@ bool UINotificationQuestion::confirmRemovingOfLastDVDDevice(QWidget *pParent)
         QStringList() << QString() /* cancel button text */
                       << QApplication::translate("UIMessageCenter", "Remove", "device") /* ok button text */,
         false /* ok button by default? */,
+        QString() /* option */,
         QString() /* internal name */,
         QString() /* help keyword */,
         pParent);
@@ -213,6 +219,7 @@ bool UINotificationQuestion::confirmStorageBusChangeWithOpticalRemoval(QWidget *
                                                    "proceed optical devices will be removed.</p>"),
         QStringList() /* no button name redefinition */,
         true /* ok button by default? */,
+        QString() /* option */,
         QString() /* internal name */,
         QString() /* help keyword */,
         pParent);
@@ -228,6 +235,7 @@ bool UINotificationQuestion::confirmStorageBusChangeWithExcessiveRemoval(QWidget
                                                    "you proceed excessive devices will be removed.</p>"),
         QStringList() /* no button name redefinition */,
         true /* ok button by default? */,
+        QString() /* option */,
         QString() /* internal name */,
         QString() /* help keyword */,
         pParent);
@@ -242,6 +250,7 @@ bool UINotificationQuestion::confirmCancelingPortForwardingDialog(QWidget *pPare
                                                    "<p>If you proceed your changes will be discarded.</p>"),
         QStringList() /* no button name redefinition */,
         false /* ok button by default? */,
+        QString() /* option */,
         QString() /* internal name */,
         QString() /* help keyword */,
         pParent);
@@ -257,6 +266,7 @@ bool UINotificationQuestion::confirmRestoringDefaultKeys(QWidget *pParent)
                                                    "You may not be able to boot affected VM anymore.</p>"),
         QStringList() /* no button name redefinition */,
         false /* ok button by default? */,
+        QString() /* option */,
         QString() /* internal name */,
         QString() /* help keyword */,
         pParent);
@@ -284,6 +294,7 @@ bool UINotificationQuestion::confirmInstallExtensionPack(const QString &strPackN
         QStringList() << QString() /* cancel button text */
                       << QApplication::translate("UIMessageCenter", "Install", "extension pack") /* ok button text */,
         true /* ok button by default? */,
+        QString() /* option */,
         QString() /* internal name */,
         QString() /* help keyword */,
         pParent);
@@ -329,6 +340,7 @@ bool UINotificationQuestion::confirmReplaceExtensionPack(const QString &strPackN
             QStringList() << QString() /* cancel button text */
                           << QApplication::translate("UIMessageCenter", "Upgrade", "extension pack") /* ok button text */,
             true /* ok button by default? */,
+            QString() /* option */,
             QString() /* internal name */,
             QString() /* help keyword */,
             pParent);
@@ -349,6 +361,7 @@ bool UINotificationQuestion::confirmReplaceExtensionPack(const QString &strPackN
             QStringList() << QString() /* cancel button text */
                           << QApplication::translate("UIMessageCenter", "Downgrade", "extension pack") /* ok button text */,
             true /* ok button by default? */,
+            QString() /* option */,
             QString() /* internal name */,
             QString() /* help keyword */,
             pParent);
@@ -368,6 +381,7 @@ bool UINotificationQuestion::confirmReplaceExtensionPack(const QString &strPackN
             QStringList() << QString() /* cancel button text */
                           << QApplication::translate("UIMessageCenter", "Reinstall", "extension pack") /* ok button text */,
             true /* ok button by default? */,
+            QString() /* option */,
             QString() /* internal name */,
             QString() /* help keyword */,
             pParent);
@@ -385,6 +399,7 @@ bool UINotificationQuestion::confirmRemoveExtensionPack(const QString &strPackNa
         QStringList() << QString() /* cancel button text */
                       << QApplication::translate("UIMessageCenter", "Remove", "extension pack") /* ok button text */,
         false /* ok button by default? */,
+        QString() /* option */,
         QString() /* internal name */,
         QString() /* help keyword */,
         pParent);
@@ -407,6 +422,7 @@ bool UINotificationQuestion::confirmMediumRelease(const UIMedium &guiMedium,
                 QStringList() << QString() /* cancel button text */
                               << QApplication::translate("UIMessageCenter", "Release", "disk image file") /* ok button text */,
                 true /* ok button by default? */,
+                QString() /* option */,
                 QString() /* internal name */,
                 QString() /* help keyword */,
                 pParent)
@@ -420,6 +436,7 @@ bool UINotificationQuestion::confirmMediumRelease(const UIMedium &guiMedium,
                 QStringList() << QString() /* cancel button text */
                               << QApplication::translate("UIMessageCenter", "Release", "disk image file") /* ok button text */,
                 true /* ok button by default? */,
+                QString() /* option */,
                 QString() /* internal name */,
                 QString() /* help keyword */,
                 pParent);
@@ -482,14 +499,15 @@ bool UINotificationQuestion::confirmMediumRemoval(const UIMedium &guiMedium,
     }
     /* Show the question: */
     return createBlockingQuestion(
-                strHeader,
-                strMessage.arg(guiMedium.location()),
-                QStringList() << QString() /* cancel button text */
-                              << QApplication::translate("UIMessageCenter", "Remove", "disk image file") /* ok button text */,
-                true /* ok button by default? */,
-                QString() /* internal name */,
-                QString() /* help keyword */,
-                pParent);
+        strHeader,
+        strMessage.arg(guiMedium.location()),
+        QStringList() << QString() /* cancel button text */
+                      << QApplication::translate("UIMessageCenter", "Remove", "disk image file") /* ok button text */,
+        true /* ok button by default? */,
+        QString() /* option */,
+        QString() /* internal name */,
+        QString() /* help keyword */,
+        pParent);
 }
 
 /* static */
@@ -509,6 +527,7 @@ int UINotificationQuestion::confirmDeleteHardDiskStorage(const QString &strLocat
                       << QApplication::translate("UIMessageCenter", "Delete", "hard disk storage") /* ok button text */
                       << QApplication::translate("UIMessageCenter", "Keep", "hard disk storage") /* yes button text */,
         false /* ok button by default? */,
+        QString() /* option */,
         QString() /* internal name */,
         QString() /* help keyword */,
         pParent);
@@ -554,6 +573,7 @@ bool UINotificationQuestion::confirmInaccesibleMediaClear(const QStringList &med
             QStringList() << QString() /* cancel button text */
                           << QApplication::translate("UIMessageCenter", "Clear", "inaccessible media") /* ok button text */,
             false /* ok button by default? */,
+            QString() /* option */,
             QString() /* internal name */,
             QString() /* help keyword */,
             pParent);
@@ -566,6 +586,7 @@ bool UINotificationQuestion::confirmInaccesibleMediaClear(const QStringList &med
             QStringList() << QString() /* cancel button text */
                           << QApplication::translate("UIMessageCenter", "Clear", "inaccessible media") /* ok button text */,
             false /* ok button by default? */,
+            QString() /* option */,
             QString() /* internal name */,
             QString() /* help keyword */,
             pParent);
@@ -584,6 +605,7 @@ bool UINotificationQuestion::confirmCloudNetworkRemoval(const QString &strName, 
         QStringList() << QString() /* cancel button text */
                       << QApplication::translate("UIMessageCenter", "Remove", "network") /* ok button text */,
         false /* ok button by default? */,
+        QString() /* option */,
         QString() /* internal name */,
         QString() /* help keyword */,
         pParent);
@@ -604,6 +626,7 @@ bool UINotificationQuestion::confirmHostNetworkInterfaceRemoval(const QString &s
         QStringList() << QString() /* cancel button text */
                       << QApplication::translate("UIMessageCenter", "Remove", "interface") /* ok button text */,
         false /* ok button by default? */,
+        QString() /* option */,
         QString() /* internal name */,
         QString() /* help keyword */,
         pParent);
@@ -622,6 +645,7 @@ bool UINotificationQuestion::confirmHostOnlyNetworkRemoval(const QString &strNam
         QStringList() << QString() /* cancel button text */
                       << QApplication::translate("UIMessageCenter", "Remove", "network") /* ok button text */,
         false /* ok button by default? */,
+        QString() /* option */,
         QString() /* internal name */,
         QString() /* help keyword */,
         pParent);
@@ -640,6 +664,7 @@ bool UINotificationQuestion::confirmNATNetworkRemoval(const QString &strName, QW
         QStringList() << QString() /* cancel button text */
                       << QApplication::translate("UIMessageCenter", "Remove", "network") /* ok button text */,
         false /* ok button by default? */,
+        QString() /* option */,
         QString() /* internal name */,
         QString() /* help keyword */,
         pParent);
@@ -655,6 +680,7 @@ bool UINotificationQuestion::confirmCloudProfileRemoval(const QString &strName, 
         QStringList() << QString() /* cancel button text */
                       << QApplication::translate("UIMessageCenter", "Remove", "profile") /* ok button text */,
         false /* ok button by default? */,
+        QString() /* option */,
         QString() /* internal name */,
         QString() /* help keyword */,
         pParent);
@@ -671,6 +697,7 @@ bool UINotificationQuestion::confirmCloudProfilesImport(QWidget *pParent)
         QStringList() << QString() /* cancel button text */
                       << QApplication::translate("UIMessageCenter", "Import", "profiles") /* ok button text */,
         false /* ok button by default? */,
+        QString() /* option */,
         QString() /* internal name */,
         QString() /* help keyword */,
         pParent);
@@ -811,6 +838,7 @@ bool UINotificationQuestion::confirmExportMachinesInSaveState(const QStringList 
         QStringList() << QString() /* cancel button text */
                       << QApplication::translate("UIMessageCenter", "Continue") /* ok button text */,
         true /* ok button by default? */,
+        QString() /* option */,
         QString() /* internal name */,
         QString() /* help keyword */,
         pParent);
@@ -825,6 +853,7 @@ bool UINotificationQuestion::confirmOverridingFile(const QString &strPath, QWidg
                                                    "it?<br /><br />Replacing it will overwrite its contents.").arg(strPath),
         QStringList(),
         false /* ok button by default? */,
+        QString() /* option */,
         QString() /* internal name */,
         QString() /* help keyword */,
         pParent);
@@ -844,6 +873,7 @@ bool UINotificationQuestion::confirmOverridingFiles(const QVector<QString> &strP
                                                        .arg(QStringList(strPaths.toList()).join("<br />")),
             QStringList(),
             false /* ok button by default? */,
+            QString() /* option */,
             QString() /* internal name */,
             QString() /* help keyword */,
             pParent);
@@ -993,6 +1023,7 @@ UINotificationQuestion::UINotificationQuestion(const QString &strName,
                                                const QString &strDetails,
                                                const QStringList &buttonNames,
                                                bool fOkByDefault,
+                                               const QString &strOption,
                                                const QString &strInternalName,
                                                const QString &strHelpKeyword)
     : UINotificationSimple(strName,
@@ -1001,6 +1032,7 @@ UINotificationQuestion::UINotificationQuestion(const QString &strName,
                            strHelpKeyword)
     , m_buttonNames(buttonNames)
     , m_fOkByDefault(fOkByDefault)
+    , m_strOption(strOption)
     , m_enmResult(Question::Result_Cancel)
     , m_fDone(false)
 {
@@ -1018,6 +1050,7 @@ int UINotificationQuestion::createBlockingQuestionInt(UINotificationCenter *pPar
                                                       const QString &strDetails,
                                                       const QStringList &buttonNames,
                                                       bool fOkByDefault,
+                                                      const QString &strOption,
                                                       const QString &strInternalName,
                                                       const QString &strHelpKeyword)
 {
@@ -1034,6 +1067,7 @@ int UINotificationQuestion::createBlockingQuestionInt(UINotificationCenter *pPar
                                                                             strDetails,
                                                                             buttonNames,
                                                                             fOkByDefault,
+                                                                            strOption,
                                                                             strInternalName,
                                                                             strHelpKeyword);
     const int iResult = pEffectiveParent->showBlocking(pQuestion);
@@ -1046,6 +1080,7 @@ int UINotificationQuestion::createBlockingQuestion(const QString &strName,
                                                    const QString &strDetails,
                                                    const QStringList &buttonNames /* = QStringList() */,
                                                    bool fOkByDefault /* = true */,
+                                                   const QString &strOption /* = QString() */,
                                                    const QString &strInternalName /* = QString() */,
                                                    const QString &strHelpKeyword /* = QString() */,
                                                    QWidget *pParent /* = 0 */)
@@ -1055,7 +1090,14 @@ int UINotificationQuestion::createBlockingQuestion(const QString &strName,
     AssertPtrReturn(pCenter, 0);
 
     /* Redirect to wrapper above: */
-    return createBlockingQuestionInt(pCenter, strName, strDetails, buttonNames, fOkByDefault, strInternalName, strHelpKeyword);
+    return createBlockingQuestionInt(pCenter,
+                                     strName,
+                                     strDetails,
+                                     buttonNames,
+                                     fOkByDefault,
+                                     strOption,
+                                     strInternalName,
+                                     strHelpKeyword);
 }
 
 /* static */
