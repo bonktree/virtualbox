@@ -1,4 +1,4 @@
-/* $Id: USBProxyBackend.cpp 112403 2026-01-11 19:29:08Z knut.osmundsen@oracle.com $ */
+/* $Id: USBProxyBackend.cpp 113342 2026-03-11 12:54:42Z knut.osmundsen@oracle.com $ */
 /** @file
  * VirtualBox USB Proxy Service (base) class.
  */
@@ -313,7 +313,7 @@ int USBProxyBackend::stop(void)
         /*
          * Mark the thread for termination and kick it.
          */
-        ASMAtomicXchgSize(&mTerminate, true);
+        ASMAtomicWriteSize(&mTerminate, true);
         vrc = interruptWait();
         AssertRC(vrc);
 
