@@ -1,4 +1,4 @@
-/* $Id: UIMessageCenter.h 113373 2026-03-12 10:04:12Z sergey.dubov@oracle.com $ */
+/* $Id: UIMessageCenter.h 113378 2026-03-12 13:36:06Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - UIMessageCenter class declaration.
  */
@@ -194,43 +194,6 @@ public:
                         const QString &strOkButtonText = QString(),
                         const QString &strCancelButtonText = QString(),
                         bool fDefaultFocusForOk = true) const;
-
-    /** Shows a 'Trinary' type of 'Question'.
-      * Omit details. Provides Yes, No and Cancel buttons (called same way by default).
-      * @param  pParent               Brings the message-box parent.
-      * @param  enmType               Brings the message-box type.
-      * @param  strMessage            Brings the message.
-      * @param  pcszAutoConfirmId     Brings the auto-confirm ID.
-      * @param  strChoice1ButtonText  Brings the button 1 text.
-      * @param  strChoice2ButtonText  Brings the button 2 text.
-      * @param  strCancelButtonText   Brings the button 3 text. */
-    int questionTrinary(QWidget *pParent, MessageType enmType,
-                        const QString &strMessage,
-                        const char *pcszAutoConfirmId = 0,
-                        const QString &strChoice1ButtonText = QString(),
-                        const QString &strChoice2ButtonText = QString(),
-                        const QString &strCancelButtonText = QString()) const;
-
-    /** Shows a general type of 'Message with Option'.
-      * @param  pParent              Brings the message-box parent.
-      * @param  enmType              Brings the message-box type.
-      * @param  strMessage           Brings the message.
-      * @param  strOptionText        Brings the option text.
-      * @param  fDefaultOptionValue  Brings the default option value.
-      * @param  iButton1             Brings the button 1 type.
-      * @param  iButton2             Brings the button 2 type.
-      * @param  iButton3             Brings the button 3 type.
-      * @param  strButtonText1       Brings the button 1 text.
-      * @param  strButtonText2       Brings the button 2 text.
-      * @param  strButtonText3       Brings the button 3 text. */
-    int messageWithOption(QWidget *pParent, MessageType enmType,
-                          const QString &strMessage,
-                          const QString &strOptionText,
-                          bool fDefaultOptionValue = true,
-                          int iButton1 = 0, int iButton2 = 0, int iButton3 = 0,
-                          const QString &strButtonText1 = QString(),
-                          const QString &strButtonText2 = QString(),
-                          const QString &strButtonText3 = QString()) const;
 
     /** Shows modal progress-dialog.
       * @param  comProgress   Brings the progress this dialog is based on.

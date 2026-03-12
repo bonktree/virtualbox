@@ -1,4 +1,4 @@
-/* $Id: UIMessageCenter.cpp 113373 2026-03-12 10:04:12Z sergey.dubov@oracle.com $ */
+/* $Id: UIMessageCenter.cpp 113378 2026-03-12 13:36:06Z sergey.dubov@oracle.com $ */
 /** @file
  * VBox Qt GUI - UIMessageCenter class implementation.
  */
@@ -44,9 +44,6 @@
 #include "VBoxAboutDlg.h"
 
 /* COM includes: */
-#include "CConsole.h"
-#include "CHost.h"
-#include "CHostNetworkInterface.h"
 #include "CMachine.h"
 #include "CSession.h"
 #include "CVirtualBox.h"
@@ -125,9 +122,11 @@ int UIMessageCenter::message(QWidget *pParent, MessageType enmType,
                                  iButton1, iButton2, iButton3,
                                  strButtonText1, strButtonText2, strButtonText3,
                                  QString(pcszAutoConfirmId), strHelpKeyword);
-        /* Inter-thread communications are not yet implemented: */
+        // Inter-thread communications are not yet implemented, so
+        // we are not returning effective value, but zero otherwise.
         return 0;
     }
+
     /* In usual case we can chow a message-box directly: */
     return showMessageBox(pParent, enmType,
                           strMessage, strDetails,
@@ -212,110 +211,6 @@ bool UIMessageCenter::questionBinary(QWidget *pParent, MessageType enmType,
                       strCancelButtonText,
                       QString() /* third button */) &
              AlertButtonMask) == AlertButton_Ok);
-}
-
-int UIMessageCenter::questionTrinary(QWidget *pParent, MessageType enmType,
-                                     const QString &strMessage,
-                                     const char *pcszAutoConfirmId /* = 0*/,
-                                     const QString &strChoice1ButtonText /* = QString()*/,
-                                     const QString &strChoice2ButtonText /* = QString()*/,
-                                     const QString &strCancelButtonText /* = QString()*/) const
-{
-    return question(pParent, enmType, strMessage, pcszAutoConfirmId,
-                    AlertButton_Choice1,
-                    AlertButton_Choice2 | AlertButtonOption_Default,
-                    AlertButton_Cancel | AlertButtonOption_Escape,
-                    strChoice1ButtonText,
-                    strChoice2ButtonText,
-                    strCancelButtonText);
-}
-
-int UIMessageCenter::messageWithOption(QWidget *pParent, MessageType enmType,
-                                       const QString &strMessage,
-                                       const QString &strOptionText,
-                                       bool fDefaultOptionValue /* = true */,
-                                       int iButton1 /* = 0*/,
-                                       int iButton2 /* = 0*/,
-                                       int iButton3 /* = 0*/,
-                                       const QString &strButtonName1 /* = QString() */,
-                                       const QString &strButtonName2 /* = QString() */,
-                                       const QString &strButtonName3 /* = QString() */) const
-{
-    /* If no buttons are set, using single 'OK' button: */
-    if (iButton1 == 0 && iButton2 == 0 && iButton3 == 0)
-        iButton1 = AlertButton_Ok | AlertButtonOption_Default;
-
-    /* Assign corresponding title and icon: */
-    QString strTitle;
-    AlertIconType icon;
-    switch (enmType)
-    {
-        default:
-        case MessageType_Info:
-            strTitle = tr("VirtualBox - Information", "msg box title");
-            icon = AlertIconType_Information;
-            break;
-        case MessageType_Question:
-            strTitle = tr("VirtualBox - Question", "msg box title");
-            icon = AlertIconType_Question;
-            break;
-        case MessageType_Warning:
-            strTitle = tr("VirtualBox - Warning", "msg box title");
-            icon = AlertIconType_Warning;
-            break;
-        case MessageType_Error:
-            strTitle = tr("VirtualBox - Error", "msg box title");
-            icon = AlertIconType_Critical;
-            break;
-        case MessageType_Critical:
-            strTitle = tr("VirtualBox - Critical Error", "msg box title");
-            icon = AlertIconType_Critical;
-            break;
-        case MessageType_GuruMeditation:
-            strTitle = "VirtualBox - Guru Meditation"; /* don't translate this */
-            icon = AlertIconType_GuruMeditation;
-            break;
-    }
-
-    /* Create message-box: */
-    QWidget *pBoxParent = windowManager().realParentWindow(pParent ? pParent : windowManager().mainWindowShown());
-    const QString strHackValue = gEDataManager->extraDataString("GUI/Hack/MakeMessageBoxParentless");
-    QPointer<QIMessageBox> pBox = new QIMessageBox(strTitle, strMessage, icon,
-                                                   iButton1, iButton2, iButton3,
-                                                   strHackValue == "true" ? 0 : pBoxParent);
-    windowManager().registerNewParent(pBox, pBoxParent);
-
-    /* Load option: */
-    if (!strOptionText.isNull())
-    {
-        pBox->setFlagText(strOptionText);
-        pBox->setFlagChecked(fDefaultOptionValue);
-    }
-
-    /* Configure button-text: */
-    if (!strButtonName1.isNull())
-        pBox->setButtonText(0, strButtonName1);
-    if (!strButtonName2.isNull())
-        pBox->setButtonText(1, strButtonName2);
-    if (!strButtonName3.isNull())
-        pBox->setButtonText(2, strButtonName3);
-
-    /* Show box: */
-    int rc = pBox->exec();
-
-    /* Make sure box still valid: */
-    if (!pBox)
-        return rc;
-
-    /* Save option: */
-    if (pBox->flagChecked())
-        rc |= AlertOption_CheckBox;
-
-    /* Delete message-box: */
-    if (pBox)
-        delete pBox;
-
-    return rc;
 }
 
 bool UIMessageCenter::showModalProgressDialog(CProgress &progress,
@@ -730,30 +625,10 @@ UIMessageCenter::~UIMessageCenter()
 
 void UIMessageCenter::prepare()
 {
-    /* Register required objects as meta-types: */
-    qRegisterMetaType<CProgress>();
-    qRegisterMetaType<CHost>();
-    qRegisterMetaType<CMachine>();
-    qRegisterMetaType<CConsole>();
-    qRegisterMetaType<CHostNetworkInterface>();
-    qRegisterMetaType<UIMediumDeviceType>();
-    qRegisterMetaType<StorageSlot>();
-
     /* Prepare interthread connection: */
     qRegisterMetaType<MessageType>();
-    // Won't go until we are supporting C++11 or at least variadic templates everywhere.
-    // connect(this, &UIMessageCenter::sigToShowMessageBox,
-    //         this, &UIMessageCenter::sltShowMessageBox,
-    connect(this, SIGNAL(sigToShowMessageBox(QWidget*, MessageType,
-                                             const QString&, const QString&,
-                                             int, int, int,
-                                             const QString&, const QString&, const QString&,
-                                             const QString&, const QString&)),
-            this, SLOT(sltShowMessageBox(QWidget*, MessageType,
-                                         const QString&, const QString&,
-                                         int, int, int,
-                                         const QString&, const QString&, const QString&,
-                                         const QString&, const QString&)),
+    connect(this, &UIMessageCenter::sigToShowMessageBox,
+            this, &UIMessageCenter::sltShowMessageBox,
             Qt::BlockingQueuedConnection);
 
     /* Translations for Main.
