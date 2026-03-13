@@ -1,4 +1,4 @@
-/* $Id: RecordingStream.cpp 113380 2026-03-13 10:01:45Z andreas.loeffler@oracle.com $ */
+/* $Id: RecordingStream.cpp 113382 2026-03-13 10:21:15Z andreas.loeffler@oracle.com $ */
 /** @file
  * Recording stream code.
  */
@@ -836,6 +836,8 @@ int RecordingStream::Notify(void)
  **/
 int RecordingStream::cmdQueueAddFrame(PRECORDINGFRAME pFrame, PRECORDINGFRAMEPOOL pPool, RECORDINGCMD *pCmd)
 {
+    RT_NOREF(pPool);
+
     LogFlowFunc(("type=%s, ts=%RU64\n",
                  RecordingUtilsRecordingFrameTypeToStr(pFrame->enmType), pFrame->msTimestamp));
 
@@ -1867,7 +1869,7 @@ int RecordingStream::InitVideo(const ComPtr<IRecordingScreenSettings> &ScreenSet
 
             for (size_t i = 1; i < RT_ELEMENTS(m_aFramePool); i++)
             {
-                size_t cFrames;
+                size_t cFrames = 0; /* Shut up MSVC. */
 
                 if (!RecordingFramePoolIsInitialized(&m_aFramePool[i])) /* Check if initialized already. */
                 {
