@@ -55,6 +55,10 @@
 /*********************************************************************************************************************************
 *   Defined Constants And Macros                                                                                                 *
 *********************************************************************************************************************************/
+/* This should be in sync with key validation patterns
+ * in DevEFI.cpp and DevPcBios.cpp
+ */
+#define DMI_OEM_CUSTOM_STRINGS_MAX 16
 
 /*
  * Default DMI data (legacy).
@@ -528,11 +532,11 @@ int FwCommonPlantDMITable(PPDMDEVINS pDevIns, uint8_t *pTable, unsigned cbMax, P
             { \
                 if (fHideErrors) \
                 { \
-                    LogRel(("Configuration error: Querying \"" name "\" as a string failed -- using default DMI data!\n")); \
+                    LogRel(("Configuration error: Querying \"%s\" as a string failed -- using default DMI data!\n", name)); \
                     continue; \
                 } \
                 return PDMDevHlpVMSetError(pDevIns, rc, RT_SRC_POS, \
-                                           N_("Configuration error: Querying \"" name "\" as a string failed")); \
+                                           N_("Configuration error: Querying \"%s\" as a string failed"), name); \
             } \
             if (!strcmp(szBuf, "<EMPTY>")) \
                 pszTmp = ""; \
@@ -996,6 +1000,70 @@ int FwCommonPlantDMITable(PPDMDEVINS pDevIns, uint8_t *pTable, unsigned cbMax, P
         DMI_READ_CFG_STR_DEF(u8Tmp, "DmiOEMVBoxVer", szTmp);
         RTStrPrintf(szTmp, sizeof(szTmp), "vboxRev_%u", RTBldCfgRevision());
         DMI_READ_CFG_STR_DEF(u8Tmp, "DmiOEMVBoxRev", szTmp);
+        /* Look for optional user-provided OEM strings in the config.
+         * Skip this when filling out default DMI data.
+         */
+        uint32_t cCustomStrings = 0;
+        if (fForceDefault)
+            cCustomStrings = 0;
+        else
+        {
+            rc = pHlp->pfnCFGMQueryU32(pCfg, "DmiOEMCustomStrings", &cCustomStrings);
+            if (RT_FAILURE(rc) || pOEMStrings->u8Count + cCustomStrings > 255)
+                cCustomStrings = 0;
+            /* Also, enforce a hard limit on the number of strings. */
+            if (cCustomStrings > DMI_OEM_CUSTOM_STRINGS_MAX)
+                cCustomStrings = DMI_OEM_CUSTOM_STRINGS_MAX;
+        }
+        char szNameTmp[sizeof("DmiOEMCustomXXX")];
+        int iStringsFailure = VINF_SUCCESS;
+        for (uint32_t i = 0; i < cCustomStrings; ++i)
+        {
+            RTStrPrintf(szNameTmp, sizeof(szNameTmp), "DmiOEMCustom%u", i);
+            memset(szTmp, 0, sizeof(szTmp));
+            /* We can't use DMI_READ_CFG_STR_DEF in a nested loop. */
+            rc = pHlp->pfnCFGMQueryStringDef(pCfg, szNameTmp, szBuf, sizeof(szBuf), szTmp);
+            if (RT_FAILURE(rc))
+            {
+                iStringsFailure = rc;
+                break;
+            }
+            if (!strcmp(szBuf, "<EMPTY>"))
+                pszTmp = "";
+            else if ((pszTmp = RTStrStr(szBuf, "<DmiSystemUuid>")))
+            {
+                char *pszUuid = pszDmiSystemUuid;
+                if (!pszUuid)
+                {
+                    pszUuid = (char *)alloca(RTUUID_STR_LENGTH);
+                    RTUuidToStr(pUuid, pszUuid, RTUUID_STR_LENGTH);
+                }
+                fwUseDmiSystemUuidInString(szBuf, sizeof(szBuf), pszTmp, 15, pszUuid);
+                pszTmp = szBuf;
+            }
+            else
+                pszTmp = szBuf;
+            if (!pszTmp[0])
+                u8Tmp = 0; /* empty string */
+            else
+            {
+                u8Tmp = iStrNr++;
+                size_t const cbStr = strlen(pszTmp) + 1;
+                DMI_CHECK_SIZE(cbStr);
+                pszStr = (char *)mempcpy(pszStr, pszTmp, cbStr);
+            }
+            if (u8Tmp)
+                pOEMStrings->u8Count++;
+        }
+        if (iStringsFailure) {
+            if (fHideErrors)
+            {
+                LogRel(("Configuration error: Querying \"%s\" as a string failed -- using default DMI data!\n", "DmiOEMCustomStrings"));
+                continue;
+            }
+            return PDMDevHlpVMSetError(pDevIns, rc, RT_SRC_POS,
+                                       N_("Configuration error: Querying \"%s\" as a string failed"), "DmiOEMCustomStrings");
+        }
         DMI_TERM_STRUCT;
 
         /*************************************
